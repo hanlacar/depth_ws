@@ -1,0 +1,16 @@
+/build/
+/install/
+/log/
+/maps/*
+!/maps/.gitkeep
+/bags/
+*.db
+*.db-shm
+*.db-wal
+*.bag
+*.mcap
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+/.vscode/
