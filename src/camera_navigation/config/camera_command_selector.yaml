@@ -1,0 +1,8 @@
+camera_command_selector_node:
+  ros__parameters:
+    candidate_drive_topic: /camera/candidate/path/drive
+    candidate_wheel_topic: /camera/candidate/path/wheel
+    candidate_timeout_sec: 0.20
+    mission_timeout_sec: 0.60
+    publish_rate_hz: 20.0
+    avoidance_recovery_samples: 3

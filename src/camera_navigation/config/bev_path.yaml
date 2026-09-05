@@ -1,0 +1,73 @@
+direct_bev_planner_node:
+  ros__parameters:
+    # The node's declared default remains `production`.  Do not repeat the
+    # selector here: ROS parameter-file precedence would mask an explicit
+    # validation CLI override such as `planner_variant:=hybrid_a6`.
+    semantic_topic: /perception/semantic_path_frame
+    camera_info_topic: /camera/camera_info
+    accel_topic: /camera/camera/accel/sample
+    gyro_topic: /camera/camera/gyro/sample
+    input_timeout_sec: 0.25
+    camera_info_stale_timeout_sec: 2.0
+    x_min_m: 0.30
+    x_max_m: 8.00
+    y_min_m: -3.00
+    y_max_m: 3.00
+    resolution_m: 0.04
+    road_open_m: 0.08
+    road_close_m: 0.16
+    minimum_component_area_m2: 0.04
+    hole_max_area_m2: 0.35
+    hole_max_width_m: 0.80
+    hole_max_length_m: 1.20
+    vehicle_width_m: 0.80
+    lateral_safety_margin_m: 0.12
+    default_lane_width_m: 1.10
+    lane_width_min_m: 0.55
+    lane_width_max_m: 2.20
+    lane_width_change_m: 0.45
+    sliding_windows: 20
+    window_half_width_m: 0.45
+    window_min_pixels: 2
+    fitting_degree: 2
+    fitting_residual_m: 0.18
+    minimum_path_points: 3
+    resample_spacing_m: 0.20
+    near_required_m: 1.50
+    temporal_lateral_gate_m: 0.65
+    temporal_heading_gate_deg: 35.0
+    temporal_curvature_gate_per_m: 0.90
+    valid_min_safe_coverage: 0.999
+    valid_max_fitting_residual_m: 0.12
+    hold_time_sec: 0.20
+    road_center_gate_m: 0.70
+    lookahead_min_m: 0.60
+    lookahead_default_m: 1.20
+    lookahead_max_m: 2.20
+    wheelbase_m: 0.73
+    maximum_steering_deg: 22.0
+    debug_enabled: true
+    debug_publish_rate_hz: 10.0
+    camera_overlay_enabled: true
+    camera_overlay_topic: /camera/bev/camera_overlay
+    camera_overlay_sync_tolerance_sec: 0.05
+    camera_overlay_cache_frames: 20
+    camera_overlay_line_thickness: 4
+    camera_overlay_point_radius: 3
+    camera_overlay_publish_rate_hz: 30.0
+    camera_centered: true
+    camera_overlay_anchor_x_ratio: 0.5
+    camera_overlay_anchor_y_ratio: 1.0
+    # Subscriber-gated, latest-only true RGB BEV overlay. Uses the exact same
+    # precomputed ground remap as semantic projection (no independent resize).
+    bev_overlay_enabled: true
+    bev_overlay_topic: /camera/bev/overlay_image
+    bev_overlay_max_fps: 55.0
+    bev_diagnostic_fps: 3.0
+    rgb_stale_timeout_sec: 0.50
+    path_start_lateral_m: 0.0
+    fixed_output_rate_enabled: false
+    output_rate_hz: 60.0
+    path_stale_timeout_sec: 0.20
+    state_stale_timeout_sec: 0.20
+    camera_overlay_stale_timeout_sec: 0.20

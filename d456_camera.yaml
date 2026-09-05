@@ -1,0 +1,40 @@
+# =====================================================================
+# d456_camera.yaml  —  realsense2_camera 노드 파라미터
+#
+# 목표 프로파일: RGB 640x480@60, Depth 640x480@60, aligned depth.
+#
+# ⚠ 60 FPS 가 실제로 열리는지는 rs-enumerate-devices 로 먼저 확인할 것.
+#   일부 D456 펌웨어/USB 조건에서 640x480@60 이 안 열리면 30 으로 내려간다.
+#   그 경우 출력 상한도 30 이 되며, 이는 하드웨어 한계이지 코드 결함이 아니다.
+# =====================================================================
+camera:
+  ros__parameters:
+    # --- 스트림 활성화 ---
+    enable_color: true
+    enable_depth: true
+    enable_infra1: false
+    enable_infra2: false
+
+    # --- 프로파일 (width,height,fps) ---
+    rgb_camera.color_profile: "640,480,60"
+    depth_module.depth_profile: "640,480,60"
+
+    # --- depth 를 color 좌표에 정렬 (rtabmap exact-sync 의 전제) ---
+    align_depth.enable: true
+
+    # --- IMU: D456 내장 IMU 를 하나의 /camera/imu 로 합친다 ---
+    enable_gyro: true
+    enable_accel: true
+    unite_imu_method: 2            # 2=linear_interpolation (odometry guess 용)
+    gyro_fps: 200
+    accel_fps: 200
+
+    # --- 포인트클라우드는 rtabmap 이 만들므로 카메라에서는 끈다(부하 절감) ---
+    pointcloud.enable: false
+
+    # --- QoS: 고속 스트림은 sensor-data(best-effort)로 지연 누적 방지 ---
+    # (런치에서 리매핑/qos_overrides 로도 조정 가능)
+
+    # --- 동기화 정확도 ---
+    # aligned depth + 동일 센서라 rgb/depth 타임스탬프가 맞물린다.
+    # rtabmap 쪽 approx_sync=false 와 짝을 이룬다.

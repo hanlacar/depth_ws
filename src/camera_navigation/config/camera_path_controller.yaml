@@ -1,0 +1,20 @@
+camera_path_controller_node:
+  ros__parameters:
+    # --- Geometry / existing safety (do not change casually) ---
+    wheelbase_m: 0.73
+    lookahead_m: 3.0
+    maximum_steering_deg: 22.0
+    steering_sign: -1.0         # /camera/path is +y left; vehicle is -left
+    path_timeout_sec: 0.15      # fixed by contract, do not edit
+    source_stamp_timeout_sec: 0.15  # fixed by contract, do not edit
+    minimum_path_points: 3
+    expected_frame_id: base_link
+    minimum_confidence: 0.0
+    control_rate_hz: 20.0
+
+    # --- Longitudinal rule (the only speed logic) ---
+    # Drive is CRUISE (2.0) on gentle steering; drops to SLOW (1.0) once the
+    # commanded |steering| reaches the threshold. FAST (3.0) is never emitted.
+    normal_drive_command: 2.0          # CRUISE
+    slow_drive_command: 1.0            # SLOW
+    steering_slowdown_threshold_deg: 10.0

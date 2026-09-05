@@ -1,0 +1,25 @@
+route_follower:
+  ros__parameters:
+    wheelbase_m: 0.73
+    max_steering_deg: 22.0
+    normal_corridor_m: 1.0
+    rejoin_start_distance_m: 1.0
+    rejoin_complete_distance_m: 0.25
+    rejoin_complete_heading_deg: 10.0
+    minimum_turning_radius_m: 1.8068134
+    candidate_search_distance_m: 15.0
+    candidate_spacing_m: 0.50
+    vehicle_length_m: 1.40
+    vehicle_width_m: 0.80
+    footprint_safety_margin_m: 0.15
+    allow_unknown: false
+    rejoin_speed: 0.25
+    heading_weight: 0.75
+    max_index_backtrack: 3
+    localization_stability_s: 2.0
+    rejoin_verify_duration_s: 1.0
+    occupancy_grid_timeout_s: 1.0
+    reverse_rejoin_allowed: false
+    enable_control: false
+    dry_run: true
+    user_approved: false

@@ -1,0 +1,116 @@
+schema_version: 1
+profiles:
+  camera_slam:
+    groups: [camera_required, cuvslam_required, slam_context, ros_context]
+  camera_slam_with_aligned_depth:
+    groups: [camera_required, cuvslam_required, slam_context, ros_context, derived_rgbd, perception_validation]
+  camera_slam_with_mapdata:
+    groups: [camera_required, cuvslam_required, slam_context, ros_context, derived_rgbd, perception_validation, rtabmap_heavy]
+
+groups:
+  camera_required:
+    required: true
+    topics:
+      /camera/camera/color/image_raw: sensor_msgs/msg/Image
+      /camera/camera/color/camera_info: sensor_msgs/msg/CameraInfo
+      /camera/camera/color/metadata: realsense2_camera_msgs/msg/Metadata
+      /camera/camera/depth/image_rect_raw: sensor_msgs/msg/Image
+      /camera/camera/depth/camera_info: sensor_msgs/msg/CameraInfo
+      /camera/camera/depth/metadata: realsense2_camera_msgs/msg/Metadata
+      /camera/camera/infra1/image_rect_raw: sensor_msgs/msg/Image
+      /camera/camera/infra1/camera_info: sensor_msgs/msg/CameraInfo
+      /camera/camera/infra1/metadata: realsense2_camera_msgs/msg/Metadata
+      /camera/camera/infra2/image_rect_raw: sensor_msgs/msg/Image
+      /camera/camera/infra2/camera_info: sensor_msgs/msg/CameraInfo
+      /camera/camera/infra2/metadata: realsense2_camera_msgs/msg/Metadata
+      /camera/camera/gyro/sample: sensor_msgs/msg/Imu
+      /camera/camera/accel/sample: sensor_msgs/msg/Imu
+      /camera/camera/imu: sensor_msgs/msg/Imu
+  cuvslam_required:
+    required: true
+    topics:
+      /visual_slam/tracking/odometry: nav_msgs/msg/Odometry
+      /depth_slam/cuvslam/odometry: nav_msgs/msg/Odometry
+      /depth_slam/cuvslam/status: std_msgs/msg/String
+      /depth_slam/cuvslam/tracking_valid: std_msgs/msg/Bool
+      /depth_slam/cuvslam/reset_count: std_msgs/msg/UInt32
+      /depth_slam/cuvslam/fps: std_msgs/msg/Float32
+  slam_context:
+    required: false
+    topics:
+      /visual_slam/status: isaac_ros_visual_slam_interfaces/msg/VisualSlamStatus
+      /visual_slam/tracking/slam_path: nav_msgs/msg/Path
+      /visual_slam/tracking/vo_path: nav_msgs/msg/Path
+      /depth_slam/cuvslam/pose: geometry_msgs/msg/PoseStamped
+      /depth_slam/cuvslam/confidence: std_msgs/msg/Float32
+      /depth_slam/cuvslam/latency_ms: std_msgs/msg/Float32
+      /depth_slam/cuvslam/gpu_utilization: std_msgs/msg/Float32
+      /depth_slam/cuvslam/gpu_memory_mb: std_msgs/msg/Float32
+      /depth_slam/localization/pose: geometry_msgs/msg/PoseWithCovarianceStamped
+      /depth_slam/localization/state: std_msgs/msg/String
+      /depth_slam/localization/confidence: std_msgs/msg/Float32
+      /depth_slam/localization/relocalized: std_msgs/msg/Bool
+      /depth_slam/mapping/ready: std_msgs/msg/Bool
+      /depth_slam/mapping/state: std_msgs/msg/String
+      /depth_slam/mapping/diagnostics: diagnostic_msgs/msg/DiagnosticArray
+      /depth_slam/route/status: std_msgs/msg/String
+      /depth_slam/route/path: nav_msgs/msg/Path
+      /rtabmap/info: rtabmap_msgs/msg/Info
+      /rtabmap/localization_pose: geometry_msgs/msg/PoseWithCovarianceStamped
+      /rtabmap/mapGraph: rtabmap_msgs/msg/MapGraph
+      /rtabmap/mapPath: nav_msgs/msg/Path
+  ros_context:
+    required: false
+    topics:
+      /tf: tf2_msgs/msg/TFMessage
+      /tf_static: tf2_msgs/msg/TFMessage
+      /diagnostics: diagnostic_msgs/msg/DiagnosticArray
+      /parameter_events: rcl_interfaces/msg/ParameterEvent
+  rtabmap_heavy:
+    required: false
+    default_enabled: false
+    reason: Explicit opt-in only because mapData is large and reproducible from the database.
+    topics:
+      /rtabmap/mapData: rtabmap_msgs/msg/MapData
+  derived_rgbd:
+    required: false
+    default_enabled: false
+    reason: Derived aligned depth is opt-in; raw depth and calibration are preserved by default.
+    topics:
+      /camera/camera/aligned_depth_to_color/image_raw: sensor_msgs/msg/Image
+  perception_validation:
+    required: false
+    topics:
+      /perception/detections_json: std_msgs/msg/String
+      /camera/traffic_light_rgb/diagnostics: std_msgs/msg/String
+      /camera/traffic_light_fused/diagnostics: std_msgs/msg/String
+      /camera/mission/diagnostics: std_msgs/msg/String
+      /depth_slam/perception/cross_validation_status: std_msgs/msg/String
+      /depth_slam/perception/traffic_light/validated: std_msgs/msg/Bool
+      /depth_slam/perception/traffic_light/result: std_msgs/msg/String
+      /depth_slam/perception/stop_line/validated: std_msgs/msg/Bool
+      /depth_slam/perception/stop_line/result: std_msgs/msg/String
+
+# These disabled groups deliberately contain roles, not invented ROS topic names.
+# Add verified topic/type mappings from the live vehicle graph before enabling them.
+future_groups:
+  mcu:
+    enabled: false
+    roles: [raw_odometry, encoder, measured_speed, measured_steering, mode, status]
+    topics: {}
+  control:
+    enabled: false
+    roles: [commanded_drive, commanded_steering]
+    topics: {}
+  mission:
+    enabled: false
+    roles: [traffic_light, stop_line, sign, section, mission_state]
+    topics: {}
+  safety:
+    enabled: false
+    roles: [safety_state, safety_reason]
+    topics: {}
+  lidar:
+    enabled: false
+    roles: [scan, obstacles, detour_path]
+    topics: {}

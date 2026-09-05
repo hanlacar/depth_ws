@@ -1,0 +1,17 @@
+{
+  "reference_video": "/home/qor/urrc_hanla/20260829_170118.mp4",
+  "reference_video_sha256": "8c1dad5687d5bc33e345723125ae83ba87eb3ba321cc069545383b0383ba4930",
+  "reference_model_sha256": "0f8b58ce8112ef580009a56cec71aecbc177fc20934f96f053fcd94ee7f76351",
+  "baseline_before_exact_pair_cache": {
+    "frames": 2944,
+    "road_detection_ratio": 0.9236,
+    "path_generation_ratio": 0.5438,
+    "states": {"VALID": 0, "DEGRADED": 1601, "INVALID": 1343},
+    "stamp_mismatch_count": 2134
+  },
+  "minimum_ratios": {
+    "road_detection": 0.90,
+    "path_generation": 0.50,
+    "stamp_mismatch_per_path": 0.01
+  }
+}

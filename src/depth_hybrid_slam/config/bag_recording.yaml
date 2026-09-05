@@ -1,0 +1,37 @@
+schema_version: 1
+storage_id: mcap
+storage_preset_profile: fastwrite
+compression_mode: file
+compression_format: zstd
+compression_threads: 4
+max_bag_size_bytes: 4294967296
+max_bag_duration_seconds: 900
+max_cache_size_bytes: 67108864
+minimum_free_space_bytes: 21474836480
+preflight_sample_seconds: 5.0
+expected_environment:
+  ros_domain_id: '41'
+  rmw_implementation: rmw_fastrtps_cpp
+  ros_distro: jazzy
+expected_camera:
+  model: Intel RealSense D456
+  serial: '338122302896'
+  color_profile: 640x480x60
+  depth_profile: 640x480x60
+  infrared_profile: 640x480x60
+  gyro_fps: 400
+  accel_fps: 400
+tf_chain: [map, odom, base_link, camera_link]
+thresholds:
+  metadata_min_hz: 59.0
+  imu_min_hz: 380.0
+  cuvslam_odometry_min_hz: 30.0
+  tracking_valid_min_percent: 99.0
+  reset_count_max_increase: 0
+  latency_p95_max_ms: 50.0
+  sync_tolerance_ms: 8.5
+  odometry_jump_m: 0.75
+safety:
+  enable_control: false
+  dry_run: true
+  publish_drive_commands: false

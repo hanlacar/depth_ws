@@ -1,0 +1,35 @@
+camera_image_path_node:
+  ros__parameters:
+    # Original-image vertical sampling. Lower bands receive extra fit weight.
+    band_count: 30
+    # Boot-time one-side lane width in pixels; learned BOTH widths supersede it.
+    # Re-measure at the configured ROI for a non-640x480 camera stream.
+    lane_width_seed_px: 160.0
+    vehicle_width_m: 0.45
+    robust_fit_iterations: 3
+    robust_fit_residual_px: 18.0
+    robust_fit_min_inlier_ratio: 0.55
+    near_fit_weight: 2.0
+    # ROAD_ONLY medial-axis selection and perspective temporal/search gate.
+    road_dt_peak_ratio: 0.90
+    road_center_gate_near_px: 28.0
+    road_center_gate_mid_px: 42.0
+    road_center_gate_far_px: 64.0
+    # Full vehicle-envelope clearance table in image pixels (near/mid/far).
+    safe_margin_near_px: 18.0
+    safe_margin_mid_px: 11.0
+    safe_margin_far_px: 5.0
+    # Last feasible path/steering may only be held for this wall-clock time.
+    hold_time_sec: 0.20
+    lookahead_min_ratio: 0.25
+    lookahead_max_ratio: 0.78
+    lookahead_recovery_step: 0.08
+
+camera_pixel_controller_node:
+  ros__parameters:
+    dynamic_lookahead_minimum_ratio: 0.25
+    dynamic_lookahead_maximum_ratio: 0.78
+    dynamic_lookahead_curve_threshold_px: 1.5
+    dynamic_lookahead_low_confidence_threshold: 0.60
+    dynamic_lookahead_low_confidence_reduction: 0.12
+    dynamic_lookahead_maximum_ratio_change: 0.12

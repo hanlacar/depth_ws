@@ -1,0 +1,92 @@
+camera_yolo_inference_node:
+  ros__parameters:
+    # The checked-in TensorRT engine was exported from a different, known-poor
+    # checkpoint. Keep the verified PyTorch checkpoint as the safe default.
+    backend: pytorch
+    segmentation_model_path: ""
+    expected_model_sha256: 0f8b58ce8112ef580009a56cec71aecbc177fc20934f96f053fcd94ee7f76351
+    class_manifest_path: ""
+    device: cuda:0
+    input_size: 640
+    confidence_threshold: 0.25
+    mask_threshold: 0.50
+    max_image_age_sec: 0.40
+    # Conservative initial limit; tune only after measuring the target GPU.
+    max_inference_latency_ms: 300.0
+    input_image_topic: /camera/image_raw
+    input_reliability: best_effort
+    # Sensor QoS is latest-only; DDS must not accumulate stale camera frames.
+    input_depth: 1
+    input_camera_info_topic: /camera/camera_info
+    stop_detected_topic: /perception/stop_detected
+    stop_confidence_threshold: 0.25
+    publish_diagnostics: true
+    require_cuda: true
+    warmup_count: 5
+    publish_debug_image: true
+    publish_optional_masks: false
+    debug_overlay_alpha: 0.35
+    debug_draw_contours: false
+    debug_draw_boxes: true
+    debug_draw_labels: true
+    debug_draw_confidence: true
+    perception_overlay_max_fps: 45.0
+    detections_image_max_fps: 50.0
+    # 0 = established production behavior. Validation launch overrides to 5 Hz.
+    mask_image_publish_hz: 0.0
+    # Disabled by default. `flow` is an explicit validation-only opt-in;
+    # raw detector topics remain /perception/masks/{white,yellow}_line and
+    # tracked-only pixels are published under /perception/tracked/.
+    line_track_mode: none
+    line_track_max_hold_sec: 0.40
+    line_track_max_hold_frames: 12
+    line_track_confidence_decay: 0.88
+    line_track_min_flow_points: 18
+    line_track_max_motion_px: 45.0
+    line_track_min_road_overlap: 0.65
+    line_track_scene_change_threshold: 0.30
+    # Training merges physical yellow and red lamps into R_light. R is the
+    # common stop state; G_light remains the proceed state.
+    traffic_light_topic: /camera_traffic_light
+    traffic_light_confirmation_frames: 3
+    traffic_light_lost_timeout_sec: 0.5
+    traffic_light_minimum_confidence: 0.5
+    traffic_light_conflict_score_margin: 0.15
+    traffic_light_mask_area_weight: 0.2
+    traffic_light_mask_threshold: 0.5
+    # Shared BEV/non-BEV semantic refinement.  Colour decisions combine HSV,
+    # Lab and the local road brightness; no full-image fixed threshold is used.
+    refinement.yellow_hsv_h_min: 14
+    refinement.yellow_hsv_h_max: 42
+    refinement.yellow_hsv_s_min: 55
+    refinement.yellow_lab_b_road_delta_min: 8.0
+    refinement.yellow_min_ratio: 0.28
+    refinement.white_hsv_s_max: 85
+    refinement.white_hsv_v_min: 125
+    refinement.white_lab_l_road_delta_min: -8.0
+    refinement.white_min_ratio: 0.35
+    refinement.unknown_line_score_max: 0.32
+    refinement.class_hysteresis_frames: 3
+    refinement.temporal_history_frames: 5
+    refinement.temporal_iou_min: 0.18
+    refinement.temporal_center_distance_ratio: 0.08
+    refinement.track_timeout_sec: 0.30
+    refinement.stop_angle_tolerance_deg: 18.0
+    refinement.stop_min_road_width_ratio: 0.34
+    refinement.stop_max_thickness_ratio: 0.10
+    refinement.stop_min_confidence: 0.55
+    refinement.stop_confirmation_frames: 2
+    refinement.yellow_line_adjacency_px_ratio: 0.025
+    refinement.yellow_line_adjacency_bonus: 0.12
+    refinement.crosswalk_min_stripes: 3
+    refinement.crosswalk_spacing_cv_max: 0.45
+    refinement.crosswalk_parallel_tolerance_deg: 12.0
+    refinement.crosswalk_confirmation_frames: 2
+    refinement.marking_min_area_ratio: 0.00008
+    refinement.lane_min_vertical_span_ratio: 0.16
+    refinement.lane_max_width_ratio: 0.18
+    refinement.road_restore_max_gap_ratio: 0.16
+    refinement.road_restore_max_width_growth_ratio: 0.08
+    refinement.previous_road_hold_sec: 0.20
+    refinement.road_drop_area_ratio: 0.65
+    use_sim_time: false

@@ -1,0 +1,6 @@
+/**:
+  ros__parameters:
+    # Populate only after the real map section IDs and two stop-line bounds are known.
+    ramp_sections: [""]
+    acceleration_sections: [""]
+    finish_sections: [""]

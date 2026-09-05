@@ -1,0 +1,4 @@
+from glob import glob
+from setuptools import find_packages,setup
+name="camera_yolo_inference"
+setup(name=name,version="0.1.0",packages=find_packages(),data_files=[("share/ament_index/resource_index/packages",["resource/"+name]),("share/"+name,["package.xml","README.md"]),("share/"+name+"/config",glob("config/*.yaml")),("share/"+name+"/launch",glob("launch/*.launch.py")),("share/"+name+"/models",glob("models/*.pt")+glob("models/*.engine")+glob("models/*.engine.json")),("share/"+name+"/tools",glob("tools/*.py"))],install_requires=["setuptools"],zip_safe=True,maintainer="ww",maintainer_email="ww@todo.todo",description="Ultralytics segmentation adapter preserving D456 raw coordinates",license="Apache-2.0",entry_points={"console_scripts":["camera_yolo_inference_node=camera_yolo_inference.camera_yolo_inference_node:main","yellow_line_depth_node=camera_yolo_inference.yellow_line_depth_node:main"]})

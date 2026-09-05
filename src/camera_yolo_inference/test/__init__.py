@@ -1,0 +1,1 @@
+"""Camera YOLO inference tests."""

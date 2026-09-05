@@ -1,0 +1,70 @@
+rgb_traffic_light_node:
+  ros__parameters:
+    input_image_topic: /camera/image_raw
+    state_topic: /camera/traffic_light_rgb/state
+    confidence_topic: /camera/traffic_light_rgb/confidence
+    aspect_topic: /camera/traffic_light_rgb/aspect
+    diagnostics_topic: /camera/traffic_light_rgb/diagnostics
+    overlay_topic: /camera/traffic_light_rgb/overlay_image
+    watchdog_rate_hz: 10.0
+
+    # Ratios are resolution-independent. Tune these with mounted-camera data.
+    roi_x_min_ratio: 0.05
+    roi_x_max_ratio: 0.95
+    roi_y_min_ratio: 0.02
+    roi_y_max_ratio: 0.55
+
+    minimum_area_ratio: 0.00003
+    maximum_area_ratio: 0.012
+    minimum_aspect_ratio: 0.25
+    maximum_aspect_ratio: 4.0
+    minimum_solidity: 0.55
+    minimum_convexity: 0.72
+    round_minimum_score: 0.80
+    left_minimum_score: 0.65
+    down_minimum_score: 0.65
+    left_direction_margin: 0.12
+    other_green_minimum_score: 0.58
+    minimum_confidence: 0.55
+    conflict_margin: 0.12
+    red_priority_confidence: 0.82
+
+    hsv_minimum_saturation: 90
+    hsv_minimum_value: 130
+    red_hue_low_max: 12
+    red_hue_high_min: 168
+    yellow_hue_min: 15
+    yellow_hue_max: 40
+    green_hue_min: 40
+    green_hue_max: 95
+    red_lab_a_min: 145
+    yellow_lab_b_min: 145
+    green_lab_a_max: 140
+
+    minimum_brightness_delta: 18.0
+    minimum_bright_pixel_ratio: 0.45
+    housing_expand_ratio: 0.55
+    housing_dark_luma_max: 80
+    minimum_housing_dark_ratio: 0.08
+    morphology_open_kernel: 3
+    morphology_close_kernel: 3
+    reject_roi_boundary_contact: true
+
+    # RED_X: two balanced diagonal strokes crossing near the lamp centre.
+    # These thresholds must be re-tuned with the actual signal vehicle.
+    red_x_min_diagonal_score: 0.62
+    red_x_angle_tolerance_deg: 18.0
+    red_x_center_tolerance_ratio: 0.32
+    red_x_min_diagonal_balance: 0.55
+    red_x_max_circle_score: 0.76
+    red_x_max_rectangularity: 0.72
+    red_x_hough_threshold: 8
+    red_x_min_line_length_ratio: 0.45
+    red_x_max_line_gap_ratio: 0.18
+
+    confirmation_frames: 3
+    switch_confirmation_frames: 4
+    lost_timeout_sec: 0.35
+    input_timeout_sec: 0.50
+    track_iou_threshold: 0.20
+    track_center_distance_ratio: 0.08

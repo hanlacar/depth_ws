@@ -1,0 +1,47 @@
+camera_mission_perception_node:
+  ros__parameters:
+    semantic_topic: /perception/semantic_path_frame
+    detections_topic: /perception/detections_json
+    depth_topic: /camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/camera_info
+    imu_topic: /imu/data
+    imu_valid_topic: /imu/valid
+    color_topic: /camera/image_raw
+    base_frame: base_link
+    wheelbase_m: 0.73
+    front_axle_x_m: 0.365
+    sync_slop_sec: 0.05
+    max_input_age_sec: 0.30
+    max_tf_age_sec: 0.20
+    stop_line_min_confidence: 0.50
+    stop_line_min_depth_pixels: 30
+    stop_line_depth_min_m: 0.20
+    stop_line_depth_max_m: 12.0
+    stop_line_depth_mad_threshold: 3.5
+    stop_line_max_depth_mad_m: 0.45
+    stop_line_component_merge_px: 8
+    stop_line_distance_merge_m: 0.20
+    sign_min_confidence: 0.50
+    sign_min_area_px: 25.0
+    sign_on_frames: 3
+    sign_off_frames: 2
+    sign_timeout_sec: 0.50
+    traffic_light_min_confidence: 0.50
+    traffic_light_on_frames: 3
+    traffic_light_switch_frames: 3
+    traffic_light_timeout_sec: 0.50
+    traffic_light_conflict_margin: 0.15
+    uphill_on_deg: 15.0
+    uphill_off_deg: 12.0
+    uphill_min_duration_sec: 0.25
+    imu_timeout_sec: 0.20
+    uphill_pitch_sign: 1.0
+    # imu_manager already publishes startup-level-calibrated base_link pitch.
+    # Use that vehicle-frame value directly (nose-up is positive).
+    imu_reference_pitch_deg: 0.0
+    # Stop-line points are transformed at their source timestamp into the
+    # MCU-owned base_link, then front_axle_x=wheelbase/2 is subtracted.  No
+    # front_axle TF is published or required by camera_ws.
+    publish_stop_line_tf: true
+    debug_overlay_enabled: false
+    publish_rate_hz: 20.0

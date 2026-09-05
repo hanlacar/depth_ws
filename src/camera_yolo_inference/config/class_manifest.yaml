@@ -1,0 +1,15 @@
+model:
+  task: segment
+  version: camera_seg_v001
+semantic_roles:
+  road: {required: true, accepted_dataset_names: [road, drivable_area]}
+  white_line: {required: true, accepted_dataset_names: [W_line, white_lane]}
+  yellow_line: {required: true, accepted_dataset_names: [Y_line, yellow_lane]}
+  red_light: {required: true, accepted_dataset_names: [R_light]}
+  green_light: {required: true, accepted_dataset_names: [G_light]}
+  left_arrow: {required: false, accepted_dataset_names: [Left]}
+  other_light: {required: false, accepted_dataset_names: [etc_light]}
+  stop: {required: false, accepted_dataset_names: [stop, stop_line]}
+  traffic20: {required: false, accepted_dataset_names: [traffic20]}
+  center_line: {required: false, accepted_dataset_names: [C_line, c_line]}
+  words: {required: false, accepted_dataset_names: [words]}

@@ -4,6 +4,7 @@
 /maps/*
 !/maps/.gitkeep
 /bags/
+/isaac_ros_ws/
 *.db
 *.db-shm
 *.db-wal
@@ -11,6 +12,7 @@
 *.mcap
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .coverage
 /.vscode/

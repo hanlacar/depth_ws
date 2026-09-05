@@ -1,0 +1,59 @@
+camera_mission_decision_node:
+  ros__parameters:
+    mode_topic: /mcu/current_mode
+    section_topic: /camera/mission/section
+    input_timeout_sec: 0.50
+    planner_timeout_sec: 0.30
+    publish_rate_hz: 20.0
+    slope_stop_duration_sec: 4.0
+    slope_near_crossing_m: 0.25
+    slope_line_spacing_min_m: 0.40
+    slope_line_spacing_max_m: 8.0
+    uphill_arm_pitch_deg: 15.0
+    uphill_off_deg: 12.0
+    uphill_min_duration_sec: 0.25
+    slope_second_line_slow_distance_m: 1.50
+    # Front-axle distance. Conservative initial value only: re-tune from the
+    # measured front-axle/front-bumper geometry and real braking tests.
+    slope_second_line_stop_distance_m: 0.55
+    slope_second_line_stop_tolerance_m: 0.10
+    slope_first_to_second_min_travel_m: 0.50
+    slope_first_to_second_max_travel_m: 8.0
+    slope_stationary_speed_threshold_mps: 0.03
+    slope_stationary_confirm_sec: 0.40
+    slope_second_line_lost_timeout_sec: 0.50
+    intersection_stop_trigger_distance_m: 1.50
+    intersection_crossing_margin_m: 0.0
+    intersection_detection_range_m: 2.0
+    intersection_target_stop_margin_m: 1.0
+    total_control_latency_sec: 0.20
+    # Uncommissioned: keeps LATE_RED_COMMIT_TO_CROSS disabled by default.
+    calibrated_deceleration_mps2: 0.0
+    stop_distance_safety_margin_m: 0.10
+    minimum_line_clearance_m: 0.20
+    green_release_frames: 3.0
+    maximum_steering_deg: 22.0
+    straight_enter_deg: 1.0
+    straight_exit_deg: 1.5
+    turn_enter_deg: 2.0
+    straight_min_duration_sec: 0.50
+    turn_min_duration_sec: 0.25
+    exit_signal_min_confidence: 0.60
+    exit_green_down_confirm_frames: 3.0
+    exit_signal_timeout_sec: 0.50
+    mode_11_exit_signal_enabled: false
+    debug_overlay_enabled: false
+    debug_overlay_rate_hz: 5.0
+    overlay_source_topic: /camera/mission/debug_overlay
+    encoder_topic: /mcu/encoder
+    speed_topic: /mcu/speed_mps
+    distance_topic: /mcu/distance_m
+    speed_valid_topic: /mcu/speed_valid
+    traffic_state_topic: /camera/traffic_light_fused/state
+    traffic_aspect_topic: /camera/traffic_light_fused/aspect
+    traffic_aspect_confidence_topic: /camera/traffic_light_fused/confidence
+    traffic_fusion_diagnostics_topic: /camera/traffic_light_fused/diagnostics
+    candidate_drive_topic: /camera/candidate/path/drive
+    candidate_wheel_topic: /camera/candidate/path/wheel
+    encoder_timeout_sec: 0.50
+    speed_timeout_sec: 0.50

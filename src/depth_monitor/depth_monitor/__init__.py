@@ -1,1 +1,0 @@
-"""Depth SLAM monitoring package."""

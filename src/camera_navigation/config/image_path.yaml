@@ -1,0 +1,197 @@
+camera_image_path_node:
+  ros__parameters:
+    semantic_path_frame_topic: /perception/semantic_path_frame
+    control_mode_topic: /mission/control_mode
+    visualization_only: false
+    input_image_topic: /camera/image_raw
+    path_overlay_max_fps: 45.0
+    # The MP4/D456 semantic messages retain camera header stamps. 80 ms also
+    # tolerates callback reordering while stale arrival age remains capped.
+    rgb_sync_tolerance_sec: 0.08
+    rgb_cache_frames: 60
+    rgb_stale_timeout_sec: 0.50
+    rgb_pending_frames: 12
+    vehicle_center_x_px: 320.0
+    roi_top: 120
+    roi_bottom: 475
+    sample_interval_px: 10
+    sample_band_half_height_px: 2
+    seed_half_width_px: 80
+    seed_height_px: 24
+    minimum_component_pixels: 20
+    maximum_lateral_jump_px: 90.0
+    road_containment_tolerance_px: 8
+    exclusion_overlap_ratio: 0.35
+    polynomial_degree: 2
+    # Current-frame weight. Increased enough to follow real curves while the
+    # previous path still damps frame-to-frame mask jitter.
+    temporal_alpha: 0.55
+    temporal_straight_alpha: 0.28
+    temporal_curve_alpha: 0.72
+    temporal_small_shift_px: 6.0
+    temporal_hysteresis_frames: 3
+    temporal_consistent_boost: 0.30
+    temporal_reacquire_alpha: 0.40
+    # Drop stale frame-to-frame path blending after a camera gap. Learned lane
+    # width remains available for one-sided recovery.
+    temporal_state_timeout_sec: 0.5
+    # maximum_lateral_jump_px is spatial (adjacent y samples);
+    # maximum_temporal_shift_px is inter-frame path movement.
+    maximum_temporal_shift_px: 55.0
+    max_temporal_fallback_frames: 5
+    temporal_fallback_confidence_decay: 0.15
+    max_single_boundary_fallback_frames: 5
+    both_weight: 1.0
+    single_weight: 0.72
+    road_weight: 0.48
+    temporal_weight: 0.25
+    valid_min_points: 6
+    valid_min_single_boundary_points: 5
+    # Retained as a diagnostic/config compatibility parameter; both_ratio is
+    # no longer a hard validity gate.
+    valid_min_both_ratio: 0.0
+    valid_min_confidence: 0.45
+    valid_min_continuity_score: 0.65
+    road_validation_min_rows: 3
+    valid_min_road_containment_ratio: 0.5
+    fit_overshoot_margin_px: 20.0
+    center_direction_outlier_px: 30.0
+    road_gross_outlier_margin_px: 35.0
+    polynomial_residual_scale_px: 18.0
+    curve_moderate_threshold_px: 0.2
+    curve_sharp_threshold_px: 1.5
+    lookahead_straight_ratio: 0.75
+    lookahead_curve_ratio: 0.52
+    lookahead_sharp_ratio: 0.32
+    lane_width_min_px: 20.0
+    lane_width_max_px: 600.0
+    lane_width_update_alpha: 0.2
+    # Physical policy converted through the learned/observed pixel lane width.
+    # vehicle_width_m measured on the deployed vehicle: 0.46 m.
+    # NOTE (checked, not changed this session): minimum_boundary_clearance_m
+    # is still the value that dominates _clearance_fraction() --
+    # max(minimum_boundary_clearance_m, vehicle_width_m/2+margin) picks 1.5
+    # regardless of vehicle_width_m as long as body clearance stays under
+    # 1.5 m (true here: 0.46/2+0.1 = 0.33 m). So the virtual-center offset
+    # fraction (and physical_geometry_ok) do not change with this vehicle
+    # width update; only the separate VEHICLE_CLEARANCE body_fraction gates
+    # in image_path_planner.py (which use vehicle_width_m directly, not
+    # maxed against minimum_boundary_clearance_m) get meaningfully tighter.
+    # Confirm whether minimum_boundary_clearance_m should also be re-scaled
+    # for this vehicle before relying on physical_geometry_ok/virtual-center
+    # placement for real driving -- left unchanged pending that decision.
+    nominal_lane_width_m: 3.0
+    minimum_boundary_clearance_m: 1.5
+    vehicle_width_m: 0.46
+    vehicle_boundary_margin_m: 0.1
+    width_profile_lookup_radius_px: 30.0
+    lane_width_relative_tolerance: 0.5
+    lane_width_absolute_tolerance_px: 30.0
+    # Seed lane width (px) for estimating the opposite boundary from a single
+    # confident edge BEFORE any two-edge width has been learned (e.g. boot-time
+    # frames that only ever see one lane). 0.0 requires a learned width instead.
+    # Learned width always overrides this seed. Set to the typical lane width in the image
+    # near the vehicle; measure from a both-lanes-visible frame (right_x - left_x
+    # at a mid-ROI row). Leave 0.0 until measured.
+    lane_width_seed_px: 0.0
+    # Road-only planner gates are pixel/ratio measurements (no assumed m/px).
+    # Tune from labelled D456 frames before outdoor deployment.
+    road_edge_clip_margin_px: 3
+    road_clipped_weight_scale: 0.55
+    road_near_field_height_px: 80
+    road_minimum_near_coverage_ratio: 0.55
+    road_minimum_near_width_px: 60.0
+    road_width_max_relative_deviation: 0.45
+    road_width_outlier_window_rows: 2
+    road_center_spike_px: 35.0
+    road_single_center_disagreement_ratio: 0.10
+    road_single_boundary_blend: 0.70
+    road_transition_smoothing_alpha: 0.35
+    road_transition_smoothing_max_px: 24.0
+    road_min_width_stability_score: 0.55
+    road_min_center_score: 0.45
+    road_branch_min_rows: 3
+    road_branch_expansion_ratio: 2.2
+    road_branch_gap_tolerance_px: 14
+    # Debounced against transient marking-induced splits (req 3.B). Raised
+    # from the library default (1) for live video; tune down only if a real
+    # branch is missed for multiple frames in a row.
+    branch_confirm_frames: 3
+
+    # --- Ego-vehicle (bumper/bonnet) exclusion (req 1) --------------------
+    # MUST be re-measured against the mounted camera's actual field of view
+    # before outdoor driving: this default trapezoid/ratio was tuned for a
+    # roughly centered 640x480 D456 mount and will be wrong for a different
+    # camera height/pitch/offset.
+    ego_exclusion_enabled: true
+    ego_exclusion_bottom_ratio: 0.12
+    ego_exclusion_polygon: [0.16, 1.00, 0.84, 1.00, 0.72, 0.86, 0.28, 0.86]
+    ego_exclusion_branch_only: false
+
+    # --- Road-marking (diamond/text/arrow) suppression (req 3) ------------
+    road_hole_fill_enabled: true
+    road_hole_close_kernel_px: 9
+    road_hole_max_area_px: 8000
+    marking_suppression_enabled: true
+    marking_max_row_width_px: 18.0
+    marking_min_length_px: 40.0
+    marking_edge_margin_px: 18.0
+
+    # --- Local jump rejection (req 4) --------------------------------------
+    heading_jump_threshold_deg: 35.0
+    curvature_jump_threshold_px: 45.0
+    max_local_outlier_ratio: 0.35
+    temporal_stale_lock_max_frames: 3
+    temporal_stale_recovery_alpha: 0.85
+
+    # --- ROI separation / dynamic PATH ROI ---------------------------------
+    # ROAD ROI stays roi_top/roi_bottom (+ ego exclusion) above; this section
+    # is the narrower, ego/previous-path-centered corridor used only to
+    # filter which lane/boundary points may become path candidates.
+    path_corridor_enabled: true
+    path_corridor_near_half_width_ratio: 0.14
+    path_corridor_mid_half_width_ratio: 0.22
+    path_corridor_far_half_width_ratio: 0.32
+    path_corridor_min_half_width_px: 28.0
+    path_corridor_previous_path_weight: 0.7
+    path_corridor_expand_when_lost: true
+    path_corridor_max_expand_ratio: 2.5
+    path_corridor_expand_step: 0.25
+    path_corridor_shrink_step: 0.15
+
+    # --- Boundary-as-track filtering (marking suppression, stage 2) -------
+    boundary_track_filter_enabled: true
+    boundary_min_vertical_span_ratio: 0.12
+    boundary_max_lateral_slope_change: 0.9
+    boundary_temporal_tolerance_px: 40.0
+    boundary_min_track_score: 0.5
+
+    # --- Final-path physical validation / ROAD_ONLY / source hysteresis ---
+    final_curvature_jump_px: 60.0
+    target_path_points: 24
+    minimum_drivable_horizon_ratio: 0.50
+    max_gap_repair_rows: 4
+    # Must match camera_pixel_controller.yaml. The planner uses the same
+    # pixel PD equation without actuator clamping as its final hard gate.
+    maximum_steering_deg: 22.0
+    steering_lookahead_y_ratio: 0.50
+    steering_proportional_gain_deg_per_norm: 22.0
+    steering_derivative_gain_deg_per_norm_per_s: 2.0
+    max_steering_rate_deg_per_sec: 180.0
+    max_steering_delta_deg_per_frame: 12.0
+    max_steering_delta_deg_per_segment: 12.0
+    steering_repair_previous_weight: 0.65
+    nominal_frame_period_sec: 0.05
+    valid_min_road_only_points: 4
+    source_confirm_frames: 2
+    source_release_frames: 3
+    source_switch_max_lateral_px: 45.0
+    # Final publish-boundary road clearance in original image pixels.
+    # Perspective makes the near-field edge uncertainty largest.
+    final_path_safety_margin_near_px: 12.0
+    final_path_safety_margin_mid_px: 8.0
+    final_path_safety_margin_far_px: 4.0
+    continuity_hard_invalid_floor: 0.15
+    # General image_path launches retain mission ownership gating. The pixel
+    # driving launch overrides this to false so no external mode is required.
+    require_control_mode: true

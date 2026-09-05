@@ -1,0 +1,27 @@
+camera_reference_path_adapter_node:
+  ros__parameters:
+    metric_path_topic: /camera/bev/path
+    reference_path_topic: /avoidance/route/reference_path
+    mode_topic: /mcu/current_mode
+    allowed_modes: ["5"]
+    base_frame_id: base_link
+    odom_frame_id: odom
+    # Every lookup uses the metric Path stamp. Latest-TF fallback is forbidden.
+    tf_lookup_timeout_sec: 0.02
+    pending_retry_rate_hz: 10.0
+    pending_path_timeout_sec: 0.50
+
+    metric_minimum_points: 3
+    metric_minimum_spacing_m: 0.05
+    metric_maximum_point_jump_m: 4.0
+    metric_maximum_reverse_step_m: 0.25
+    metric_minimum_path_length_m: 1.0
+
+    stitch_overlap_distance_m: 0.75
+    stitch_max_position_error_m: 1.5
+    stitch_max_heading_error_deg: 30.0
+    stitch_min_overlap_points: 3
+
+    reference_path_keep_behind_m: 5.0
+    reference_path_max_total_m: 50.0
+    reference_path_target_forward_m: 10.0

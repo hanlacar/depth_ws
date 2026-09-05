@@ -1,0 +1,27 @@
+# RTAB-Map core parameters are strings in the ROS launch interface.
+profiles:
+  default:
+    # Maximum RGB-D frames processed by RTAB-Map each second (Hz).
+    Rtabmap/DetectionRate: "5"
+    # Minimum translation before a new map node is created (m).
+    RGBD/LinearUpdate: "0.05"
+    # Minimum rotation before a new map node is created (rad).
+    RGBD/AngularUpdate: "0.03"
+    Vis/MinInliers: "15"
+  high_density:
+    # Higher processing rate for slow, deliberate high-density capture (Hz).
+    Rtabmap/DetectionRate: "10"
+    # Denser node spacing in translation (m).
+    RGBD/LinearUpdate: "0.03"
+    # Denser node spacing in rotation (rad).
+    RGBD/AngularUpdate: "0.02"
+    Vis/MinInliers: "15"
+
+# These installed RTAB-Map 0.22.1 defaults were inspected but are deliberately
+# not overridden: there is no measured latency/resource evidence for changing
+# feature extraction or persisted image resolution.
+observed_installed_defaults:
+  Kp/MaxFeatures: "500"
+  Mem/ImagePreDecimation: "1"
+  Mem/ImagePostDecimation: "1"
+  Grid/DepthDecimation: "4"

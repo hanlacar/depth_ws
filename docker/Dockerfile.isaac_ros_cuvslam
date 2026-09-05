@@ -1,0 +1,17 @@
+ARG BASE_IMAGE=local/isaac_ros-realsense_be0a60ff95f61811577634e6cdaee0d3-amd64:latest
+FROM ${BASE_IMAGE}
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-jazzy-isaac-ros-visual-slam=4.6.0-0noble.20260818193553000 \
+    ros-jazzy-isaac-ros-visual-slam-interfaces \
+    ros-jazzy-isaac-ros-examples \
+    ros-jazzy-rtabmap-ros \
+    ros-jazzy-rmw-fastrtps-cpp \
+    python3-psutil \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV ROS_DOMAIN_ID=41
+ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics

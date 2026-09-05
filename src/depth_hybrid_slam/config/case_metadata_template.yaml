@@ -1,0 +1,37 @@
+case_id: ""
+map_id: ""
+route_id: ""
+created_at: ""
+rtabmap_db_sha256: "filled-by-case-manager"
+route_sha256: "filled-by-case-manager"
+d456_serial: "338122302896"
+camera_mount: {x_m: 0.32, y_m: 0.0, z_m: 0.85, pitch_deg: -5.0}
+sensor_profiles:
+  color: "640x480@60"
+  depth: "640x480@60"
+  infrared_left: "640x480@60"
+  infrared_right: "640x480@60"
+  gyro_hz: 400
+  accel_hz: 400
+vehicle:
+  length_m: 1.40
+  width_m: 0.80
+  wheelbase_m: 0.73
+  track_m: 0.37
+  max_steering_deg: 22.0
+  minimum_turning_radius_m: 1.8068134
+  steering_sign: "right_positive"
+ros_domain_id: 41
+rmw_implementation: "rmw_fastrtps_cpp"
+depth_ws_commit: ""
+camera_ws_commit: ""
+mcu_commit: ""
+start_pose: {}
+end_pose: {}
+route_point_count: 0
+loop_closure_count: 0
+odometry_reset_count: 0
+map_session_count: 1
+localization_quality: "NOT_VALIDATED"
+user_notes: ""
+mission_markers: []

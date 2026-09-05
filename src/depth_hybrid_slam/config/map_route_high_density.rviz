@@ -1,0 +1,119 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.35
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 120; 120; 120
+      Enabled: true
+      Name: Ground Grid
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 1
+      Class: rtabmap_rviz_plugins/MapCloud
+      Cloud decimation: 2
+      Cloud from scan: false
+      Cloud max depth (m): 6
+      Cloud min depth (m): 0.2
+      Cloud voxel size (m): 0.02
+      Color Transformer: RGB8
+      Download graph: true
+      Download map: true
+      Download namespace: /rtabmap/rtabmap
+      Enabled: true
+      Name: Saved Map Cloud
+      Size (Pixels): 2
+      Style: Points
+      Topic:
+        Depth: 2
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rtabmap/mapData
+      Use Fixed Frame: true
+      Value: true
+    - Class: rtabmap_rviz_plugins/MapGraph
+      Enabled: true
+      Global loop closure: 255; 0; 0
+      Landmark: 0; 128; 0
+      Local loop closure: 255; 255; 0
+      Name: Saved Map Graph
+      Neighbor: 0; 0; 255
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rtabmap/mapGraph
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Color: 0; 220; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.03
+      Name: SLAM Capture Trajectory
+      Pose Style: None
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rtabmap/mapPath
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Color: 255; 0; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Vehicle Reference Route
+      Pose Style: Axes
+      Pose Axes Length: 0.15
+      Pose Axes Radius: 0.015
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/path
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 35; 35; 35
+    Fixed Frame: map
+    Frame Rate: 20
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 8
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+Window Geometry:
+  Height: 900
+  Width: 1440

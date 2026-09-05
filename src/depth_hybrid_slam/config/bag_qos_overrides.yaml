@@ -1,0 +1,94 @@
+/camera/camera/color/image_raw:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/color/camera_info:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/color/metadata:
+  history: keep_last
+  depth: 10
+  reliability: reliable
+  durability: volatile
+/camera/camera/depth/image_rect_raw:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/depth/camera_info:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/depth/metadata:
+  history: keep_last
+  depth: 10
+  reliability: reliable
+  durability: volatile
+/camera/camera/aligned_depth_to_color/image_raw:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/infra1/image_rect_raw:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/infra1/camera_info:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/infra1/metadata:
+  history: keep_last
+  depth: 10
+  reliability: reliable
+  durability: volatile
+/camera/camera/infra2/image_rect_raw:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/infra2/camera_info:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/camera/infra2/metadata:
+  history: keep_last
+  depth: 10
+  reliability: reliable
+  durability: volatile
+/camera/camera/gyro/sample:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/camera/camera/accel/sample:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/camera/camera/imu:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/visual_slam/tracking/odometry:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/depth_slam/cuvslam/odometry:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/tf_static:
+  history: keep_all
+  reliability: reliable
+  durability: transient_local

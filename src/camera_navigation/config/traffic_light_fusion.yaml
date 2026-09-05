@@ -1,0 +1,29 @@
+traffic_light_fusion_node:
+  ros__parameters:
+    yolo_detections_topic: /perception/detections_json
+    yolo_state_topic: /camera_traffic_light
+    rgb_state_topic: /camera/traffic_light_rgb/state
+    rgb_aspect_topic: /camera/traffic_light_rgb/aspect
+    rgb_confidence_topic: /camera/traffic_light_rgb/confidence
+    rgb_diagnostics_topic: /camera/traffic_light_rgb/diagnostics
+    route_mode_topic: /mcu/current_mode
+    fused_state_topic: /camera/traffic_light_fused/state
+    fused_aspect_topic: /camera/traffic_light_fused/aspect
+    fused_confidence_topic: /camera/traffic_light_fused/confidence
+    fused_diagnostics_topic: /camera/traffic_light_fused/diagnostics
+    publish_rate_hz: 20.0
+
+    fusion_yolo_timeout_sec: 0.50
+    fusion_rgb_timeout_sec: 0.50
+    fusion_max_stamp_delta_sec: 0.08
+    fusion_min_yolo_confidence: 0.50
+    fusion_min_rgb_confidence: 0.55
+    fusion_confirm_frames: 3
+    fusion_switch_confirm_frames: 4
+    fusion_conflict_margin: 0.15
+    fusion_single_source_confirm_frames: 4
+
+    # Initial pixel-space association thresholds for 640x480. Re-tune with
+    # mounted-camera recordings; missing position never enables stop priority.
+    fusion_bbox_iou_threshold: 0.05
+    fusion_bbox_center_distance_px: 80.0

@@ -1,0 +1,80 @@
+camera_pixel_controller_node:
+  ros__parameters:
+    # Non-BEV (pixel-space) controller. Needs NO camera extrinsics, NO
+    # ground-plane calibration, NO IMU attitude lock. Steering is a PD
+    # response to the lateral pixel offset of a look-ahead row.
+    image_path_topic: /camera/image_path_typed
+    maximum_steering_deg: 22.0
+    # ImagePath x_px grows right; flip here if the vehicle steers the wrong way.
+    steering_sign: 1.0
+    # Look-ahead row along the path: 0.0 = nearest (bottom of image, closest
+    # to the vehicle, most reactive), 1.0 = farthest (top, smoothest). 0.5 is
+    # a balanced start; lower it if the car cuts corners, raise it if it weaves.
+    lookahead_y_ratio: 0.5
+    # PD gains in degrees per normalized offset (offset / half-image-width).
+    # Start with P only (derivative 0) on the real car, then add a little D to
+    # damp oscillation. proportional 22 -> full-frame edge (norm=1) asks ~22 deg.
+    proportional_gain_deg_per_norm: 22.0
+    derivative_gain_deg_per_norm_per_s: 2.0
+    # Longitudinal: CRUISE by default, SLOW once final |camera_wheel| hits 5 deg.
+    normal_drive_command: 2.0
+    slow_drive_command: 1.0
+    steering_slowdown_threshold_deg: 5.0
+    # Safety
+    minimum_confidence: 0.0
+    # Valid but lower-quality paths remain fail-safe SLOW. ROAD_CENTER and
+    # sustained single-boundary paths never receive CRUISE by default.
+    low_confidence_slow_threshold: 0.65
+    road_source_slow_ratio: 0.40
+    single_source_slow_ratio: 0.50
+    minimum_path_points: 3
+    # At 40-50 FPS this allows roughly 6-7 missed frames. The timer-based
+    # controller publishes STOP even if the path callback itself has stopped.
+    path_timeout_sec: 0.15
+    source_stamp_timeout_sec: 0.15
+    # 180 deg/s at the 20 Hz control rate permits at most about 9 deg/cycle.
+    # INVALID/timeout still center the wheel and stop drive immediately.
+    max_steering_rate_deg_per_sec: 180.0
+    control_rate_hz: 20.0
+
+    # Stop-line longitudinal control. The semantic mask is paired only with
+    # RealSense depth already aligned into color coordinates.
+    semantic_path_frame_topic: /perception/semantic_path_frame
+    aligned_depth_topic: /camera/aligned_depth_to_color/image_raw
+    depth_unit_scale_m: 0.001
+    depth_sync_tolerance_sec: 0.05
+    depth_cache_size: 120
+    stop_line_slowdown_distance_m: 2.0
+    stop_line_stop_distance_m: 0.7
+    # T870 center-base geometry: vehicle front 0.500 - camera x 0.015.
+    camera_to_front_bumper_m: 0.485
+    stop_line_release_margin_m: 0.2
+    stop_line_confirmation_frames: 3
+    stop_line_measurement_timeout_sec: 0.5
+    stop_line_center_roi_width_ratio: 0.6
+    stop_line_min_depth_m: 0.1
+    stop_line_max_depth_m: 20.0
+    stop_line_min_valid_depth_pixels: 20
+    stop_line_depth_percentile: 50.0
+    stop_line_depth_mad_scale: 3.5
+
+    # One-shot uphill stop. The IMU manager owns pitch filtering and slope
+    # hysteresis; this controller consumes only its Bool state and validity.
+    imu_slope_topic: /imu/slope
+    imu_valid_topic: /imu/valid
+    imu_state_timeout_sec: 0.2
+    uphill_stop_duration_sec: 5.0
+
+    # Stop-line memory / front-axle crossing (req 2). Independent of
+    # image_path_planner's ego-bumper exclusion -- reads the raw stop-line
+    # mask/depth directly and keeps tracking distance through occlusion via
+    # the MCU-calculated cumulative wheel distance. MUST be
+    # re-measured on the deployed vehicle: front_axle_offset_m and
+    # camera_to_bumper_m are chassis-fixed dimensions, not tuning knobs.
+    distance_topic: /mcu/distance_m
+    front_axle_offset_m: 0.350
+    camera_to_bumper_m: 0.485
+    stopline_near_bumper_row_ratio: 0.92
+    stopline_memory_timeout_sec: 3.0
+    stopline_depth_min_confidence: 0.35
+    stopline_passed_confirm_sec: 0.15

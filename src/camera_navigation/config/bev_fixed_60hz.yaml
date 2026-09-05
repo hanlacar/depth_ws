@@ -1,0 +1,12 @@
+direct_bev_planner_node:
+  ros__parameters:
+    fixed_output_rate_enabled: true
+    output_rate_hz: 60.0
+    path_stale_timeout_sec: 0.20
+    state_stale_timeout_sec: 0.20
+    camera_overlay_stale_timeout_sec: 0.20
+
+direct_bev_controller_node:
+  ros__parameters:
+    fixed_output_rate_enabled: true
+    control_rate_hz: 60.0

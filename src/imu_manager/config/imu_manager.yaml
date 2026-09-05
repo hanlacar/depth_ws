@@ -1,0 +1,57 @@
+/**:
+  ros__parameters:
+    gyro_topic: /camera/camera/gyro/sample
+    accel_topic: /camera/camera/accel/sample
+    mode_topic: /vehicle_mode
+    output_frame: base_link
+    publish_rate_hz: 50.0
+    stale_timeout_sec: 0.2
+    complementary_alpha: 0.98
+    max_dt_sec: 0.1
+    stationary_gyro_threshold: 0.03
+    stationary_accel_tolerance: 0.35
+    bias_sample_count: 200
+    # The D456 ROS motion topics on this installation already report the
+    # mechanical IMU axes.  A stationary measurement was approximately
+    # [0.235, -0.041, 9.690] m/s^2 before this matrix, so preserve +Z as the
+    # gravity/up axis. Confirm X/Y signs with physical pitch/roll/yaw tests.
+    sensor_axis_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    # Roll/Pitch are replaced in memory by startup calibration when enabled.
+    mounting_roll_deg: 0.0
+    mounting_pitch_deg: 0.0
+    # Gravity cannot observe yaw; mechanically align camera and vehicle forward.
+    mounting_yaw_deg: 0.0
+    orientation_roll_pitch_variance: 0.02
+    # Large because yaw is relative gyro integration, never absolute heading.
+    orientation_yaw_variance: 1.0
+    # Used only when startup_calibration_enabled is false.
+    calibration_validated: false
+    startup_calibration_enabled: true
+    startup_calibration_duration_sec: 3.0
+    startup_calibration_timeout_sec: 15.0
+    startup_gyro_still_threshold_rad_s: 0.05
+    startup_accel_stddev_limit_mps2: 0.10
+    startup_accel_norm_min_mps2: 8.5
+    startup_accel_norm_max_mps2: 11.0
+    assume_vehicle_level_at_start: true
+    calibration_mode: LEVEL
+    duration_sec: 10
+    gravity_norm_min: 7.0
+    gravity_norm_max: 12.0
+    max_stationary_accel_stddev: 0.25
+    motion_gyro_threshold: 0.08
+    min_validation_rotation_rate: 0.10
+    max_cross_axis_ratio: 0.50
+    # Inverted installation must be explicitly authorized after physical check.
+    allow_inverted_mount: false
+    plausible_mount_angle_limit_deg: 45.0
+    level_xy_tolerance_mps2: 0.05
+    transform_consistency_epsilon: 1.0e-9
+    # Signed reflections must remain an explicit configuration decision.
+    allow_axis_reflection: true
+    # Startup-level-relative, signed base_link Pitch. Nose-up/uphill is positive.
+    # The 0.10 m/s^2 startup noise limit is about 0.58 deg; 3 deg provides
+    # useful margin while remaining adjustable for the actual vehicle/road.
+    uphill_enter_pitch_deg: 3.0
+    uphill_exit_pitch_deg: 1.5
+    uphill_confirmation_frames: 10

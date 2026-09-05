@@ -1,0 +1,23 @@
+mapping_quality:
+  ready_tracking_seconds: 3.0
+  minimum_rgb_fps: 30.0
+  minimum_depth_fps: 30.0
+  minimum_odometry_fps: 30.0
+  maximum_rtabmap_latency_ms: 50.0
+  pose_jump_translation_m: 0.75
+  pose_jump_rotation_rad: 0.5235987756
+  map_correction_translation_m: 0.50
+  map_correction_rotation_rad: 0.3490658504
+  recording_hold_seconds: 2.0
+  # Operational record-hold limit, configurable after real-vehicle validation.
+  maximum_recording_yaw_rate_rad_s: 0.40
+  require_reset_zero: true
+  require_tf_chain: true
+  # Calibrate these from stationary and slow-motion D456 reports before use.
+  # Null keeps the raw metric visible without inventing a pass threshold.
+  minimum_blur_score: null
+  minimum_depth_valid_ratio: null
+  maximum_overexposed_ratio: null
+  maximum_underexposed_ratio: null
+  minimum_rtabmap_inliers: null
+  report_path: ""
