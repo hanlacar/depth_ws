@@ -16,3 +16,31 @@ __pycache__/
 .pytest_cache/
 .coverage
 /.vscode/
+
+# ROS build outputs
+build/
+install/
+log/
+
+# Generated analysis
+analysis/
+
+# SLAM / mapping large files
+*.db
+*.db3
+*.mcap
+*.bag
+*.ply
+*.pcd
+*.npz
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local editor cache
+.vscode/browse.vc.db
+
+# Recorded rosbag data
+bags/
+*.mcap.zstd

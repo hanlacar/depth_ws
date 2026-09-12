@@ -1,0 +1,153 @@
+format_version: 4
+finalized: true
+route_name: competition_active_a_piecewise_candidate
+route_csv: /home/qor/depth_ws/routes/network/route_network_segmented_aligned.csv
+route_sha256: 72f3fc5ad696982b037a561843552438c227aa8ce5192f44c2af3f650fcafba1
+rtabmap_db: /home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db
+rtabmap_db_sha256: a9606bed581f1f32b06af5a68b37d41dfccc74f8cda3840bb7fb76c7ac6795ca
+route_coordinate_frame: map
+source_coordinate_frame: gps_local_enu
+frame_id: map
+units: m
+alignment:
+  method: piecewise_se2_ordered_distinctive_sections
+  required_for_runtime: true
+  validated: false
+  route_length_m: 723.5079026231357
+  blend_distance_m: 8.0
+  interpolation: centered cubic smoothstep; shortest angular distance
+  rmse_m: 0.9887863533817437
+  median_error_m: 0.31601729074020934
+  p95_error_m: 2.319099544491973
+  max_error_m: 4.403481972656519
+  zones:
+  - id: ZONE_01_START
+    start_s_m: 0.0
+    end_s_m: 51.331792261593264
+    theta_rad: -2.642547287220415
+    theta_deg: -151.4068067214747
+    tx_m: -1.5763595986005114
+    ty_m: -2.9955114225173274
+    anchor_source: START_A modes=[1, 2]
+    anchor_start_s_m: 0.0
+    anchor_end_s_m: 51.20121468058393
+    rmse_m: 0.3287176244003693
+    median_error_m: 0.14109564689495296
+    p95_error_m: 0.525414213371
+    max_error_m: 2.0539562846326254
+    validated: false
+  - id: ZONE_02_FIRST_CORNER
+    start_s_m: 51.331792261593264
+    end_s_m: 149.75157473614075
+    theta_rad: -2.701634096648555
+    theta_deg: -154.79223152660094
+    tx_m: -2.8206346369255257
+    ty_m: -0.006968282183350993
+    anchor_source: START_A modes=[3]
+    anchor_start_s_m: 51.462369842602605
+    anchor_end_s_m: 143.18236942663057
+    rmse_m: 0.5089842278002601
+    median_error_m: 0.26669230613884576
+    p95_error_m: 1.072760920421332
+    max_error_m: 1.5766583564092291
+    validated: false
+  - id: ZONE_03_NARROW
+    start_s_m: 149.75157473614075
+    end_s_m: 188.88823648201014
+    theta_rad: -2.6656519395399374
+    theta_deg: -152.7306057865005
+    tx_m: -1.2569903169993921
+    ty_m: -2.0193404234944126
+    anchor_source: COMMON_1 modes=[4]
+    anchor_start_s_m: 156.32078004565096
+    anchor_end_s_m: 188.80818942180647
+    rmse_m: 0.18941211916133235
+    median_error_m: 0.12535228925227418
+    p95_error_m: 0.2980878765530796
+    max_error_m: 0.8347408029385005
+    validated: true
+  - id: ZONE_04_S_CURVE
+    start_s_m: 188.88823648201014
+    end_s_m: 295.3712332043746
+    theta_rad: -2.641086691134599
+    theta_deg: -151.32312073018414
+    tx_m: -0.7409667225938819
+    ty_m: -3.9751912938315286
+    anchor_source: COMMON_1 modes=[5]
+    anchor_start_s_m: 188.9682835422138
+    anchor_end_s_m: 244.46112932999782
+    rmse_m: 0.5444548821020233
+    median_error_m: 0.30372354037681115
+    p95_error_m: 1.3135607316031415
+    max_error_m: 1.4446105718211426
+    validated: false
+  - id: ZONE_05_LONG_CORRIDOR
+    start_s_m: 295.3712332043746
+    end_s_m: 592.8216714923991
+    theta_rad: -2.6570228581926223
+    theta_deg: -152.23619584422428
+    tx_m: -0.11389990463024091
+    ty_m: -2.331105579356766
+    anchor_source: COMMON_2 modes=[8]
+    anchor_start_s_m: 346.28133707875145
+    anchor_end_s_m: 510.8840560357358
+    rmse_m: 1.1217530945176613
+    median_error_m: 0.672638672380133
+    p95_error_m: 2.818229043865857
+    max_error_m: 2.9834706088147103
+    validated: false
+  - id: ZONE_06_END
+    start_s_m: 592.8216714923991
+    end_s_m: 723.5079026231357
+    theta_rad: -2.6647366758918385
+    theta_deg: -152.6781650423227
+    tx_m: -1.827536764209512
+    ty_m: -0.30900721489725314
+    anchor_source: END_common+END_AA modes=[11]
+    anchor_start_s_m: 674.7592869490624
+    anchor_end_s_m: 723.5079026231357
+    rmse_m: 0.25549055556785294
+    median_error_m: 0.15849351909113804
+    p95_error_m: 0.6070652660948371
+    max_error_m: 0.9308484340199596
+    validated: true
+  approval_checks:
+    overall_median: false
+    overall_rmse: false
+    overall_p95: false
+    all_distinct_zones: false
+    s_section: false
+    waypoint_continuity: true
+    steering_limit: true
+    improves_single_rmse: false
+selection:
+  default_branch: A
+  external_branch_topic: false
+  active_segments:
+  - START_A
+  - COMMON_1
+  - T_foword
+  - T_A
+  - COMMON_2
+  - V_A
+  - END_common
+  - END_AA
+  excluded_b_segments:
+  - START_B
+  - T_B
+  - V_B
+  - END_AB
+continuity:
+  max_waypoint_gap_m: 1.0855798540987203
+  max_segment_boundary_gap_m: 0.9037755562422527
+  max_transform_boundary_gap_m: 0.34277498892049135
+  max_yaw_jump_deg: 11.827123834829665
+  max_transform_boundary_yaw_jump_deg: 5.894112804865051
+  max_schedule_theta_step_deg: 0.1742521359993817
+  max_schedule_translation_step_m: 0.16662398180076624
+vehicle_geometry:
+  method: per-motion-block 0.20m resample, 2.0m Savitzky-Golay
+  max_abs_required_steering_deg: 19.161903196070497
+  p99_abs_required_steering_deg: 15.024270973055001
+  limit_deg: 22.0
+  passed: true

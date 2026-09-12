@@ -34,7 +34,7 @@ def test_commissioned_mount_and_realsense_internal_tf_contract():
     mount = (ROOT/'depth_hybrid_slam/launch/cuvslam_only.launch.py').read_text()
     assert '"--x", "0.015"' in mount
     assert '"--y", "0"' in mount
-    assert '"--z", "0.970"' in mount
+    assert '"--z", "0.835"' in mount
     assert '"--pitch", "0.0872665"' in mount
     d456 = (ROOT/'depth_hybrid_slam/config/d456_60hz.yaml').read_text()
     assert 'publish_tf: true' in d456

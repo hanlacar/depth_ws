@@ -2,7 +2,7 @@
 
 차량 제원과 기본값은 `config/vehicle_navigation.yaml`이 단일 실행 설정이다.
 wheelbase 0.73 m, 조향 한계 ±22°, 최소 회전반경 1.8068134 m이며 T870 명령 부호는
-오른쪽 양수다. 모든 실제 명령은 기존 `/slam_drive`와 `/slam_wheel`만 사용한다.
+왼쪽 양수, 오른쪽 음수다. 모든 실제 명령은 기존 `/slam_drive`와 `/slam_wheel`만 사용한다.
 
 기본 `dry_run=true`, `enable_control=false`, `user_approved=false`에서는 실제 명령을
 발행하지 않는다. 실제 제어에는 최신 pose, `TRACKING`/`RELOCALIZED` 안정화, map/route
@@ -23,6 +23,13 @@ map/route 검증 뒤 같은 상태 머신을 사용한다. reverse connector는 
 
 ## 시각화와 진단
 
+- `/depth_slam/route/reference_path` (`nav_msgs/Path`, 주황): metadata의
+  `csv_to_map`을 적용한 active A 경로
+- `/depth_slam/route/raw_csv_path` (`nav_msgs/Path`, 자홍): 변환 전 GPS-local ENU
+  수치 좌표를 RViz의 map 축에 그대로 그린 **정합 전/후 비교 전용** 경로. 물리적인
+  map-frame 경로 또는 제어 입력으로 해석하면 안 된다.
+- `/depth_slam/route/piecewise_path` (`nav_msgs/Path`, 파랑): 오프라인 생성한 piecewise
+  SE(2) 후보. 검증 전에는 비교 표시만 하며 follower의 제어 reference로 승격하지 않는다.
 - `/depth_slam/rejoin/path` (`nav_msgs/Path`): 선택된 Dubins/Reeds–Shepp-subset 연결 경로
 - `/depth_slam/rejoin/candidates` (`visualization_msgs/MarkerArray`): 방향 검사를 통과한
   합류 후보와 선택점

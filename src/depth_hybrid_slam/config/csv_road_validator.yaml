@@ -1,0 +1,20 @@
+csv_road_validator:
+  ros__parameters:
+    semantic_topic: /perception/semantic_path_frame
+    camera_info_topic: /camera/camera_info
+    local_path_topic: /depth_slam/csv_validation/local_path
+    path_frame_id: base_link
+    semantic_timeout_s: 0.50
+    path_timeout_s: 0.50
+    camera_info_timeout_s: 5.0
+    publish_hz: 10.0
+    forward_min_m: 0.5
+    forward_max_m: 4.0
+    y_min_m: -3.0
+    y_max_m: 3.0
+    resolution_m: 0.04
+    vehicle_width_m: 0.78
+    minimum_center_inside_ratio: 0.90
+    minimum_vehicle_corridor_inside_ratio: 0.75
+    minimum_visible_path_ratio: 0.70
+    minimum_road_confidence: 0.70

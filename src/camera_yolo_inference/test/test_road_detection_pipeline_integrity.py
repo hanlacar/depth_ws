@@ -11,14 +11,16 @@ GPU/model-file-dependent tests skip gracefully when unavailable (CI without
 a GPU, or the model file not present) rather than failing the whole suite.
 """
 import os
+from pathlib import Path
 import unittest
 
 import numpy as np
 import yaml
 
-MODEL_PT = "/home/qor/camera_ws/src/camera_yolo_inference/models/hanla_yolo11n_seg_best.pt"
-MODEL_ENGINE = "/home/qor/camera_ws/src/camera_yolo_inference/models/hanla_yolo11n_seg_best.engine"
-MANIFEST_PATH = "/home/qor/camera_ws/src/camera_yolo_inference/config/class_manifest.yaml"
+PACKAGE_ROOT = Path(__file__).parents[1]
+MODEL_PT = str(PACKAGE_ROOT/"models"/"hanla_yolo11n_seg_best.pt")
+MODEL_ENGINE = str(PACKAGE_ROOT/"models"/"hanla_yolo11n_seg_best.engine")
+MANIFEST_PATH = str(PACKAGE_ROOT/"config"/"class_manifest.yaml")
 
 
 def _cuda_available():
@@ -106,7 +108,7 @@ class BackendDecodeIntegrityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import cv2
-        video = "/home/qor/urrc_hanla/20260829_170118.mp4"
+        video = os.environ.get("DEPTH_WS_REFERENCE_VIDEO", "")
         if not os.path.isfile(video):
             raise unittest.SkipTest("reference test video not present")
         cap = cv2.VideoCapture(video)

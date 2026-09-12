@@ -1,0 +1,22 @@
+verified_on: "Ubuntu 24.04 / ROS 2 Jazzy"
+servers:
+  - nav2_map_server
+  - nav2_planner
+  - nav2_controller
+  - nav2_behaviors
+  - nav2_bt_navigator
+  - nav2_lifecycle_manager
+planners:
+  - nav2_navfn_planner::NavfnPlanner
+  - nav2_smac_planner::SmacPlanner2D
+  - nav2_smac_planner::SmacPlannerHybrid
+  - nav2_smac_planner::SmacPlannerLattice
+  - nav2_theta_star_planner::ThetaStarPlanner
+controllers:
+  - dwb_core::DWBLocalPlanner
+  - nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+  - nav2_rotation_shim_controller::RotationShimController
+  - nav2_graceful_controller::GracefulController
+runtime_policy: >-
+  Only map_server is started during offline route authoring. Planner and
+  controller servers are deliberately not connected to vehicle outputs.

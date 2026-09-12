@@ -1,0 +1,35 @@
+# Commissioned camera_ws metric-projection contract copied into depth_ws.
+# This is optical-centre calibration, distinct from the MCU camera_link TF.
+/**:
+  ros__parameters:
+    camera_mount:
+      configured: true
+      position_x_m: 0.015
+      position_y_m: 0.0
+      height_z_m: 0.970
+      reference_roll_deg: 0.0
+      reference_pitch_deg: -5.0
+      reference_yaw_deg: 0.0
+    init_window_sec: 1.0
+    init_min_samples: 15
+    init_max_samples: 400
+    init_max_accel_stddev_mps2: 0.25
+    init_gravity_norm_min_mps2: 8.5
+    init_gravity_norm_max_mps2: 11.0
+    init_max_gyro_norm_rad_s: 0.08
+    init_low_pass_alpha: 0.2
+    init_outlier_mad_k: 3.5
+    max_runtime_pitch_correction_deg: 5.0
+    max_runtime_roll_correction_deg: 5.0
+    max_calibration_age_sec: 3600.0
+    accel_topic: /camera/camera/accel/sample
+    gyro_topic: /camera/camera/gyro/sample
+    camera_info_topic: /camera/camera_info
+    pixel_path_topic: /camera/image_path_typed
+    metric_path_frame_id: base_link
+    metric_path_max_range_m: 30.0
+    metric_minimum_points: 3
+    metric_minimum_spacing_m: 0.05
+    metric_maximum_point_jump_m: 4.0
+    metric_maximum_reverse_step_m: 0.25
+    metric_minimum_path_length_m: 1.0

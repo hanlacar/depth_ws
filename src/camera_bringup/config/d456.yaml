@@ -1,0 +1,27 @@
+/camera/camera:
+  ros__parameters:
+    enable_color: true
+    rgb_camera.color_profile: "640x480x60"
+    rgb_camera.color_format: "RGB8"
+    rgb_camera.enable_auto_exposure: true
+    color_qos: "SENSOR_DATA"
+    enable_depth: true
+    depth_module.depth_profile: "640x480x60"
+    depth_module.depth_format: "Z16"
+    enable_infra: false
+    enable_infra1: false
+    enable_infra2: false
+    enable_gyro: true
+    gyro_fps: 200
+    gyro_qos: "SENSOR_DATA"
+    enable_accel: true
+    accel_fps: 100
+    accel_qos: "SENSOR_DATA"
+    enable_motion: false
+    unite_imu_method: 0
+    pointcloud.enable: false
+    align_depth.enable: true
+    enable_sync: true
+    enable_rgbd: false
+    publish_tf: true
+    wait_for_device_timeout: 10.0

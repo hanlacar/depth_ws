@@ -52,13 +52,16 @@ def test_classroom_rviz_contract():
     assert manager["Global Options"]["Fixed Frame"] == "map"
     displays = manager["Displays"]
     topics = {d.get("Topic", {}).get("Value") for d in displays}
-    assert "/rtabmap/mapData" in topics
-    assert "/rtabmap/mapGraph" in topics
+    assert "/map" in topics
+    assert "/vslam_map/cloud" in topics
     assert "/rtabmap/cloud_map" in topics
     assert "/depth_slam/localization/odometry" in topics
+    assert "/depth_slam/route/reference_path" in topics
+    assert "/depth_slam/route/raw_csv_path" in topics
+    assert "/depth_slam/route/piecewise_path" in topics
     assert "/visual_slam/vis/localizer_loop_closure_cloud" not in topics
-    map_cloud = next(d for d in displays if d.get("Name") == "Saved Map Cloud")
-    assert map_cloud["Download namespace"] == "/rtabmap/rtabmap"
+    map_cloud = next(d for d in displays if d.get("Name") == "Saved V10 PLY Cloud")
+    assert map_cloud["Enabled"] is True
     published = next(d for d in displays if d.get("Name") == "Published Full Cloud")
     assert published["Enabled"] is False
 
@@ -68,3 +71,16 @@ def test_localization_uses_tf_to_avoid_zero_odom_covariance():
     assert '"odom_frame_id": "odom" if localization else ""' in source
     assert '"odom_tf_linear_variance": "0.001"' in source
     assert '"odom_tf_angular_variance": "0.01"' in source
+
+
+def test_cuvslam_does_not_duplicate_mcu_or_rtabmap_tf_edges():
+    source = (ROOT/"launch"/"cuvslam_only.launch.py").read_text()
+    assert '"publish_odom_to_base_tf": False' in source
+    assert '"publish_map_to_odom_tf": False' in source
+
+
+def test_cuvslam_camera_mount_tf_is_explicit_opt_in():
+    source = (ROOT/"launch"/"cuvslam_only.launch.py").read_text()
+    common = (ROOT/"depth_hybrid_slam"/"launch_common.py").read_text()
+    assert 'LaunchConfiguration("publish_camera_mount_tf")' in source
+    assert '"publish_camera_mount_tf": "false"' in common

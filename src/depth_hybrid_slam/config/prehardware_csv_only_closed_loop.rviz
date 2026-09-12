@@ -1,0 +1,148 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.48
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 50; 220; 80
+      Enabled: true
+      Head Diameter: 0.20
+      Head Length: 0.15
+      Length: 0.20
+      Line Style: Lines
+      Line Width: 0.16
+      Name: CSV Active Route (Emphasized)
+      Offset: {X: 0, Y: 0, Z: 0}
+      Pose Color: 255; 255; 255
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.08
+      Shaft Length: 0.10
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/reference_path
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/csv_only/full_network
+      Name: Full A/B Network and STOP Markers
+      Namespaces:
+        COMMON_1: true
+        COMMON_2: true
+        END_AA: true
+        END_AB: true
+        END_common: true
+        ROUTE_CASE_STATUS: true
+        START_A: true
+        START_B: true
+        STOP_MARKERS: true
+        T_A: true
+        T_B: true
+        T_foword: true
+        V_foword: true
+        V_A: true
+        V_B: true
+        label_END_AA: true
+        label_END_AB: true
+        label_START_A: true
+        label_START_B: true
+        label_T_A: true
+        label_T_B: true
+        label_V_A: true
+        label_V_B: true
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/csv_only/markers
+      Name: Virtual Vehicle Pose
+      Namespaces:
+        csv_only_vehicle: true
+        injected_disturbance: true
+        recovery_target: true
+        recovery_status: true
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 170; 20
+      Enabled: true
+      Head Diameter: 0.15
+      Head Length: 0.10
+      Length: 0.10
+      Line Style: Lines
+      Line Width: 0.04
+      Name: Virtual Trajectory
+      Offset: {X: 0, Y: 0, Z: 0}
+      Pose Color: 255; 255; 255
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.06
+      Shaft Length: 0.08
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/csv_only/trajectory
+      Value: true
+    - Class: rviz_default_plugins/PointStamped
+      Color: 255; 255; 0
+      Enabled: true
+      History Length: 1
+      Name: Follower Target
+      Radius: 0.35
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/target_point
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 20; 20; 20
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Views:
+    Current:
+      Angle: 0
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Top Down
+      Near Clip Distance: 0.01
+      Scale: 10
+      Target Frame: map
+      X: 28
+      Y: 30
+Window Geometry:
+  Height: 900
+  Width: 1440

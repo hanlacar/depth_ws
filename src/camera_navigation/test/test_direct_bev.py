@@ -157,7 +157,7 @@ def test_commissioned_camera_height_and_pitch_are_in_mount_config():
     mount = (Path(__file__).parents[2] / "depth_hybrid_slam" / "launch" /
              "cuvslam_only.launch.py").read_text(encoding="utf-8")
     assert '"--x", "0.015"' in mount
-    assert '"--z", "0.970"' in mount
+    assert '"--z", "0.835"' in mount
     assert '"--pitch", "0.0872665"' in mount
 
 

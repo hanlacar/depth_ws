@@ -15,6 +15,7 @@ class RoutePathPublisher(Node):
         super().__init__("route_path_publisher")
         self.declare_parameter("route_path", "")
         self.declare_parameter("include_invalid", False)
+        self.declare_parameter("path_topic", "/depth_slam/route/path")
         route_path = str(self.get_parameter("route_path").value)
         if not route_path:
             raise ValueError("route_path is required")
@@ -22,7 +23,8 @@ class RoutePathPublisher(Node):
             route_path, bool(self.get_parameter("include_invalid").value))
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                          durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.publisher = self.create_publisher(Path, "/depth_slam/route/path", qos)
+        self.publisher = self.create_publisher(
+            Path, str(self.get_parameter("path_topic").value), qos)
         self.message = Path()
         self.message.header.frame_id = "map"
         for point in points:

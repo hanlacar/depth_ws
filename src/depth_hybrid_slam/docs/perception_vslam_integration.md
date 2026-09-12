@@ -1,7 +1,7 @@
 # VSLAM 지도 + 2D RGB 인식 교차검증
 
 이 구성은 `/home/qor/depth_ws`가 D456, cuVSLAM, RTAB-Map을 소유하고
-`/home/qor/camera_ws`의 기존 YOLO/RGB/mission perception만 재사용한다. 통합 launch는
+`depth_ws/src`에 포함된 YOLO/RGB/mission perception을 사용한다. 통합 launch는
 RealSense, controller, MCU, Arduino, motor, Gazebo를 시작하지 않는다.
 
 ## 원본 감사 결과
@@ -30,8 +30,10 @@ RealSense, controller, MCU, Arduino, motor, Gazebo를 시작하지 않는다.
 | RViz | RTAB MapCloud, MapGraph, optimized path, TF, current pose |
 | rosbag | `competition_bag_topics.yaml`; raw camera/cuVSLAM/SLAM 문맥과 선택적 aligned depth/MapData |
 
-T870 차량 기준은 wheelbase 0.730 m, `base_link`는 네 바퀴 중심,
-`base_link→camera_link=(0.015, 0, 0.970, pitch=+0.0872665 rad)`이다.
+T870 차량 기준은 wheelbase 0.730 m, `base_link`는 차축 높이의 네 바퀴 중심,
+`base_link→camera_link=(0.015, 0, 0.835, pitch=+0.0872665 rad)`이다.
+ground-plane projection의 0.970 m는 지면 기준 광학 중심 높이이며
+`0.835 + wheel_radius 0.135`와 일치한다.
 
 ## 교차검증 계약
 
@@ -106,7 +108,6 @@ ros2 launch depth_hybrid_slam hybrid_localization.launch.py \
 ```bash
 cd /home/qor/depth_ws
 source /opt/ros/jazzy/setup.bash
-source /home/qor/camera_ws/install/setup.bash
 source /home/qor/depth_ws/install/setup.bash
 export ROS_DOMAIN_ID=41
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp

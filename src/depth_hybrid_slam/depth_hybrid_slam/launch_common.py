@@ -11,14 +11,22 @@ COMMON_DEFAULTS = {
     "case_id": "",
     "map_path": "",
     "route_path": "",
+    "route_metadata_path": "",
+    "piecewise_preview_path": "",
+    "piecewise_preview_metadata_path": "",
     "mapping_mode": "false",
     "localization_mode": "false",
     "delete_test_db": "false",
     "use_gpu_vslam": "true",
+    "use_camera": "false",
+    "use_lidar": "false",
+    "use_vslam": "false",
     "start_rviz": "false",
     "start_image_view": "false",
     "start_monitor": "true",
     "enable_control": "false",
+    "enable_mcu_adapter": "false",
+    "publish_camera_mount_tf": "false",
     "dry_run": "true",
     "user_approved": "false",
     "high_density": "false",
@@ -47,7 +55,7 @@ def rtabmap_include(localization, launch_prefix="", rtabmap_args=None,
     launch_file = (get_package_share_directory("rtabmap_launch") +
                    "/launch/rtabmap.launch.py")
     # RTAB-Map consumes the bridge odometry. Its own rgbd/stereo odometry nodes
-    # are explicitly disabled, so only cuVSLAM owns odom->base_link.
+    # are explicitly disabled. The MCU bridge owns odom->base_link.
     arguments = {
         "localization": "true" if localization else "false",
         "database_path": (database_path if database_path is not None else

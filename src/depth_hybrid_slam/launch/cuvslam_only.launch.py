@@ -2,6 +2,8 @@
 
 from depth_hybrid_slam.launch_common import common_arguments
 from launch import LaunchDescription
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 
@@ -22,6 +24,11 @@ def generate_launch_description():
             "calibration_frequency": 400.0,
             "image_jitter_threshold_ms": 19.0,
             "base_frame": "base_link",
+            # Production vehicle odometry/TF is owned by the latest MCU
+            # bridge. RTAB-Map owns map->odom. cuVSLAM still publishes its
+            # tracking Odometry topic, but must not duplicate either TF edge.
+            "publish_odom_to_base_tf": False,
+            "publish_map_to_odom_tf": False,
             "imu_frame": "camera_gyro_optical_frame",
             "enable_slam_visualization": False,
             "enable_landmarks_view": False,
@@ -47,10 +54,11 @@ def generate_launch_description():
     mount = Node(
         package="tf2_ros", executable="static_transform_publisher",
         name="base_to_d456_mount",
-        # T870_MCU is the vehicle-frame authority: base_link is the four-wheel
-        # centre and the installed D456 is 1.5 cm forward, 97 cm high, pitched
-        # down 5 degrees in the project's REP-103 convention.
-        arguments=["--x", "0.015", "--y", "0", "--z", "0.970",
+        condition=IfCondition(LaunchConfiguration("publish_camera_mount_tf")),
+        # Latest MCU CURRENT_VALUES: base_link is at axle height and camera_link
+        # is 0.835 m above it. The ground-plane projection's 0.970 m optical
+        # height is 0.835 + the 0.135 m base_link-to-ground offset.
+        arguments=["--x", "0.015", "--y", "0", "--z", "0.835",
                    "--roll", "0", "--pitch", "0.0872665",
                    "--yaw", "0", "--frame-id", "base_link",
                    "--child-frame-id", "camera_link"],

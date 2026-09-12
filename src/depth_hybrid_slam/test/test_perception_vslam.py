@@ -106,7 +106,7 @@ def test_launch_is_sensor_external_and_advisory_only():
 def test_t870_mount_and_rviz_topics_are_exact():
     launch = (ROOT / "launch" / "cuvslam_only.launch.py").read_text()
     assert '"--x", "0.015"' in launch
-    assert '"--z", "0.970"' in launch
+    assert '"--z", "0.835"' in launch
     assert '"--pitch", "0.0872665"' in launch
     rviz = (ROOT / "config" / "perception_vslam.rviz").read_text()
     for topic in ("/rtabmap/mapData", "/rtabmap/mapGraph", "/rtabmap/mapPath",

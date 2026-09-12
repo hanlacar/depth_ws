@@ -15,7 +15,7 @@ route_follower:
     allow_unknown: false
     rejoin_speed: 0.25
     heading_weight: 0.75
-    max_index_backtrack: 3
+    max_index_backtrack: 0
     localization_stability_s: 2.0
     rejoin_verify_duration_s: 1.0
     occupancy_grid_timeout_s: 1.0

@@ -18,6 +18,7 @@ class SelectorResult:
     authority: bool
     source: str
     reason: str
+    stop: bool = False
 
 
 class CameraCommandSelector:
@@ -36,9 +37,11 @@ class CameraCommandSelector:
             return SelectorResult(0.0, 0, False, "PARKING", "CAMERA_INACTIVE")
         if mode in (4, 6):
             if not mission_fresh:
-                return SelectorResult(0.0, 0, True, "MISSION", "MISSION_STALE_STOP")
+                return SelectorResult(
+                    0.0, 0, True, "MISSION", "MISSION_STALE_STOP", True)
             if mission_active:
-                return SelectorResult(0.0, 0, True, "MISSION", "INTERSECTION_STOP")
+                return SelectorResult(
+                    0.0, 0, True, "MISSION", "INTERSECTION_STOP", True)
             return SelectorResult(0.0, 0, False, "GPS_DR", "INTERSECTION_GO")
         if not candidate_fresh or not math.isfinite(drive):
             return SelectorResult(0.0, 0, False, "NONE", "CANDIDATE_STALE")
@@ -48,11 +51,14 @@ class CameraCommandSelector:
             return SelectorResult(0.0, 0, False, "LIDAR", "AVOIDANCE_ACTIVE")
         if mission_active:
             if not mission_fresh or not math.isfinite(float(mission_drive)):
-                return SelectorResult(0.0, 0, True, "MISSION", "MISSION_STALE_STOP")
+                return SelectorResult(
+                    0.0, 0, True, "MISSION", "MISSION_STALE_STOP", True)
             requested = float(mission_drive)
             if requested not in (0.0, 1.0, 2.0, 3.0):
                 requested = 0.0
-            return SelectorResult(requested, wheel, True, "MISSION", "MISSION_OVERRIDE")
+            return SelectorResult(
+                requested, wheel, True, "MISSION", "MISSION_OVERRIDE",
+                requested == 0.0)
         return SelectorResult(drive, wheel, True, "CAMERA_PATH", "OK")
 
 
@@ -66,6 +72,7 @@ class CameraCommandSelectorNode(Node):
             "mission_timeout_sec": 0.60,
             "publish_rate_hz": 20.0,
             "avoidance_recovery_samples": 3,
+            "mode_topic": "/drive_mode",
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -80,13 +87,15 @@ class CameraCommandSelectorNode(Node):
         self.received = {}
         self.drive_pub = self.create_publisher(Float32, "/camera_drive", 10)
         self.wheel_pub = self.create_publisher(Int32, "/camera_wheel", 10)
+        self.stop_pub = self.create_publisher(Bool, "/camera_stop", 10)
         self.authority_pub = self.create_publisher(
             Bool, "/camera/control_authority", 10)
         self.source_pub = self.create_publisher(
             String, "/camera/command_source", 10)
         self.diag_pub = self.create_publisher(
             String, "/camera/command_selector_diagnostics", 10)
-        self.create_subscription(String, "/mcu/current_mode", self._mode, 10)
+        self.create_subscription(
+            String, str(self.p("mode_topic")), self._mode, 10)
         self.create_subscription(Bool, "/avoidance/active", self._avoidance, 10)
         self.create_subscription(Float32, str(self.p("candidate_drive_topic")),
                                  lambda m: self._set("drive", float(m.data)), 10)
@@ -150,8 +159,9 @@ class CameraCommandSelectorNode(Node):
 
     def _tick(self):
         now = time.monotonic()
-        duplicate = self._duplicate_publishers("/camera_drive") + \
-            self._duplicate_publishers("/camera_wheel")
+        duplicate = (self._duplicate_publishers("/camera_drive") +
+                     self._duplicate_publishers("/camera_wheel") +
+                     self._duplicate_publishers("/camera_stop"))
         candidate_fresh = self._fresh(
             ("drive", "wheel"), float(self.p("candidate_timeout_sec")), now)
         mission_fresh = self._fresh(
@@ -168,15 +178,17 @@ class CameraCommandSelectorNode(Node):
             mission_fresh, self.avoidance_active, recovery_ready)
         if duplicate:
             result = SelectorResult(0.0, 0, False, "NONE",
-                                    "FAIL_DUPLICATE_FINAL_PUBLISHER")
+                                    "FAIL_DUPLICATE_FINAL_PUBLISHER", True)
         self.drive_pub.publish(Float32(data=result.drive))
         self.wheel_pub.publish(Int32(data=result.wheel))
+        self.stop_pub.publish(Bool(data=result.stop))
         self.authority_pub.publish(Bool(data=result.authority))
         self.source_pub.publish(String(data=result.source))
         self.diag_pub.publish(String(data=json.dumps({
             "mode": self.mode, "drive": result.drive, "wheel": result.wheel,
             "authority": result.authority, "source": result.source,
-            "reason": result.reason, "candidate_fresh": candidate_fresh,
+            "reason": result.reason, "stop": result.stop,
+            "candidate_fresh": candidate_fresh,
             "mission_fresh": mission_fresh, "avoidance_active": self.avoidance_active,
             "recovery_ready": recovery_ready,
             "reference_path_connected": bool(self.values["adapter_connected"]),

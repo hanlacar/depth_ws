@@ -174,7 +174,7 @@ def test_selector_authority_avoidance_parking_and_limit():
     normal = policy.select(1, 2.0, 99, True)
     assert normal.authority and normal.wheel == 22
     stop = policy.select(4, 2.0, 10, True, True, 0.0, True)
-    assert stop.authority and stop.drive == 0.0
+    assert stop.authority and stop.drive == 0.0 and stop.stop
     stop_without_path = policy.select(4, 0.0, 0, False, True, 0.0, True)
     assert stop_without_path.authority and stop_without_path.drive == 0.0
     go = policy.select(4, 2.0, 10, True, False, 0.0, True)
@@ -189,16 +189,18 @@ def test_only_selector_publishes_final_topics_and_no_direct_arduino_bridge():
     sources = [path for path in workspace.rglob("*.py")
                if "test" not in path.parts and "build" not in path.parts and
                "install" not in path.parts]
-    drive = []; wheel = []
+    drive = []; wheel = []; stop = []
     for path in sources:
         text = path.read_text(encoding="utf-8")
         if 'create_publisher(Float32, "/camera_drive"' in text:
             drive.append(path)
         if 'create_publisher(Int32, "/camera_wheel"' in text:
             wheel.append(path)
+        if 'create_publisher(Bool, "/camera_stop"' in text:
+            stop.append(path)
     selector = workspace / "camera_navigation" / "camera_navigation" / \
         "camera_command_selector_node.py"
-    assert drive == [selector] and wheel == [selector]
+    assert drive == [selector] and wheel == [selector] and stop == [selector]
     all_text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
     vehicle = workspace / "race_vehicle_interface"
     assert not (vehicle / "race_vehicle_interface" /

@@ -2,7 +2,7 @@
 set -eo pipefail
 
 source /opt/ros/jazzy/setup.bash
-source /home/qor/camera_ws/install/setup.bash
+source /home/qor/depth_ws/install/setup.bash
 set -u
 export ROS_DOMAIN_ID=12
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

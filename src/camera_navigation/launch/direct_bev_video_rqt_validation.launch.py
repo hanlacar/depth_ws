@@ -31,7 +31,8 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument(
-            "video_path", default_value="/home/qor/urrc_hanla/20260829_170118.mp4"),
+            "video_path", default_value="",
+            description="Explicit validation video path (no external workspace default)"),
         DeclareLaunchArgument("video_fps", default_value="60.0"),
         DeclareLaunchArgument("video_loop", default_value="true"),
         DeclareLaunchArgument("start_video", default_value="true"),

@@ -15,7 +15,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "video_path",
-            default_value="/home/qor/urrc_hanla/20260829_170118.mp4"),
+            default_value="",
+            description="Explicit local validation video; no external workspace default"),
         DeclareLaunchArgument("planner_variant", default_value="hybrid_a6"),
         DeclareLaunchArgument("start_video", default_value="true"),
         DeclareLaunchArgument("start_fake_imu", default_value="true"),

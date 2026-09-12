@@ -31,7 +31,7 @@ Run every terminal with this prefix:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/qor/camera_ws/install/setup.bash
+source /home/qor/depth_ws/install/setup.bash
 export ROS_DOMAIN_ID=12
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 unset ROS_LOCALHOST_ONLY
@@ -79,7 +79,7 @@ ros2 topic pub --once /camera/mission/section std_msgs/msg/String \
 Terminal 5 — record once (the RGB/depth streams are not duplicated):
 
 ```bash
-cd /home/qor/camera_ws
+cd /home/qor/depth_ws
 src/camera_navigation/tools/record_camera_mission_validation.sh \
   validation/mission_d456_$(date +%Y%m%d_%H%M%S)
 ```
@@ -96,7 +96,7 @@ For stop-line checks, measure front-axle-to-line distance at 0.5, 1.0, and
 `tools/mission_validation_measurements.csv`. Analyze after recording:
 
 ```bash
-python3 /home/qor/camera_ws/src/camera_navigation/tools/analyze_camera_mission_bag.py \
+python3 /home/qor/depth_ws/src/camera_navigation/tools/analyze_camera_mission_bag.py \
   BAG_DIRECTORY --measurements-csv MEASUREMENTS.csv \
   --output mission_validation_report.json
 ```

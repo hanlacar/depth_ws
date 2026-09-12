@@ -1,0 +1,185 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.35
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 120; 120; 120
+      Enabled: true
+      Name: Ground Grid
+      Plane: XY
+      Plane Cell Count: 30
+      Reference Frame: <Fixed Frame>
+    - Alpha: 1
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: true
+      Enabled: true
+      Name: RTAB-Map Occupancy Map
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /rtabmap/map
+      Use Timestamp: false
+    - Alpha: 1
+      Class: rtabmap_rviz_plugins/MapCloud
+      Cloud decimation: 2
+      Cloud from scan: false
+      Cloud max depth (m): 8
+      Cloud min depth (m): 0.2
+      Cloud voxel size (m): 0.03
+      Color Transformer: RGB8
+      Download graph: true
+      Download map: true
+      Download namespace: /rtabmap/rtabmap
+      Enabled: true
+      Name: Saved VSLAM Map
+      Size (Pixels): 2
+      Style: Points
+      Topic:
+        Depth: 2
+        Reliability Policy: Reliable
+        Value: /rtabmap/mapData
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Full 7463-Row 16-Case Network
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /depth_slam/stop_editor/network
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Mode 1-11 Labels
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /depth_slam/stop_editor/mode_markers
+    - Class: rviz_default_plugins/Path
+      Color: 0; 180; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.04
+      Name: Full Route A
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /depth_slam/stop_editor/route_a
+    - Class: rviz_default_plugins/Path
+      Color: 255; 150; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.04
+      Name: Full Route B
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /depth_slam/stop_editor/route_b
+    - Class: rviz_default_plugins/Path
+      Color: 0; 255; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.08
+      Name: Active Route
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/reference_path
+    - Class: rviz_default_plugins/Path
+      Color: 255; 255; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.08
+      Name: Local Path
+      Pose Style: Axes
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /depth_slam/csv_validation/local_path
+    - Class: rviz_default_plugins/Path
+      Color: 255; 0; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.07
+      Name: Virtual Odom Trajectory
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /depth_slam/virtual_mcu/trajectory
+    - Class: rviz_default_plugins/PointStamped
+      Color: 255; 255; 0
+      Enabled: true
+      History Length: 1
+      Name: Target Point
+      Radius: 0.25
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/target_point
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: STOP Editor Markers
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        Value: /depth_slam/stop_editor/markers
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Virtual Vehicle and Status
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /depth_slam/virtual_mcu/markers
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Name: Virtual Vehicle TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+  Enabled: true
+  Global Options:
+    Background Color: 30; 30; 30
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/PublishPoint
+      Single click: true
+      Topic:
+        Value: /clicked_point
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 35
+      Focal Point:
+        X: 12
+        Y: 38
+        Z: 0
+Window Geometry:
+  Height: 960
+  Width: 1536

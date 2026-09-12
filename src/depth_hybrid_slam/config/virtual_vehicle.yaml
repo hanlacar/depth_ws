@@ -1,0 +1,20 @@
+depth_virtual_mcu_bridge:
+  ros__parameters:
+    # 2026 real-vehicle PWM timing measurements supplied by the operator.
+    stage_1_pwm: 50
+    stage_1_speed_mps: 0.527
+    stage_2_pwm: 75
+    stage_2_speed_mps: 0.791
+    stage_3_pwm: 100
+    stage_3_speed_mps: 1.055
+
+    # Latest MCU CURRENT_VALUES.yaml: reverse_1=-50, equal magnitude to PWM 50.
+    reverse_pwm: -50
+    reverse_speed_mps: 0.527
+
+    # Latest MCU bridge contract. Encoder is unsigned cumulative.
+    counts_per_meter: 797.0
+    encoder_signed: false
+    wheelbase_m: 0.730
+    max_steering_deg: 22.0
+    direction_change_hold_s: 3.0

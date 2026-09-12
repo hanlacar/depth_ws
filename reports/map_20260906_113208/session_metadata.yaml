@@ -1,0 +1,13 @@
+session_id: map_20260906_113208
+created_at_local: '2026-09-06T11:32:08+09:00'
+created_at_utc: '2026-09-06T02:32:08Z'
+timezone: KST
+utc_offset: +0900
+map_path: /home/qor/depth_ws/maps/map_20260906_113208/rtabmap.db
+route_path: /home/qor/depth_ws/routes/map_20260906_113208/route.csv
+raw_route_path: /home/qor/depth_ws/routes/map_20260906_113208/route.csv
+final_route_path: /home/qor/depth_ws/routes/map_20260906_113208/route_final.csv
+graph_path: /home/qor/depth_ws/routes/map_20260906_113208/rtabmap_graph.json
+bag_path: /home/qor/depth_ws/bags/map_20260906_113208
+report_path: /home/qor/depth_ws/reports/map_20260906_113208/mapping_quality.json
+automatic_name: true

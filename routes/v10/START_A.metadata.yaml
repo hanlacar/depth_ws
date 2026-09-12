@@ -1,0 +1,31 @@
+format_version: 2
+route_name: START_A
+frame_id: map
+route_csv: /home/qor/depth_ws/routes/v10/START_A.csv
+route_sha256: a550be0f623f2179dd9ef1b7e2dbb59a52aeba2512982bbfe4fba5e2a634e22f
+point_count: 147
+vehicle_policy:
+  wheelbase_m: 0.73
+  steering_left_deg: 22.0
+  steering_right_deg: -22.0
+  forward_speed: 2.0
+  turning_speed: 1.0
+  reverse_speed: -1.0
+  turning_threshold_deg: 10.0
+source_vslam_db: /home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db
+source_vslam_db_sha256: a9606bed581f1f32b06af5a68b37d41dfccc74f8cda3840bb7fb76c7ac6795ca
+validation:
+  valid: true
+  invalid_steering_indices: []
+  speed_policy_error_indices: []
+  direction_changes_without_stop: []
+  max_abs_required_steering_deg: 17.045350775160006
+  counts:
+    F: 147
+    R: 0
+  event_counts:
+    NONE: 141
+    STOP: 6
+    ACCEL: 0
+direction_storage: F/R in CSV; nav_msgs/Path carries pose only
+event_storage: NONE/STOP/ACCEL in CSV; separate from direction

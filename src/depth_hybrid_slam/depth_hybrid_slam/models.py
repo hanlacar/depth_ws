@@ -25,6 +25,18 @@ class RoutePoint:
     drive_level: float = 1.0
     mission_marker: str = ""
     section_id: str = ""
+    # Segmented-route source fields are intentionally retained for later
+    # mission logic.  The stage-1 follower does not act on mode/event beyond
+    # the pre-existing stop marker behavior.
+    segment_id: str = ""
+    segment_type: str = ""
+    point_index: int = -1
+    latitude: float = 0.0
+    longitude: float = 0.0
+    mode: int = 1
+    event: str = "NONE"
+    from_node: str = ""
+    to_node: str = ""
 
 
 @dataclass(frozen=True)

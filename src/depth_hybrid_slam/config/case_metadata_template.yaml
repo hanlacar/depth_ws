@@ -20,7 +20,7 @@ vehicle:
   track_m: 0.37
   max_steering_deg: 22.0
   minimum_turning_radius_m: 1.8068134
-  steering_sign: "right_positive"
+  steering_sign: "left_positive_right_negative"
 ros_domain_id: 41
 rmw_implementation: "rmw_fastrtps_cpp"
 depth_ws_commit: ""

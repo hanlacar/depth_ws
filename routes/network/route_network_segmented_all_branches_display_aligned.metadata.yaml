@@ -1,0 +1,281 @@
+format_version: 1
+finalized: true
+route_name: competition_all_branches_stop_editor_display_only
+route_csv: /home/qor/depth_ws/routes/network/route_network_segmented_all_branches_display_aligned.csv
+route_sha256: 5e8088023613bc18e2826085e59091496907f2f0b1de968c9fabc6d2935670a7
+source_route_csv: /home/qor/depth_ws/routes/network/route_network_segmented.csv
+source_route_sha256: d8e36adb9ccf275e5203474f0beaf12437f7a58724f61168ea15a98981f533ee
+active_a_overlay_csv: /home/qor/depth_ws/routes/network/route_network_segmented_aligned.csv
+active_a_overlay_sha256: 72f3fc5ad696982b037a561843552438c227aa8ce5192f44c2af3f650fcafba1
+route_coordinate_frame: map
+source_coordinate_frame: gps_local_enu
+frame_id: map
+units: m
+visualization_only: true
+alignment:
+  method: piecewise_se2_stage_schedule_extended_to_all_branches
+  source_method: piecewise_se2_ordered_distinctive_sections
+  validated: false
+  required_for_runtime: false
+  decision: VISUALIZATION_ONLY_DO_NOT_USE_FOR_PRODUCTION
+  route_length_m: 723.5079026231357
+  blend_distance_m: 8.0
+  zones:
+  - id: ZONE_01_START
+    start_s_m: 0.0
+    end_s_m: 51.331792261593264
+    theta_rad: -2.642547287220415
+    theta_deg: -151.4068067214747
+    tx_m: -1.5763595986005114
+    ty_m: -2.9955114225173274
+    anchor_source: START_A modes=[1, 2]
+    anchor_start_s_m: 0.0
+    anchor_end_s_m: 51.20121468058393
+    rmse_m: 0.3287176244003693
+    median_error_m: 0.14109564689495296
+    p95_error_m: 0.525414213371
+    max_error_m: 2.0539562846326254
+    validated: false
+  - id: ZONE_02_FIRST_CORNER
+    start_s_m: 51.331792261593264
+    end_s_m: 149.75157473614075
+    theta_rad: -2.701634096648555
+    theta_deg: -154.79223152660094
+    tx_m: -2.8206346369255257
+    ty_m: -0.006968282183350993
+    anchor_source: START_A modes=[3]
+    anchor_start_s_m: 51.462369842602605
+    anchor_end_s_m: 143.18236942663057
+    rmse_m: 0.5089842278002601
+    median_error_m: 0.26669230613884576
+    p95_error_m: 1.072760920421332
+    max_error_m: 1.5766583564092291
+    validated: false
+  - id: ZONE_03_NARROW
+    start_s_m: 149.75157473614075
+    end_s_m: 188.88823648201014
+    theta_rad: -2.6656519395399374
+    theta_deg: -152.7306057865005
+    tx_m: -1.2569903169993921
+    ty_m: -2.0193404234944126
+    anchor_source: COMMON_1 modes=[4]
+    anchor_start_s_m: 156.32078004565096
+    anchor_end_s_m: 188.80818942180647
+    rmse_m: 0.18941211916133235
+    median_error_m: 0.12535228925227418
+    p95_error_m: 0.2980878765530796
+    max_error_m: 0.8347408029385005
+    validated: true
+  - id: ZONE_04_S_CURVE
+    start_s_m: 188.88823648201014
+    end_s_m: 295.3712332043746
+    theta_rad: -2.641086691134599
+    theta_deg: -151.32312073018414
+    tx_m: -0.7409667225938819
+    ty_m: -3.9751912938315286
+    anchor_source: COMMON_1 modes=[5]
+    anchor_start_s_m: 188.9682835422138
+    anchor_end_s_m: 244.46112932999782
+    rmse_m: 0.5444548821020233
+    median_error_m: 0.30372354037681115
+    p95_error_m: 1.3135607316031415
+    max_error_m: 1.4446105718211426
+    validated: false
+  - id: ZONE_05_LONG_CORRIDOR
+    start_s_m: 295.3712332043746
+    end_s_m: 592.8216714923991
+    theta_rad: -2.6570228581926223
+    theta_deg: -152.23619584422428
+    tx_m: -0.11389990463024091
+    ty_m: -2.331105579356766
+    anchor_source: COMMON_2 modes=[8]
+    anchor_start_s_m: 346.28133707875145
+    anchor_end_s_m: 510.8840560357358
+    rmse_m: 1.1217530945176613
+    median_error_m: 0.672638672380133
+    p95_error_m: 2.818229043865857
+    max_error_m: 2.9834706088147103
+    validated: false
+  - id: ZONE_06_END
+    start_s_m: 592.8216714923991
+    end_s_m: 723.5079026231357
+    theta_rad: -2.6647366758918385
+    theta_deg: -152.6781650423227
+    tx_m: -1.827536764209512
+    ty_m: -0.30900721489725314
+    anchor_source: END_common+END_AA modes=[11]
+    anchor_start_s_m: 674.7592869490624
+    anchor_end_s_m: 723.5079026231357
+    rmse_m: 0.25549055556785294
+    median_error_m: 0.15849351909113804
+    p95_error_m: 0.6070652660948371
+    max_error_m: 0.9308484340199596
+    validated: true
+network:
+  source_rows: 7463
+  display_rows: 7463
+  unique_segments:
+  - AAA_BASE
+  - START_A
+  - START_B
+  - COMMON_1
+  - T_foword
+  - T_A
+  - T_B
+  - COMMON_2
+  - V_A
+  - V_B
+  - END_common
+  - END_AA
+  - END_AB
+  reference_segments_not_in_cases:
+  - AAA_BASE
+  route_case_count: 16
+  route_cases:
+    AAAA:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AA
+    AAAB:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AB
+    AABA:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AA
+    AABB:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AB
+    ABAA:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AA
+    ABAB:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AB
+    ABBA:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AA
+    ABBB:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AB
+    BAAA:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AA
+    BAAB:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AB
+    BABA:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AA
+    BABB:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AB
+    BBAA:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AA
+    BBAB:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AB
+    BBBA:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AA
+    BBBB:
+    - START_B
+    - COMMON_1
+    - T_foword
+    - T_B
+    - COMMON_2
+    - V_B
+    - END_common
+    - END_AB
+  duplicate_keys: 0
+  missing_keys: 0
+  ambiguous_keys: 0

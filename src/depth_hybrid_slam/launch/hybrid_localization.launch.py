@@ -55,6 +55,12 @@ def _prepare(context):
 
 
 def generate_launch_description():
+    root = "/home/qor/depth_ws"
     return LaunchDescription(common_arguments({
         "mapping_mode": "false", "localization_mode": "true",
+        "map_path": root +
+        "/maps/merged_competition_level_aligned_v10/rtabmap.db",
+        "route_path": root + "/routes/network/route_network_segmented.csv",
+        "route_metadata_path": root +
+        "/routes/network/route_network_segmented.metadata.yaml",
     })+[OpaqueFunction(function=_prepare)])

@@ -15,14 +15,23 @@ def test_straight_and_unapproved_is_zero_drive():
     assert result.steering_deg == 0.0
 
 
-def test_right_turn_is_positive_and_left_is_negative():
+def test_right_turn_is_negative_and_left_is_positive():
     right = RouteFollower(steering_rate_deg_s=1000).compute(
         Pose2D(0, 0, 0, 1), route([(0, 0, 0), (1, -1, -math.pi/4)]),
         allow_motion=True)
     left = RouteFollower(steering_rate_deg_s=1000).compute(
         Pose2D(0, 0, 0, 1), route([(0, 0, 0), (1, 1, math.pi/4)]),
         allow_motion=True)
-    assert right.steering_deg > 0 and left.steering_deg < 0
+    assert right.steering_deg < 0 and left.steering_deg > 0
+
+
+def test_reverse_uses_body_yaw_and_preserves_left_positive_sign():
+    points = [RoutePoint(0, 0, 0, math.pi, direction=-1),
+              RoutePoint(1, 1, 1, -3*math.pi/4, direction=-1)]
+    result = RouteFollower(steering_rate_deg_s=1000).compute(
+        Pose2D(0, 0, math.pi, 1), points, allow_motion=True)
+    assert result.drive < 0
+    assert result.steering_deg < 0
 
 
 def test_steering_limit_and_slew_rate():

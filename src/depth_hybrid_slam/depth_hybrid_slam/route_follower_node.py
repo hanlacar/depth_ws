@@ -1,7 +1,7 @@
 """Thirty-hertz dry-run route follower. MCU control is impossible by default."""
 
 import csv
-import hashlib
+from dataclasses import replace
 import math
 from pathlib import Path as FilePath
 import time
@@ -11,17 +11,31 @@ from geometry_msgs.msg import PointStamped, PoseStamped, PoseWithCovarianceStamp
 from nav_msgs.msg import OccupancyGrid, Path
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, Float32, Int32, String
 from visualization_msgs.msg import Marker, MarkerArray
-import yaml
 
 from .models import ControllerResult, Pose2D, RoutePoint
+from .mode_completion import RouteModeCompletionTracker
+from .prehardware_core import StopWaypointMachine
 from .rejoin_core import GridMap, RejoinPlanner, RejoinStateMachine
-from .ros_helpers import quaternion_from_yaw, safe_shutdown, stamp_seconds, status, yaw_from_quaternion
+from .ros_helpers import (
+    quaternion_from_yaw,
+    safe_shutdown,
+    stamp_seconds,
+    status,
+    yaw_from_quaternion,
+)
 from .route_follower_core import RouteFollower
+from .csv_only_branching import load_csv_only_route_case, remap_case_progress
+from .route_io import (
+    DEFAULT_BRANCH, is_segmented_columns, load_segmented_route,
+    verify_route_binding,
+)
 
 
 def load_route(path):
+    """Load the legacy finalized map-route format."""
     points = []
     with open(path, newline="", encoding="utf-8") as stream:
         for position, row in enumerate(csv.DictReader(stream)):
@@ -36,33 +50,9 @@ def load_route(path):
     return points
 
 
-def _sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1024*1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def verify_route_binding(route_path, map_path, metadata_path=""):
-    """Verify the exact finalized map/route pair before any motion is allowed."""
-    route, database = FilePath(route_path), FilePath(map_path)
-    candidates = ([FilePath(metadata_path)] if metadata_path else []) + [
-        route.parent/"metadata.yaml", route.parent/"route_metadata.yaml"]
-    metadata = next((item for item in candidates if item.is_file()), None)
-    if not route.is_file() or not database.is_file() or metadata is None:
-        return False, "MAP_ROUTE_FILES_MISSING"
-    with open(metadata, encoding="utf-8") as stream:
-        values = yaml.safe_load(stream) or {}
-    if not values.get("finalized", True):
-        return False, "MAP_ROUTE_NOT_FINALIZED"
-    route_hashes = {str(values.get(name, "")) for name in (
-        "route_sha256", "route_csv_sha256", "final_route_csv_sha256")}
-    if _sha256(route) not in route_hashes:
-        return False, "ROUTE_CHECKSUM_MISMATCH"
-    if _sha256(database) != str(values.get("rtabmap_db_sha256", "")):
-        return False, "MAP_CHECKSUM_MISMATCH"
-    return True, "VERIFIED"
+def route_is_segmented(path):
+    with open(path, newline="", encoding="utf-8") as stream:
+        return is_segmented_columns(next(csv.reader(stream), ()))
 
 
 class RouteFollowerNode(Node):
@@ -72,6 +62,8 @@ class RouteFollowerNode(Node):
                               ("dry_run", True), ("user_approved", False),
                               ("pose_timeout_s", 0.15), ("map_path", ""),
                               ("route_metadata_path", ""),
+                              ("piecewise_preview_path", ""),
+                              ("piecewise_preview_metadata_path", ""),
                               ("wheelbase_m", 0.73),
                               ("max_steering_deg", 22.0),
                               ("normal_corridor_m", 1.0),
@@ -87,14 +79,37 @@ class RouteFollowerNode(Node):
                               ("allow_unknown", False),
                               ("rejoin_speed", 0.25),
                               ("heading_weight", 0.75),
-                              ("max_index_backtrack", 3),
+                              ("max_index_backtrack", 0),
                               ("localization_stability_s", 2.0),
                               ("rejoin_verify_duration_s", 1.0),
                               ("occupancy_grid_timeout_s", 1.0),
-                              ("reverse_rejoin_allowed", False)):
+                              ("reverse_rejoin_allowed", False),
+                              ("start_mode", 1), ("end_mode", 11),
+                              ("direction_stop_trigger_distance_m", 1.0),
+                              ("prehardware_test_override_alignment", False),
+                              ("prehardware_csv_only_case_selection", False),
+                              ("controller_hz", 30.0)):
             self.declare_parameter(name, default)
         path = str(self.get_parameter("route_path").value)
-        self.route = load_route(path) if path else []
+        metadata_path = str(self.get_parameter("route_metadata_path").value)
+        self.route_path = path
+        self.route_metadata_path = metadata_path
+        self.active_branch = DEFAULT_BRANCH
+        self.route_info = None
+        if path and route_is_segmented(path):
+            self.route_info = load_segmented_route(
+                path, metadata_path, branch=self.active_branch)
+            self.route = self._select_mode_range(self.route_info.points)
+        else:
+            self.route = load_route(path) if path else []
+        preview_path = str(self.get_parameter("piecewise_preview_path").value)
+        preview_metadata = str(self.get_parameter(
+            "piecewise_preview_metadata_path").value)
+        self.piecewise_preview = None
+        if (preview_path and FilePath(preview_path).is_file() and
+                route_is_segmented(preview_path)):
+            self.piecewise_preview = load_segmented_route(
+                preview_path, preview_metadata)
         wheelbase = float(self.get_parameter("wheelbase_m").value)
         steering = float(self.get_parameter("max_steering_deg").value)
         configured_radius = float(self.get_parameter("minimum_turning_radius_m").value)
@@ -121,10 +136,62 @@ class RouteFollowerNode(Node):
             safety_margin_m=float(self.get_parameter("footprint_safety_margin_m").value),
             allow_unknown=bool(self.get_parameter("allow_unknown").value))
         map_path = str(self.get_parameter("map_path").value)
-        metadata_path = str(self.get_parameter("route_metadata_path").value)
         self.map_route_verified, self.binding_reason = verify_route_binding(
             path, map_path, metadata_path) if path and map_path else (
                 False, "MAP_ROUTE_FILES_MISSING")
+        self.test_alignment_override = bool(self.get_parameter(
+            "prehardware_test_override_alignment").value)
+        self.csv_only_case_selection = bool(self.get_parameter(
+            "prehardware_csv_only_case_selection").value)
+        if self.csv_only_case_selection:
+            if not self.test_alignment_override or self.route_info is None:
+                raise ValueError(
+                    "CSV-only case selection requires the explicit prehardware "
+                    "override and a segmented route")
+            self.active_case = "AAAA"
+            self.route = self._select_mode_range(load_csv_only_route_case(
+                self.route_path, self.route_metadata_path, self.active_case))
+        else:
+            self.active_case = ""
+        self.control_route_available = (
+            self.map_route_verified or
+            (self.test_alignment_override and FilePath(path).is_file() and
+             FilePath(map_path).is_file()))
+        if self.test_alignment_override:
+            self.get_logger().warn(
+                "PREHARDWARE TEST ONLY: using unvalidated CSV-map transform; "
+                "production map_route_verified remains false")
+        if self.route_info is not None:
+            info = self.route_info
+            self.get_logger().info(f"[ROUTE] source CSV: {path}")
+            self.get_logger().info(f"[ROUTE] raw rows: {info.raw_row_count}")
+            self.get_logger().info(f"[ROUTE] default branch: {DEFAULT_BRANCH}")
+            self.get_logger().info(f"[ROUTE] active rows: {info.active_row_count}")
+            self.get_logger().info(
+                f"[ROUTE] excluded B rows: {info.excluded_b_row_count} "
+                f"segments={','.join(info.excluded_b_segments)}")
+            self.get_logger().info(
+                f"[ROUTE] segments: {' -> '.join(info.segment_order)}")
+            self.get_logger().info(
+                f"[ROUTE] start segment: {info.segment_order[0]}")
+            self.get_logger().info(
+                f"[ROUTE] end segment: {info.segment_order[-1]}")
+            self.get_logger().info(
+                f"[ROUTE] source frame: {info.source_frame}")
+            transform = info.coordinate_transform
+            self.get_logger().info(
+                "[ROUTE] csv_to_map: "
+                f"x={transform['x_m']:.8f}m y={transform['y_m']:.8f}m "
+                f"yaw={transform['yaw_deg']:.8f}deg scale={transform['scale']:.3f}")
+            self.get_logger().info(f"[ROUTE] frame: {info.frame_id}")
+            self.get_logger().info(
+                "[ROUTE] continuity: "
+                f"max_step={info.maximum_step_m:.3f}m "
+                f"max_connection={info.maximum_connection_m:.3f}m")
+        log = self.get_logger().info if self.map_route_verified else self.get_logger().error
+        log("[ROUTE] map-route verification: " +
+            ("PASS" if self.map_route_verified else
+             f"FAIL ({self.binding_reason})"))
         self.pose = None
         self.pose_receipt = None
         self.safety_ready = False
@@ -143,13 +210,43 @@ class RouteFollowerNode(Node):
         self.initial_search = True
         self.rejoin_plan = None
         self.rejoin_route = []
-        self.pub_drive = self.create_publisher(Float32, "/slam_drive", 10)
-        self.pub_wheel = self.create_publisher(Int32, "/slam_wheel", 10)
+        self.stop_waypoint = StopWaypointMachine(3.0)
+        self.mode_completion = (
+            RouteModeCompletionTracker(self.route) if self.route else None)
+        self.pub_drive = self.create_publisher(
+            Float32, "/depth_slam/follower/candidate_drive", 10)
+        self.pub_wheel = self.create_publisher(
+            Int32, "/depth_slam/follower/candidate_wheel", 10)
+        self.pub_stop = self.create_publisher(
+            Bool, "/depth_slam/follower/candidate_stop", 10)
+        self.pub_mode = self.create_publisher(String, "/drive_mode", 10)
+        self.pub_active_index = self.create_publisher(
+            Int32, "/depth_slam/route/active_index", 10)
+        self.pub_active_branch = self.create_publisher(
+            String, "/depth_slam/route/active_branch", 10)
+        self.pub_active_case = self.create_publisher(
+            String, "/depth_slam/route/active_case", 10)
+        self.pub_active_segment = self.create_publisher(
+            String, "/depth_slam/route/active_segment", 10)
+        self.pub_mode_status = self.create_publisher(
+            String, "/depth_slam/route/mode_status", 10)
+        self.pub_stop_state = self.create_publisher(
+            String, "/depth_slam/route/stop_waypoint_state", 10)
+        self.pub_stop_key = self.create_publisher(
+            String, "/depth_slam/route/stop_waypoint_key", 10)
         self.pub_preview_drive = self.create_publisher(
             Float32, "/depth_slam/dry_run/drive", 10)
         self.pub_preview_wheel = self.create_publisher(
             Int32, "/depth_slam/dry_run/wheel", 10)
-        self.pub_path = self.create_publisher(Path, "/depth_slam/route/reference_path", 10)
+        latched_path = QoSProfile(
+            depth=1, reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.pub_path = self.create_publisher(
+            Path, "/depth_slam/route/reference_path", latched_path)
+        self.pub_raw_path = self.create_publisher(
+            Path, "/depth_slam/route/raw_csv_path", latched_path)
+        self.pub_piecewise_path = self.create_publisher(
+            Path, "/depth_slam/route/piecewise_path", latched_path)
         self.pub_target = self.create_publisher(PointStamped, "/depth_slam/route/target_point", 10)
         self.pub_cross = self.create_publisher(Float32, "/depth_slam/route/cross_track_error", 10)
         self.pub_heading = self.create_publisher(Float32, "/depth_slam/route/heading_error", 10)
@@ -167,18 +264,166 @@ class RouteFollowerNode(Node):
             Bool, "/depth_slam/route/map_route_verified", 10)
         self.pub_within_map = self.create_publisher(
             Bool, "/depth_slam/route/within_map", 10)
-        self.create_subscription(PoseWithCovarianceStamped, "/depth_slam/localization/pose", self.on_pose, 10)
+        self.create_subscription(
+            PoseWithCovarianceStamped,
+            "/depth_slam/localization/pose",
+            self.on_pose,
+            10,
+        )
         self.create_subscription(String, "/depth_slam/safety/state",
                                  lambda m: setattr(self, "safety_ready", m.data == "READY"), 10)
         self.create_subscription(Bool, "/depth_slam/mission/stop_required",
                                  lambda m: setattr(self, "mission_stop", bool(m.data)), 10)
-        self.create_subscription(Float32, "/depth_slam/mission/speed_limit",
-                                 lambda m: setattr(self, "mission_speed_limit", max(0.0, float(m.data))), 10)
+        self.create_subscription(
+            Float32,
+            "/depth_slam/mission/speed_limit",
+            lambda m: setattr(
+                self, "mission_speed_limit", max(0.0, float(m.data))
+            ),
+            10,
+        )
         self.create_subscription(String, "/depth_slam/localization/state",
                                  self.on_localization_state, 10)
+        self.create_subscription(String, "/depth_slam/route/selected_branch",
+                                 self.on_selected_branch, 10)
+        self.create_subscription(String, "/depth_slam/route/selected_case",
+                                 self.on_selected_case, 10)
         self.create_subscription(OccupancyGrid, "/map", self.on_grid, 10)
-        self.create_timer(1.0/30.0, self.tick)
+        controller_hz = float(self.get_parameter("controller_hz").value)
+        if not 1.0 <= controller_hz <= 250.0:
+            raise ValueError("controller_hz must be in [1, 250]")
+        self.create_timer(1.0/controller_hz, self.tick)
         self.publish_reference_path()
+
+    def _select_mode_range(self, points):
+        start = int(self.get_parameter("start_mode").value)
+        end = int(self.get_parameter("end_mode").value)
+        if not 1 <= start <= end <= 11:
+            raise ValueError("start_mode/end_mode must satisfy 1 <= start <= end <= 11")
+        selected = [point for point in points if start <= int(point.mode) <= end]
+        if not selected:
+            raise ValueError("selected mode range contains no route points")
+        return [replace(point, index=index)
+                for index, point in enumerate(selected)]
+
+    @staticmethod
+    def _equivalent_segment(segment_id, branch):
+        mappings = {
+            "START_A": f"START_{branch}", "START_B": f"START_{branch}",
+            "T_A": f"T_{branch}", "T_B": f"T_{branch}",
+            "V_A": f"V_{branch}", "V_B": f"V_{branch}",
+            "END_AA": f"END_A{branch}", "END_AB": f"END_A{branch}",
+        }
+        return mappings.get(segment_id, segment_id)
+
+    def on_selected_branch(self, message):
+        if self.csv_only_case_selection:
+            return
+        branch = str(message.data).strip().upper()
+        if branch not in ("A", "B") or branch == self.active_branch:
+            return
+        if self.route_info is None:
+            return
+        previous = None
+        if self.route and self.core.last_index is not None:
+            previous = self.route[min(self.core.last_index, len(self.route)-1)]
+        new_info = load_segmented_route(
+            self.route_path, self.route_metadata_path, branch=branch)
+        new_route = self._select_mode_range(new_info.points)
+        new_index = None
+        if previous is not None:
+            segment = self._equivalent_segment(previous.segment_id, branch)
+            candidates = [point.index for point in new_route
+                          if point.segment_id == segment and
+                          point.point_index >= previous.point_index]
+            if candidates:
+                new_index = candidates[0]
+        self.route_info = new_info
+        self.route = new_route
+        self.active_branch = branch
+        self.core.reset_progress()
+        self.rejoin_follower.reset_progress()
+        self.core.last_index = new_index
+        self.initial_search = new_index is None
+        self.rejoin_route = []
+        self.rejoin_plan = None
+        self.navigation_state = "FOLLOW_ROUTE"
+        self.stop_waypoint.reset()
+        if self.mode_completion is not None:
+            self.mode_completion.bind_route(self.route, new_index)
+        self.publish_reference_path()
+
+    def on_selected_case(self, message):
+        if not self.csv_only_case_selection:
+            return
+        route_case = str(message.data).strip().upper()
+        if (len(route_case) != 4 or any(value not in "AB" for value in route_case)
+                or route_case == self.active_case):
+            return
+        previous = None
+        if self.route and self.core.last_index is not None:
+            previous = self.route[min(self.core.last_index, len(self.route)-1)]
+        new_route = self._select_mode_range(load_csv_only_route_case(
+            self.route_path, self.route_metadata_path, route_case))
+        new_index = None
+        if previous is not None:
+            # T/V late decisions move only onto actual waypoints from the
+            # equivalent branch.  No averaged or offset connector is made.
+            new_index = remap_case_progress(previous, new_route, route_case)
+        preserve_transition_stop = bool(
+            self.stop_waypoint.active_key and previous is not None and
+            previous.segment_id.startswith(("T_", "V_")))
+        self.route = new_route
+        self.active_case = route_case
+        self.active_branch = route_case[0]
+        self.core.reset_progress()
+        self.rejoin_follower.reset_progress()
+        self.core.last_index = new_index
+        self.initial_search = new_index is None
+        self.rejoin_route = []
+        self.rejoin_plan = None
+        self.navigation_state = "FOLLOW_ROUTE"
+        if not preserve_transition_stop:
+            self.stop_waypoint.reset()
+        if self.mode_completion is not None:
+            self.mode_completion.bind_route(self.route, new_index)
+        self.publish_reference_path()
+
+    def _stop_line_ahead(self, nearest, pose, trigger_distance=0.50):
+        direction_trigger = float(self.get_parameter(
+            "direction_stop_trigger_distance_m").value)
+        if direction_trigger < trigger_distance:
+            direction_trigger = trigger_distance
+        distance = 0.0
+        last = self.route[nearest]
+        for point in self.route[nearest:min(len(self.route), nearest+80)]:
+            if point is not last:
+                distance += math.hypot(point.x-last.x, point.y-last.y)
+            last = point
+            required_direction_stop = (
+                point.index+1 < len(self.route) and
+                point.direction != self.route[point.index+1].direction)
+            limit = direction_trigger if required_direction_stop else trigger_distance
+            if (point.event == "STOP_LINE" or required_direction_stop) and (
+                    distance <= limit or
+                    math.hypot(point.x-pose.x, point.y-pose.y) <=
+                    limit):
+                return f"{point.segment_id}:{point.point_index}", True
+            if distance > direction_trigger:
+                break
+        return "", False
+
+    def _next_stop_index(self):
+        first = max(0, self.core.last_index or 0)
+        for index in range(first, len(self.route)):
+            point = self.route[index]
+            key = f"{point.segment_id}:{point.point_index}"
+            direction_change = (index+1 < len(self.route) and
+                                point.direction != self.route[index+1].direction)
+            if ((point.event == "STOP_LINE" or direction_change) and
+                    key not in self.stop_waypoint.completed):
+                return index
+        return None
 
     def publish_reference_path(self):
         message = Path()
@@ -188,9 +433,35 @@ class RouteFollowerNode(Node):
             pose = PoseStamped()
             pose.header = message.header
             pose.pose.position.x, pose.pose.position.y = point.x, point.y
+            pose.pose.position.z = 0.25
             pose.pose.orientation = quaternion_from_yaw(point.yaw)
             message.poses.append(pose)
         self.pub_path.publish(message)
+        if self.route_info is not None:
+            # RViz has no physical TF between an unaligned GPS-local frame and
+            # map.  Publish the untouched numeric ENU coordinates in map axes
+            # solely as a clearly named before/after diagnostic overlay.
+            raw = Path()
+            raw.header = message.header
+            for point in self.route_info.source_points:
+                pose = PoseStamped()
+                pose.header = raw.header
+                pose.pose.position.x, pose.pose.position.y = point.x, point.y
+                pose.pose.position.z = 0.25
+                pose.pose.orientation = quaternion_from_yaw(point.yaw)
+                raw.poses.append(pose)
+            self.pub_raw_path.publish(raw)
+        if self.piecewise_preview is not None:
+            preview = Path()
+            preview.header = message.header
+            for point in self.piecewise_preview.points:
+                pose = PoseStamped()
+                pose.header = preview.header
+                pose.pose.position.x, pose.pose.position.y = point.x, point.y
+                pose.pose.position.z = 0.35
+                pose.pose.orientation = quaternion_from_yaw(point.yaw)
+                preview.poses.append(pose)
+            self.pub_piecewise_path.publish(preview)
 
     def on_pose(self, message):
         p = message.pose.pose.position
@@ -274,7 +545,8 @@ class RouteFollowerNode(Node):
         else:
             original = self.core.compute(
                 pose, self.route, allow_motion=True,
-                global_search=self.initial_search)
+                global_search=self.initial_search,
+                progress_ceiling=self._next_stop_index())
         if self.initial_search and not stale and localized:
             self.initial_search = False
         if stale:
@@ -283,7 +555,7 @@ class RouteFollowerNode(Node):
         elif not localized:
             reason = "LOCALIZATION_NOT_STABLE"
             result = original
-        elif not self.map_route_verified:
+        elif not self.control_route_available:
             reason = self.binding_reason
             result = original
         else:
@@ -327,23 +599,92 @@ class RouteFollowerNode(Node):
                     self.rejoin_route = []
             else:
                 result = original
-            reason = self.navigation_state if self.navigation_state != "FOLLOW_ROUTE" else result.reason
-        allow = (not stale and localized and self.map_route_verified and
-                 self.safety_ready and not self.mission_stop and channel_enabled and
+            reason = (
+                self.navigation_state
+                if self.navigation_state != "FOLLOW_ROUTE"
+                else result.reason
+            )
+        waypoint_key, waypoint_reached = (self._stop_line_ahead(
+            max(0, original.nearest_index), pose) if self.route and
+            not stale and localized else ("", False))
+        waypoint_decision = self.stop_waypoint.update(
+            waypoint_key, waypoint_reached, self.mission_stop,
+            time.monotonic())
+        transition_release = False
+        if waypoint_decision.state == "RELEASED" and waypoint_key:
+            for index, point in enumerate(self.route[:-1]):
+                if (f"{point.segment_id}:{point.point_index}" == waypoint_key and
+                        point.direction != self.route[index+1].direction):
+                    # One stopped output cycle separates longitudinal signs.
+                    # Start the next compute inside the new direction block so
+                    # overlapping parking geometry cannot select the old leg.
+                    self.core.last_index = index+1
+                    self.core.last_steering = 0.0
+                    transition_release = True
+                    break
+        allow = (not stale and localized and self.control_route_available and
+                 self.safety_ready and not self.mission_stop and
+                 not waypoint_decision.stop and not transition_release and
+                 not result.stop_required and
+                 channel_enabled and
                  self.navigation_state in ("FOLLOW_ROUTE", "FOLLOW_REJOIN_PATH"))
         requested_drive = math.copysign(
             min(abs(result.drive), self.mission_speed_limit), result.drive)
-        preview_drive = 0.0 if (stale or not localized or not self.map_route_verified or
+        preview_drive = 0.0 if (stale or not localized or not self.control_route_available or
                                 result.stop_required or self.mission_stop or
+                                waypoint_decision.stop or transition_release or
                                 self.navigation_state not in (
                                     "FOLLOW_ROUTE", "FOLLOW_REJOIN_PATH")) else requested_drive
         self.pub_preview_drive.publish(Float32(data=preview_drive))
         self.pub_preview_wheel.publish(Int32(data=int(round(result.steering_deg))))
-        # Actual command topics remain completely silent unless all independent
-        # control gates are true. Default launches therefore emit zero vehicle commands.
+        # The follower owns candidate topics only. BehaviorSelector is the sole
+        # owner of /slam_* and applies road/localization/branch gates.
         if channel_enabled:
             self.pub_drive.publish(Float32(data=float(requested_drive if allow else 0.0)))
             self.pub_wheel.publish(Int32(data=int(round(result.steering_deg if allow else 0.0))))
+            self.pub_stop.publish(Bool(data=not allow))
+        if self.route and not stale and localized:
+            mode_index = min(max(0, original.nearest_index), len(self.route)-1)
+            self.pub_mode.publish(String(data=str(self.route[mode_index].mode)))
+            self.pub_active_index.publish(Int32(data=mode_index))
+            self.pub_active_segment.publish(String(
+                data=self.route[mode_index].segment_id))
+        if self.route and self.mode_completion is not None:
+            mode_index = min(max(0, original.nearest_index), len(self.route)-1)
+            normal_reason = original.reason in (
+                "OK", "CURVATURE_SLOWDOWN", "ROUTE_COMPLETE")
+            failure_reason = ""
+            if stale:
+                failure_reason = "STALE_POSE"
+            elif not localized:
+                failure_reason = "LOCALIZATION_NOT_STABLE"
+            elif not self.control_route_available:
+                failure_reason = self.binding_reason
+            elif not self.safety_ready:
+                failure_reason = "SAFETY_NOT_READY"
+            elif self.navigation_state != "FOLLOW_ROUTE":
+                failure_reason = self.navigation_state
+            elif not normal_reason:
+                failure_reason = original.reason
+            completion_healthy = (
+                channel_enabled and normal_reason and not failure_reason)
+            completion_stopped = (
+                self.mission_stop or waypoint_decision.stop or
+                transition_release)
+            for event in self.mode_completion.observe(
+                    mode_index, original.progress,
+                    healthy=completion_healthy,
+                    stopped=completion_stopped,
+                    failure_reason=failure_reason,
+                    controller_reason=original.reason):
+                self.get_logger().info(event)
+            self.pub_mode_status.publish(String(
+                data=self.mode_completion.status_json()))
+        self.pub_active_branch.publish(String(data=self.active_branch))
+        if self.csv_only_case_selection:
+            self.pub_active_case.publish(String(data=self.active_case))
+        self.pub_stop_state.publish(String(data=waypoint_decision.state))
+        self.pub_stop_key.publish(String(data=waypoint_key))
         self.pub_cross.publish(Float32(data=float(result.cross_track_error)))
         self.pub_heading.publish(Float32(data=float(result.heading_error)))
         self.pub_progress.publish(Float32(data=float(result.progress)))
@@ -367,6 +708,7 @@ class RouteFollowerNode(Node):
              ("steering_deg", result.steering_deg),
              ("navigation_state", self.navigation_state),
              ("map_route_verified", self.map_route_verified),
+             ("prehardware_test_override_alignment", self.test_alignment_override),
              ("minimum_turning_radius_m", self.rejoin_planner.radius),
              ("rejoin_candidates_checked", self.rejoin_plan.candidates_checked
               if self.rejoin_plan else 0),
@@ -378,9 +720,17 @@ class RouteFollowerNode(Node):
               if self.rejoin_plan else -1),
              ("rejoin_maximum_curvature", self.rejoin_plan.maximum_curvature
               if self.rejoin_plan else 0.0),
+             ("active_branch", self.active_branch),
+             ("stop_waypoint_state", waypoint_decision.state),
+             ("stop_waypoint_elapsed_s", waypoint_decision.elapsed_s),
+             ("direction_transition_release_stop", transition_release),
              ("actual_command_published", allow)))]
         self.pub_diag.publish(diagnostic)
-        active_route = self.rejoin_route if self.navigation_state == "FOLLOW_REJOIN_PATH" else self.route
+        active_route = (
+            self.rejoin_route
+            if self.navigation_state == "FOLLOW_REJOIN_PATH"
+            else self.route
+        )
         if active_route:
             point = active_route[min(result.target_index, len(active_route)-1)]
             target = PointStamped()
@@ -398,5 +748,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        safe_shutdown()
+        try:
+            node.destroy_node()
+            safe_shutdown()
+        except KeyboardInterrupt:
+            pass

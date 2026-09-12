@@ -1,0 +1,148 @@
+format_version: 3
+finalized: true
+route_name: competition_full_route_default_a_stage1
+route_csv: /home/qor/depth_ws/routes/network/route_network_segmented.csv
+route_sha256: d8e36adb9ccf275e5203474f0beaf12437f7a58724f61168ea15a98981f533ee
+rtabmap_db: /home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db
+rtabmap_db_sha256: a9606bed581f1f32b06af5a68b37d41dfccc74f8cda3840bb7fb76c7ac6795ca
+route_coordinate_frame: gps_local_enu
+frame_id: map
+units: m
+origin:
+  latitude: 37.288977
+  longitude: 127.1076496421
+csv_to_map:
+  x_m: -1.84276105
+  y_m: -1.48548570
+  yaw_deg: -153.98206441
+  scale: 1.0
+alignment:
+  method: provisional_robust_se2_AAA_BASE_to_v10_START_A_retained_after_ordered_section_audit
+  theta_rad: -2.6874940129724796
+  tx_m: -1.84276105
+  ty_m: -1.48548570
+  rmse_m: 0.9610273078929024
+  median_error_m: 0.4757394162942441
+  p95_error_m: 2.055253117547808
+  max_error_m: 4.470582463829703
+  validated: false
+  symmetric_rms_m: 1.83
+  maximum_allowed_rms_m: 1.0
+  validation_segments: [START, RIGHT_ANGLE, NARROW, S_MODE5, LONG, END]
+  validation_reference: RTAB-Map ordered node-pose trajectories; nearest distance is evaluation-only
+  similarity_scale_diagnostic: 0.9953757042145885
+  candidate:
+    method: ordered_partial_sections_equal_weight_huber_trimmed_se2
+    theta_rad: -2.6807018582138618
+    theta_deg: -153.5929026085315
+    tx_m: -2.4296197422562678
+    ty_m: -1.5486754085081529
+    scale: 1.0
+    rmse_m: 0.9740452143526536
+    median_error_m: 0.39874425664465396
+    p95_error_m: 2.1565779855976075
+    max_error_m: 4.6254957871444535
+    accepted: false
+  piecewise_candidate:
+    method: piecewise_se2_ordered_distinctive_sections
+    output_csv: /home/qor/depth_ws/routes/network/route_network_segmented_aligned.csv
+    output_metadata: /home/qor/depth_ws/routes/network/route_network_segmented_aligned.metadata.yaml
+    zone_count: 6
+    blend_distance_m: 8.0
+    interpolation: centered cubic smoothstep; shortest angular distance
+    rmse_m: 0.9887863533817437
+    median_error_m: 0.31601729074020934
+    p95_error_m: 2.319099544491973
+    max_error_m: 4.403481972656519
+    validated: false
+    decision: NEED_MAP_FRAME_ROUTE_RERECORD
+    zones:
+      - id: ZONE_01_START
+        start_s_m: 0.0
+        end_s_m: 51.331792261593264
+        theta_rad: -2.642547287220415
+        tx_m: -1.5763595986005114
+        ty_m: -2.9955114225173274
+        rmse_m: 0.3287176244003693
+        median_error_m: 0.14109564689495296
+        p95_error_m: 0.525414213371
+        max_error_m: 2.0539562846326254
+        anchor_source: START_A modes 1-2
+        validated: false
+      - id: ZONE_02_FIRST_CORNER
+        start_s_m: 51.331792261593264
+        end_s_m: 149.75157473614075
+        theta_rad: -2.701634096648555
+        tx_m: -2.8206346369255257
+        ty_m: -0.006968282183350993
+        rmse_m: 0.5089842278002601
+        median_error_m: 0.26669230613884576
+        p95_error_m: 1.072760920421332
+        max_error_m: 1.5766583564092291
+        anchor_source: START_A mode 3
+        validated: false
+      - id: ZONE_03_NARROW
+        start_s_m: 149.75157473614075
+        end_s_m: 188.88823648201014
+        theta_rad: -2.6656519395399374
+        tx_m: -1.2569903169993921
+        ty_m: -2.0193404234944126
+        rmse_m: 0.18941211916133235
+        median_error_m: 0.12535228925227418
+        p95_error_m: 0.2980878765530796
+        max_error_m: 0.8347408029385005
+        anchor_source: COMMON_1 mode 4
+        validated: true
+      - id: ZONE_04_S_CURVE
+        start_s_m: 188.88823648201014
+        end_s_m: 295.3712332043746
+        theta_rad: -2.641086691134599
+        tx_m: -0.7409667225938819
+        ty_m: -3.9751912938315286
+        rmse_m: 0.5444548821020233
+        median_error_m: 0.30372354037681115
+        p95_error_m: 1.3135607316031415
+        max_error_m: 1.4446105718211426
+        anchor_source: COMMON_1 mode 5
+        validated: false
+      - id: ZONE_05_LONG_CORRIDOR
+        start_s_m: 295.3712332043746
+        end_s_m: 592.8216714923991
+        theta_rad: -2.6570228581926223
+        tx_m: -0.11389990463024091
+        ty_m: -2.331105579356766
+        rmse_m: 1.1217530945176613
+        median_error_m: 0.672638672380133
+        p95_error_m: 2.818229043865857
+        max_error_m: 2.9834706088147103
+        anchor_source: COMMON_2 mode 8
+        validated: false
+      - id: ZONE_06_END
+        start_s_m: 592.8216714923991
+        end_s_m: 723.5079026231357
+        theta_rad: -2.6647366758918385
+        tx_m: -1.827536764209512
+        ty_m: -0.30900721489725314
+        rmse_m: 0.25549055556785294
+        median_error_m: 0.15849351909113804
+        p95_error_m: 0.6070652660948371
+        max_error_m: 0.9308484340199596
+        anchor_source: END_common + END_AA mode 11
+        validated: true
+  reason: independent START/S/corner/LONG/END transforms disagree and the S, overall, and distinct-path corridor thresholds fail
+selection:
+  default_branch: A
+  external_branch_topic: false
+  active_segments:
+    - START_A
+    - COMMON_1
+    - T_foword
+    - T_A
+    - COMMON_2
+    - V_A
+    - END_common
+    - END_AA
+  excluded_b_segments: [START_B, T_B, V_B, END_AB]
+continuity:
+  maximum_point_step_m: 1.25
+  maximum_segment_connection_m: 1.25

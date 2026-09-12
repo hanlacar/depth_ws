@@ -6,7 +6,7 @@ can be validated without a live camera. Not a package entry point: run
 directly, e.g.
 
     python3 tools/video_publisher.py --ros-args \\
-        -p video_path:=/home/qor/urrc_hanla/20260827_070334_from_0530.mp4 \\
+        -p video_path:=/path/to/local_validation.mp4 \\
         -p fps:=30.0 -p loop:=true -p frame_id:=camera_link
 
 QoS and topic names intentionally mirror camera_yolo_inference_node's

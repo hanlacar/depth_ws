@@ -32,58 +32,51 @@ Visualization Manager:
       Plane Cell Count: 20
       Reference Frame: <Fixed Frame>
       Value: true
-    - Class: rtabmap_rviz_plugins/Info
+    - Alpha: 0.55
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: true
       Enabled: true
-      Name: RTAB-Map Info
+      Name: Saved Occupancy Map
       Topic:
-        Depth: 5
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+      Update Topic:
+        Depth: 10
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /rtabmap/info
+        Value: /map_updates
+      Use Timestamp: false
       Value: true
-    - Alpha: 1
+    - Alpha: 0.75
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
         Max Value: 10
         Min Value: -10
         Value: true
       Axis: Z
-      Channel Name: intensity
-      Class: rtabmap_rviz_plugins/MapCloud
-      Cloud decimation: 4
-      Cloud from scan: false
-      Cloud max depth (m): 6
-      Cloud min depth (m): 0.2
-      Cloud voxel size (m): 0.03
-      Color: 255; 255; 255
+      Channel Name: rgb
+      Class: rviz_default_plugins/PointCloud2
       Color Transformer: RGB8
-      Download graph: true
-      Download map: true
-      Download namespace: /rtabmap/rtabmap
+      Decay Time: 0
       Enabled: true
-      Filter ceiling (m): 0
-      Filter floor (m): 0
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Max Intensity: 4096
-      Min Color: 0; 0; 0
-      Min Intensity: 0
-      Name: Saved Map Cloud
-      Node filtering angle (degrees): 30
-      Node filtering radius (m): 0
+      Name: Saved V10 PLY Cloud
       Position Transformer: XYZ
+      Selectable: false
       Size (Pixels): 2
-      Size (m): 0.02
+      Size (m): 0.03
       Style: Points
       Topic:
-        Depth: 2
-        Durability Policy: Volatile
+        Depth: 1
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /rtabmap/mapData
+        Value: /vslam_map/cloud
       Use Fixed Frame: true
-      Use rainbow: false
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -118,23 +111,6 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: false
       Value: false
-    - Class: rtabmap_rviz_plugins/MapGraph
-      Enabled: true
-      Global loop closure: 255; 0; 0
-      Landmark: 0; 128; 0
-      Local loop closure: 255; 255; 0
-      Merged neighbor: 255; 170; 0
-      Name: Saved Map Graph
-      Neighbor: 0; 0; 255
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /rtabmap/mapGraph
-      User: 255; 0; 0
-      Value: true
-      Virtual: 255; 0; 255
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
@@ -172,6 +148,103 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /rtabmap/mapPath
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Color: 255; 210; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.025
+      Name: Recorded Map Route Raw
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/recorded_route/raw_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Color: 0; 255; 120
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.08
+      Name: Recorded Map Route Resampled
+      Pose Style: Axes
+      Pose Axes Length: 0.15
+      Pose Axes Radius: 0.015
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/recorded_route/resampled_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Color: 255; 120; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Single-SE2 Active A Route
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/reference_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Color: 220; 0; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.03
+      Name: Raw GPS CSV Numeric Axes (Diagnostic Only)
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/raw_csv_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Color: 0; 120; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.08
+      Name: Piecewise-SE2 Candidate Route
+      Pose Style: None
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/piecewise_path
+      Value: true
+    - Class: rviz_default_plugins/PoseWithCovariance
+      Color: 0; 255; 255
+      Enabled: true
+      Name: VSLAM Map Pose
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/localization/pose
+      Value: true
+    - Class: rviz_default_plugins/PointStamped
+      Color: 255; 255; 0
+      Enabled: true
+      History Length: 1
+      Name: Current Target
+      Radius: 0.25
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/route/target_point
       Value: true
     - Angle Tolerance: 0.1
       Class: rviz_default_plugins/Odometry
@@ -232,25 +305,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 8
+      Distance: 110
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
+        X: 30
+        Y: 40
         Z: 0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.55
+      Pitch: 1.55
       Target Frame: map
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.14
+      Yaw: 0
     Saved: ~
 Window Geometry:
   Displays:
