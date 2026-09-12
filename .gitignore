@@ -44,3 +44,31 @@ __pycache__/
 # Recorded rosbag data
 bags/
 *.mcap.zstd
+
+# Local/generated visual artifacts
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# Local archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Editor/cache
+.vscode/
+.cache/
+
+# Generated reports/artifacts that should stay local
+analysis/
+bags/
+build/
+install/
+log/
+
+# Nested ROS workspace build outputs
+isaac_ros_ws/build/
+isaac_ros_ws/install/
+isaac_ros_ws/log/
