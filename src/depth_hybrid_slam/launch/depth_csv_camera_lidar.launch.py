@@ -18,6 +18,8 @@ def generate_launch_description():
             "route_metadata_path",
             default_value=route.replace(".csv", ".metadata.yaml")),
         DeclareLaunchArgument("start_branch", default_value="A"),
+        DeclareLaunchArgument(
+            "map_path", default_value="/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db"),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),
         DeclareLaunchArgument("camera_serial", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),
@@ -32,6 +34,7 @@ def generate_launch_description():
                 "route_metadata_path": LaunchConfiguration(
                     "route_metadata_path"),
                 "start_branch": LaunchConfiguration("start_branch"),
+                "map_path": LaunchConfiguration("map_path"),
                 "front_serial_port": LaunchConfiguration(
                     "front_serial_port"),
                 "camera_serial": LaunchConfiguration("camera_serial"),

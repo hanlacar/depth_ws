@@ -141,13 +141,15 @@ def select_parking_branch(a_free, b_free):
         return "A"
     if bool(b_free):
         return "B"
-    return "A"
+    return ""
 
 
 def parking_decision(mode, a_free, b_free, path_valid,
                      planner_state="IDLE", hard_obstacle=False):
     branch = select_parking_branch(a_free, b_free)
     prefix = "T" if int(mode) == 7 else "V"
+    if not branch:
+        return ManeuverDecision(prefix+"_WAIT_LIDAR_SLOT", "LIDAR", True)
     if hard_obstacle:
         return ManeuverDecision("PARKING_HARD_STOP", "SAFETY", True,
                                 branch=branch)
@@ -233,7 +235,7 @@ class Mode9EmergencyLatch:
 class SteeringSlowdownLatch:
     """Debounce measured steering before applying or clearing slowdown."""
 
-    def __init__(self, threshold_deg=10.0, enter_duration_s=1.0,
+    def __init__(self, threshold_deg=10.0, enter_duration_s=0.5,
                  exit_duration_s=1.0):
         self.threshold_deg = float(threshold_deg)
         self.enter_duration_s = float(enter_duration_s)
@@ -252,16 +254,13 @@ class SteeringSlowdownLatch:
 
     def update(self, steering_deg, mode, now=None):
         timestamp = time.monotonic() if now is None else float(now)
-        if int(mode) == 9:
-            self.reset()
-            return False
         # Missing/stale measured steering cannot establish either continuous
         # one-second interval.  Preserve an already active slowdown fail-safe.
         if steering_deg is None:
             self.above_since = None
             self.below_since = None
             return self.active
-        above = abs(float(steering_deg)) > self.threshold_deg
+        above = abs(float(steering_deg)) >= self.threshold_deg
         if above:
             self.below_since = None
             if self.active:
@@ -272,7 +271,8 @@ class SteeringSlowdownLatch:
                 self.active = True
                 self.above_since = None
             return self.active
-        # Exactly +/-threshold is in the user's <= 10 degree clear band.
+        # Clear only below the threshold; exactly +/-10 remains slowdown
+        # evidence as required by the production contract.
         self.above_since = None
         if not self.active:
             self.below_since = None
@@ -473,7 +473,7 @@ class Mode11ExitGate:
         confidence = self.votes[winner]/valid if valid else 0.0
         confirmed = (fresh and valid >= self.confirmations and
                      confidence >= self.decision_ratio)
-        self.committed = winner if confirmed else "A"
+        self.committed = winner if confirmed else "B"
         self.commit_source = "CAMERA" if confirmed else "DEFAULT"
         return ManeuverDecision("MODE11_COMMIT_"+self.committed,
                                 "CSV", False, branch=self.committed)

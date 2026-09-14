@@ -288,7 +288,7 @@ def test_live_case_remap_uses_only_existing_continuous_forward_waypoints():
     assert ((v_target.x-v_origin.x)**2+(v_target.y-v_origin.y)**2)**0.5 == 0.0
 
 
-def test_end_request_policy_remains_independent_and_defaults_a():
+def test_end_request_policy_remains_independent_and_defaults_b():
     selector = parking_selector()
     assert selector.request("END:B", 1.0)
     assert selector.enter_segment("END_common", 2.0)
@@ -296,7 +296,7 @@ def test_end_request_policy_remains_independent_and_defaults_a():
 
     selector = parking_selector()
     selector.enter_segment("END_common", 2.0)
-    assert selector.choices["END"] == "A"
+    assert selector.choices["END"] == "B"
 
 
 def test_csv_only_launch_contains_only_the_isolated_full_network_chain():

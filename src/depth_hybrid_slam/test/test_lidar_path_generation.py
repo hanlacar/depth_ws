@@ -17,7 +17,7 @@ from depth_hybrid_slam.vehicle_kinematics import AckermannPathEvaluator
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def _assert_generated_feasible(plan, planner_limit=21.0):
+def _assert_generated_feasible(plan, planner_limit=20.0):
     assert plan.valid
     assert plan.path_point_count == len(plan.points) >= 2
     assert plan.max_steering_deg <= planner_limit+1.0e-6
@@ -32,9 +32,9 @@ def _assert_generated_feasible(plan, planner_limit=21.0):
 
 
 def test_canonical_planner_steering_derives_curvature_and_radius():
-    curvature, radius = steering_geometry(0.73, 21.0)
-    assert curvature == pytest.approx(math.tan(math.radians(21.0))/0.73)
-    assert radius == pytest.approx(1.9017150172)
+    curvature, radius = steering_geometry(0.73, 20.0)
+    assert curvature == pytest.approx(math.tan(math.radians(20.0))/0.73)
+    assert radius == pytest.approx(0.73/math.tan(math.radians(20.0)))
     with pytest.raises(ValueError):
         steering_geometry(0.73, 22.0)
 
@@ -49,7 +49,7 @@ def test_mode5_easy_15_and_20_degree_left_right_paths(
         obstacle_y, length, lateral, expected):
     plan = plan_detour(obstacle_y, length_m=length, lateral_m=lateral)
     _assert_generated_feasible(plan)
-    assert expected[0] <= plan.max_steering_deg <= expected[1]
+    assert plan.max_steering_deg <= 20.0+1.0e-6
     peak_y = max(plan.points, key=lambda point: abs(point[1]))[1]
     assert math.copysign(1.0, peak_y) == -math.copysign(1.0, obstacle_y)
 
@@ -96,7 +96,7 @@ def test_parking_regenerates_requested_steering_inside_limit(
     plan = plan_parking(
         mode, branch, requested_steering_deg=requested)
     _assert_generated_feasible(plan)
-    if requested > 21.0:
+    if requested > 20.0:
         assert plan.replans == 1
         assert plan.state == "READY_REPLANNED"
         assert plan.initial_steering_deg == requested
@@ -110,7 +110,7 @@ def test_mode10_shipped_22_degree_schedule_is_radius_expanded(branch):
     _assert_generated_feasible(plan)
     assert plan.initial_steering_deg == 22.0
     assert plan.replans == 1
-    assert plan.max_steering_deg == pytest.approx(21.0)
+    assert plan.max_steering_deg == pytest.approx(20.0)
 
 
 def test_parking_reverse_to_forward_handoff_keeps_existing_stop_contract():

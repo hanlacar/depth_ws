@@ -19,7 +19,9 @@ class CommandArbiterNode(Node):
             "csv_drive": 0.0, "csv_wheel": 0, "csv_valid": False,
             "lidar_drive": 0.0, "lidar_wheel": 0, "lidar_valid": False,
             "hard": False, "mission": True, "branch": False,
-            "lidar_hold": False, "road_hold": False, "slowdown": False,
+            "start_validation": True,
+            "lidar_hold": False, "road_hold": False,
+            "distance_slowdown": False, "steering_slowdown": False,
             "mode": -1, "steering": 0.0,
         }
         self.received = {}
@@ -31,9 +33,14 @@ class CommandArbiterNode(Node):
             (Int32, "/depth_slam/lidar/candidate_wheel", "lidar_wheel", int),
             (Bool, "/depth_slam/lidar/candidate_valid", "lidar_valid", bool),
             (Bool, "/depth_slam/lidar/hard_emergency", "hard", bool),
-            (Bool, "/depth_slam/lidar/slowdown_required", "slowdown", bool),
+            (Bool, "/depth_slam/lidar/distance_slowdown_required",
+             "distance_slowdown", bool),
+            (Bool, "/depth_slam/lidar/steering_slowdown_required",
+             "steering_slowdown", bool),
             (Bool, "/depth_slam/mission/stop_required", "mission", bool),
             (Bool, "/depth_slam/route/branch_stop", "branch", bool),
+            (Bool, "/depth_slam/route/start_validation_stop",
+             "start_validation", bool),
             (Bool, "/depth_slam/lidar/hold", "lidar_hold", bool),
             (String, "/drive_mode", "mode", lambda value: int(str(value))),
             (Float32, "/mcu/steer_deg", "steering", float),
@@ -64,7 +71,7 @@ class CommandArbiterNode(Node):
             value = json.loads(message.data)
             self.values["road_hold"] = (
                 bool(value.get("fresh", False)) and
-                value.get("state") == "OUTSIDE_ROAD")
+                value.get("state") in ("OUTSIDE_ROAD", "NEAR_BOUNDARY"))
         except (TypeError, ValueError, json.JSONDecodeError):
             self.values["road_hold"] = False
 
@@ -95,18 +102,21 @@ class CommandArbiterNode(Node):
         # road validation remains advisory and may fall back to CSV, but the
         # LiDAR, mission, and branch gates must each be fresh.
         safety_stop = (self.values["hard"] or bool(self.conflicts) or
-                       not self._fresh(("hard",), now))
+                       not self._fresh(("hard", "distance_slowdown",
+                                        "steering_slowdown", "steering"), now))
         gated_stop = (
             self.values["mission"] or self.values["branch"] or
+            self.values["start_validation"] or
             self.values["lidar_hold"] or self.values["road_hold"] or
             not self._fresh(("mission",), now) or
             not self._fresh(("branch",), now) or
+            not self._fresh(("start_validation",), now) or
             not self._fresh(("lidar_hold",), now))
         decision = arbitrate(
             csv, lidar, safety_stop, gated_stop,
-            self.values["slowdown"], self.values["mode"],
+            self.values["distance_slowdown"], self.values["mode"],
             self.values["steering"] if self._fresh(("steering",), now)
-            else None)
+            else None, self.values["steering_slowdown"])
         self.drive_pub.publish(Float32(data=decision.drive))
         self.wheel_pub.publish(Int32(data=decision.wheel))
         self.state_pub.publish(String(data=decision.state))

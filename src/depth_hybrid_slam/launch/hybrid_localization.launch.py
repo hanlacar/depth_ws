@@ -41,17 +41,31 @@ def _prepare(context):
             raise RuntimeError("case verification failed: "+", ".join(problems or [
                 "MAP_OR_ROUTE_PATH_DOES_NOT_MATCH_CASE"]))
         matched = True
+    vehicle_odom = LaunchConfiguration("use_vehicle_odom").perform(
+        context).strip().lower() in ("1", "true", "yes", "on")
     # Version 0.22.1 predates Mem/LocalizationReadOnly. Bind only the DB
     # directory read-only in the RTAB-Map process mount namespace instead of
     # making a physical copy or trusting localization mode not to write.
-    return [rtabmap_include(True, _read_only_prefix(source)), Node(
-        package="depth_hybrid_slam", executable="localization_fusion",
-        name="localization_fusion", output="screen",
-        parameters=[{"map_id": str(metadata.get("map_id", digest)),
-                     "route_id": str(metadata.get("route_id", "UNVERIFIED")),
-                     "localization_mode": True,
-                     "map_route_match": matched,
-                     "require_route_match": bool(case_id)}])]
+    nodes = [rtabmap_include(
+        True, _read_only_prefix(source),
+        odom_topic="/odom" if vehicle_odom else
+        "/depth_slam/cuvslam/odometry")]
+    if vehicle_odom:
+        nodes.append(Node(
+            package="depth_hybrid_slam", executable="rtabmap_vslam_gate",
+            name="rtabmap_vslam_gate", output="screen"))
+    else:
+        nodes.append(Node(
+            package="depth_hybrid_slam", executable="localization_fusion",
+            name="localization_fusion", output="screen",
+            parameters=[{"map_id": str(metadata.get("map_id", digest)),
+                         "route_id": str(metadata.get("route_id", "UNVERIFIED")),
+                         "localization_mode": True,
+                         "map_route_match": matched,
+                         "require_route_match": bool(case_id),
+                         "output_prefix": LaunchConfiguration(
+                             "localization_output_prefix")}]))
+    return nodes
 
 
 def generate_launch_description():

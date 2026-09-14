@@ -18,7 +18,7 @@ class BranchDecision:
 
 
 class BranchSelector:
-    """Default-A selector with a mode-11 decision hold and timeout."""
+    """User-selected start branch with a fail-safe Mode-11 default B."""
 
     def __init__(self, command_timeout_s=3.0, mode_11_wait_s=5.0,
                  initial_branch="A"):
@@ -73,18 +73,19 @@ class BranchSelector:
             if now-self.mode_11_entered_at < self.mode_11_wait_s:
                 return BranchDecision(
                     self.selected_branch, True, "MODE11_WAIT_BRANCH")
-            self.selected_branch = "A"
+            self.selected_branch = "B"
             self.mode_11_committed = True
-            return BranchDecision("A", False, "MODE11_TIMEOUT_DEFAULT_A")
+            return BranchDecision("B", False, "MODE11_TIMEOUT_DEFAULT_B")
         if fresh:
             self.selected_branch = self.command_branch
             return BranchDecision(self.selected_branch, False, "BRANCH_SELECTED")
-        self.selected_branch = self.initial_branch
-        state = "INVALID_DEFAULT_A" if self.command_at is not None else \
-            "NO_INPUT_DEFAULT_A"
-        if self.initial_branch == "B":
-            state = "NO_INPUT_INITIAL_B"
-        return BranchDecision(self.initial_branch, False, state)
+        # A parking decision is a route commit, not a momentary joystick
+        # command.  Keep the last valid T/V choice after the publisher's
+        # freshness window expires; reverting to START here can switch route
+        # cases in the middle of the second parking maneuver.
+        state = ("BRANCH_COMMITTED" if self.command_at is not None else
+                 "NO_INPUT_INITIAL_"+self.initial_branch)
+        return BranchDecision(self.selected_branch, False, state)
 
 
 @dataclass(frozen=True)

@@ -41,6 +41,8 @@ setup(
             "route_follower = depth_hybrid_slam.route_follower_node:main",
             "csv_road_validator = depth_hybrid_slam.csv_road_validator_node:main",
             "branch_selector = depth_hybrid_slam.branch_selector_node:main",
+            "start_validation = depth_hybrid_slam.start_validation_node:main",
+            "rtabmap_vslam_gate = depth_hybrid_slam.rtabmap_vslam_gate_node:main",
             "route_local_path = depth_hybrid_slam.route_local_path_node:main",
             "lidar_perception = depth_hybrid_slam.lidar_perception_node:main",
             "lidar_rejoin_validator = depth_hybrid_slam.lidar_rejoin_validator_node:main",

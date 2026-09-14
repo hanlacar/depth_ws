@@ -52,11 +52,12 @@ class LidarPerceptionNode(Node):
             ("mode9_clear_distance_m", 1.5),
             ("mode9_clear_duration_s", 1.0),
             ("steering_slowdown_threshold_deg", 10.0),
-            ("steering_slowdown_enter_s", 1.0),
+            ("steering_slowdown_enter_s", 0.5),
             ("steering_slowdown_exit_s", 1.0),
             ("corridor_half_width_m", 0.30),
             ("minimum_cluster_points", 2), ("cluster_gap_m", 0.16),
             ("clear_confirm_scans", 3), ("parking_free_distance_m", 1.0),
+            ("parking_use_front_lidar", True),
             ("dynamic_velocity_threshold_mps", 0.25),
             ("dynamic_confirmation_count", 3),
             ("dynamic_timeout_s", 0.75),
@@ -131,6 +132,10 @@ class LidarPerceptionNode(Node):
             Bool, "/depth_slam/lidar/rear_hard_emergency", 10)
         self.slow_pub = self.create_publisher(
             Bool, "/depth_slam/lidar/slowdown_required", 10)
+        self.distance_slow_pub = self.create_publisher(
+            Bool, "/depth_slam/lidar/distance_slowdown_required", 10)
+        self.steering_slow_pub = self.create_publisher(
+            Bool, "/depth_slam/lidar/steering_slowdown_required", 10)
         self.avoid_pub = self.create_publisher(
             Bool, "/depth_slam/lidar/avoidance_required", 10)
         self.slot_pub = self.create_publisher(String, "/depth_slam/lidar/parking_slots", 10)
@@ -407,9 +412,10 @@ class LidarPerceptionNode(Node):
             wheelbase_m=self.get_parameter("wheelbase_m").value,
             length_m=1.5)
         distance_slowdown_evidence = assessment.slowdown
-        slowdown = self.steering_slowdown.update(
+        steering_slowdown = self.steering_slowdown.update(
             steering if steering_source != "STALE" else None,
             self.mode, now)
+        slowdown = distance_slowdown_evidence or steering_slowdown
         if self.mode == 9:
             hard_stop = self.mode9_emergency.update(
                 assessment.hard_stop, assessment.nearest_m,
@@ -467,17 +473,25 @@ class LidarPerceptionNode(Node):
         rear_result = (self.rear_safety.assess(self.rear, rear_fresh)
                        if rear_active else None)
         rear_hard = bool(rear_result and rear_result.hard_obstacle)
-        left_min = min((math.hypot(x, y) for x, y in self.rear if y >= 0.0),
+        parking_use_front = bool(self.get_parameter(
+            "parking_use_front_lidar").value)
+        parking_scan = self.front_local if parking_use_front else self.rear
+        parking_fresh = front_fresh if parking_use_front else rear_fresh
+        left_min = min((math.hypot(x, y) for x, y in parking_scan if y >= 0.0),
                        default=math.inf)
-        right_min = min((math.hypot(x, y) for x, y in self.rear if y < 0.0),
+        right_min = min((math.hypot(x, y) for x, y in parking_scan if y < 0.0),
                         default=math.inf)
         parking_free = float(self.get_parameter("parking_free_distance_m").value)
-        slots = {"a_free": rear_active and rear_fresh and left_min > parking_free,
-                 "b_free": rear_active and rear_fresh and right_min > parking_free,
-                 "fresh": rear_active and rear_fresh}
+        slots = {"a_free": rear_active and parking_fresh and left_min > parking_free,
+                 "b_free": rear_active and parking_fresh and right_min > parking_free,
+                 "fresh": rear_active and parking_fresh,
+                 "source": "FRONT" if parking_use_front else "REAR"}
         self.hard_pub.publish(Bool(data=hard_stop))
         self.rear_hard_pub.publish(Bool(data=rear_hard))
         self.slow_pub.publish(Bool(data=slowdown))
+        self.distance_slow_pub.publish(Bool(
+            data=distance_slowdown_evidence))
+        self.steering_slow_pub.publish(Bool(data=steering_slowdown))
         self.avoid_pub.publish(Bool(data=avoidance))
         self.slot_pub.publish(String(data=json.dumps(slots, separators=(",", ":"))))
         event_state = (self.mode, hard_stop, slowdown,
@@ -520,7 +534,9 @@ class LidarPerceptionNode(Node):
                 self.mode9_emergency.clear_since is None else
                 max(0.0, now-self.mode9_emergency.clear_since)),
             "slowdown_required": slowdown,
-            "slowdown_policy": "MEASURED_STEERING_1S_HYSTERESIS",
+            "distance_slowdown_required": distance_slowdown_evidence,
+            "steering_slowdown_required": steering_slowdown,
+            "slowdown_policy": "DISTANCE_1M_OR_MEASURED_STEERING_HYSTERESIS",
             "distance_slowdown_evidence": distance_slowdown_evidence,
             "steering_slowdown_threshold_deg": self.steering_slowdown.threshold_deg,
             "steering_above_elapsed_s": (

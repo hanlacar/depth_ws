@@ -1,4 +1,4 @@
-"""Default-A branch selection with a mode-11 wait/fallback contract."""
+"""Latched route branch selection with a mode-11 default-B contract."""
 
 import json
 import time

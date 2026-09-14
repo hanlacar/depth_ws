@@ -30,6 +30,7 @@ class LocalizationNode(Node):
         super().__init__("localization_fusion")
         for name, default in (("map_frame", "map"), ("odom_frame", "odom"),
                               ("map_id", "UNSELECTED"), ("route_id", "UNSELECTED"),
+                              ("output_prefix", "/depth_slam/localization"),
                               ("safe_to_apply_large_correction", False),
                               ("localization_mode", False),
                               ("map_route_match", False),
@@ -46,16 +47,19 @@ class LocalizationNode(Node):
         self.relocalized_confirmed = False
         self.buffer = Buffer(cache_time=Duration(seconds=10.0))
         self.listener = TransformListener(self.buffer, self)
-        self.pub_pose = self.create_publisher(PoseWithCovarianceStamped, "/depth_slam/localization/pose", 10)
-        self.pub_odom = self.create_publisher(Odometry, "/depth_slam/localization/odometry", 10)
-        self.pub_state = self.create_publisher(String, "/depth_slam/localization/state", 10)
-        self.pub_conf = self.create_publisher(Float32, "/depth_slam/localization/confidence", 10)
-        self.pub_relocalized = self.create_publisher(Bool, "/depth_slam/localization/relocalized", 10)
-        self.pub_map = self.create_publisher(String, "/depth_slam/localization/map_id", 10)
-        self.pub_route = self.create_publisher(String, "/depth_slam/localization/route_id", 10)
-        self.pub_jump = self.create_publisher(Bool, "/depth_slam/localization/pose_jump", 10)
+        prefix = str(self.get_parameter("output_prefix").value).rstrip("/")
+        if not prefix.startswith("/"):
+            raise ValueError("output_prefix must be an absolute ROS topic")
+        self.pub_pose = self.create_publisher(PoseWithCovarianceStamped, prefix+"/pose", 10)
+        self.pub_odom = self.create_publisher(Odometry, prefix+"/odometry", 10)
+        self.pub_state = self.create_publisher(String, prefix+"/state", 10)
+        self.pub_conf = self.create_publisher(Float32, prefix+"/confidence", 10)
+        self.pub_relocalized = self.create_publisher(Bool, prefix+"/relocalized", 10)
+        self.pub_map = self.create_publisher(String, prefix+"/map_id", 10)
+        self.pub_route = self.create_publisher(String, prefix+"/route_id", 10)
+        self.pub_jump = self.create_publisher(Bool, prefix+"/pose_jump", 10)
         self.pub_tracking = self.create_publisher(
-            Bool, "/depth_slam/localization/tracking_valid", 10)
+            Bool, prefix+"/tracking_valid", 10)
         self.create_subscription(Bool, "/depth_slam/cuvslam/tracking_valid",
                                  lambda m: setattr(self, "tracking", bool(m.data)), 10)
         self.create_subscription(Odometry, "/depth_slam/cuvslam/odometry", self.on_odom, 10)

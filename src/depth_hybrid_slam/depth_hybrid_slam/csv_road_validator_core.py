@@ -135,6 +135,7 @@ class ValidationResult:
             "lane_valid": self.state == VALID_ROAD_AND_LANE,
             "road_confidence": self.road_confidence,
             "lane_confidence": self.lane_support_ratio,
+            "lane_crossing_ratio": self.lane_crossing_ratio,
             "visible_ratio": self.visible_path_ratio,
             "corridor_inside_ratio": self.vehicle_corridor_inside_ratio,
             "nearest_left_boundary_m": self.nearest_left_boundary_m,

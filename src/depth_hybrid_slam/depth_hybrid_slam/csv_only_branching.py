@@ -570,7 +570,7 @@ class IndependentRouteCaseSelector:
             if segment in entries:
                 changed = self._enter_parking(choice, now) or changed
         if segment == "END_common" and self.choices["END"] is None:
-            selected = self.requests.get("END", "A")
+            selected = self.requests.get("END", "B")
             self.choices["END"] = selected
             self.state = f"END_BRANCH_SELECTED_{selected}"
             changed = True

@@ -176,7 +176,7 @@ class VoteSnapshot:
 
 
 class SignalVoteWindow:
-    """Original five-second vote adapted to fail-safe DEFAULT A."""
+    """Five-second vote with fail-safe DEFAULT B unless A is explicit."""
 
     def __init__(self, duration_s=5.0, minimum_valid_frames=60,
                  decision_ratio=0.75):
@@ -231,7 +231,7 @@ class SignalVoteWindow:
                 red_ratio >= self.decision_ratio:
             self.route, self.state = SelectedRoute.B, ObservationState.LATCHED
         else:
-            self.route, self.state = SelectedRoute.A, ObservationState.DEFAULTED
+            self.route, self.state = SelectedRoute.B, ObservationState.DEFAULTED
         return self.snapshot(now)
 
     def snapshot(self, now):

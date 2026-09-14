@@ -33,7 +33,7 @@ class LocalPlan:
         return len(self.points)
 
 
-def steering_geometry(wheelbase_m=0.73, planner_max_steering_deg=21.0):
+def steering_geometry(wheelbase_m=0.73, planner_max_steering_deg=20.0):
     """Return derived curvature/radius from one canonical steering setting."""
     wheelbase = float(wheelbase_m)
     steering = float(planner_max_steering_deg)
@@ -297,9 +297,9 @@ def _offset_path(samples, outbound_end, hold_end, transition_end, target_d,
 
 
 def plan_route_detour(current_pose, route, current_index, obstacle_y,
-                      minimum_ahead_m=1.5, maximum_ahead_m=8.0,
+                      minimum_ahead_m=1.5, maximum_ahead_m=10.0,
                       lateral_m=0.65, spacing_m=0.10,
-                      wheelbase_m=0.73, planner_max_steering_deg=21.0,
+                      wheelbase_m=0.73, planner_max_steering_deg=20.0,
                       obstacles=(), vehicle_width_m=0.80,
                       vehicle_length_m=1.30, obstacle_margin_m=0.15,
                       maximum_replans=48,
@@ -421,7 +421,7 @@ def plan_route_detour(current_pose, route, current_index, obstacle_y,
 
 
 def plan_detour(obstacle_y, length_m=5.5, lateral_m=0.65,
-                wheelbase_m=0.73, planner_max_steering_deg=21.0,
+                wheelbase_m=0.73, planner_max_steering_deg=20.0,
                 spacing_m=0.10, obstacles=(), clearance_m=None,
                 vehicle_width_m=0.80, obstacle_margin_m=0.15,
                 maximum_replans=24, left_boundary_m=None,
@@ -524,7 +524,7 @@ def _regenerate_schedule(schedule, planner_max_steering_deg):
 
 
 def plan_parking(mode, branch, wheelbase_m=0.73,
-                 planner_max_steering_deg=21.0, step_m=0.08,
+                 planner_max_steering_deg=20.0, step_m=0.08,
                  requested_steering_deg=None):
     """Generate T/parallel paths with radius expansion before integration."""
     if int(mode) not in (7, 10) or str(branch) not in ("A", "B"):

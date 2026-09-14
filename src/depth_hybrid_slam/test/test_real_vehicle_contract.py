@@ -28,7 +28,11 @@ def test_real_launch_contains_only_measured_odom_and_one_front_lidar():
         assert forbidden not in source
     assert 'package="t870_mcu_simple", executable="bridge"' in source
     assert '"launch_rear_lidar_driver": "false"' in source
-    assert '"--frame-id", "map", "--child-frame-id", "odom"' in source
+    assert '"--frame-id", "map", "--child-frame-id", "odom"' not in source
+    assert '"hybrid_localization.launch.py"' in source
+    assert '"use_vehicle_odom": "true"' in source
+    assert '"cuvslam_only.launch.py"' not in source
+    assert 'executable="start_validation"' in source
 
 
 def test_split_sensor_route_launch_waits_for_separate_real_mcu_odom():
@@ -46,7 +50,8 @@ def test_split_sensor_route_launch_waits_for_separate_real_mcu_odom():
 
 def test_real_camera_launch_keeps_mode2_imu_contract_alive():
     source = CAMERA_LAUNCH.read_text(encoding="utf-8")
-    assert '"enable_depth": "false", "enable_imu": "true"' in source
+    assert '"enable_depth": LaunchConfiguration("enable_vslam")' in source
+    assert '"enable_vslam": LaunchConfiguration("enable_vslam")' in source
     assert 'imu/"launch"/"imu_manager.launch.py"' in source
 
 

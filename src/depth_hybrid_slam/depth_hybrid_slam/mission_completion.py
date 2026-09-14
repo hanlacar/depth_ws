@@ -14,6 +14,8 @@ class MissionCompletionTracker:
         self.mode2_stop_started = None
         self.mode2_stop_4s_done = False
         self.mode2_slope_seen = False
+        self.mode2_pitch_checked = False
+        self.mode2_stop_pitch_deg = None
         self.intersection_exited = set()
         self.mode5_rejoins = 0
         self.slot_seen = {7: False, 10: False}
@@ -53,8 +55,17 @@ class MissionCompletionTracker:
                 value = json.loads(value)
             except (TypeError, ValueError, json.JSONDecodeError):
                 return
-        self.route_complete.update(int(mode) for mode in
-                                   value.get("route_complete_modes", ()))
+        completed = {int(mode) for mode in
+                     value.get("route_complete_modes", ())}
+        self.route_complete.update(completed)
+        # In the one-front-LiDAR production graph, LiDAR selects a measured
+        # A/B slot and the corresponding recorded CSV parking case executes.
+        # Reaching the end of that selected case is the CSV rejoin proof.
+        for mode in (7, 10):
+            if (mode in completed and self.slot_seen[mode] and
+                    self.parking_source[mode] == "CSV_FALLBACK"):
+                self.parking_completed[mode] = True
+                self.parking_rejoined[mode] = True
 
     def observe_intersection_event(self, event):
         text = str(event)
@@ -137,14 +148,22 @@ class MissionCompletionTracker:
              pitch_deg=0.0, pitch_valid=False, maneuver_state=""):
         now = float(now)
         if self.mode == 2:
-            if bool(pitch_valid) and float(pitch_deg) >= 5.0 and not self.mode2_slope_seen:
-                self.mode2_slope_seen = True
-                self._event("MODE2_SLOPE_SEEN", 2, pitch_deg=float(pitch_deg))
             if ((stop_waypoint_active or self.mode2_stop_started is not None) and
                     self._zero(cmd_drive)):
                 if self.mode2_stop_started is None:
                     self.mode2_stop_started = now
                     self._event("MODE2_STOP_BEGIN", 2)
+                    self.mode2_pitch_checked = True
+                    self.mode2_stop_pitch_deg = (
+                        float(pitch_deg) if bool(pitch_valid) else None)
+                    self.mode2_slope_seen = (
+                        bool(pitch_valid) and
+                        abs(float(pitch_deg)) >= 5.0)
+                    self._event(
+                        "MODE2_SLOPE_VALID" if self.mode2_slope_seen else
+                        "MODE2_SLOPE_INVALID", 2,
+                        pitch_deg=self.mode2_stop_pitch_deg,
+                        pitch_valid=bool(pitch_valid))
                 if now-self.mode2_stop_started >= 4.0 and not self.mode2_stop_4s_done:
                     self.mode2_stop_4s_done = True
                     self._event("MODE2_STOP_4S_DONE", 2)
@@ -176,13 +195,6 @@ class MissionCompletionTracker:
         if mode in (7, 10):
             parking_done = (self.parking_completed[mode] and
                             self.parking_rejoined[mode])
-            # The production vehicle intentionally runs one front LiDAR only.
-            # In that graph modes 7/10 follow their recorded CSV maneuver, so
-            # no rear-LiDAR slot observation can exist.  Keep the slot
-            # requirement for an actual LiDAR maneuver, but let a completed
-            # CSV fallback satisfy the mission audit on its own.
-            if self.parking_source[mode] == "CSV_FALLBACK":
-                return parking_done
             return self.slot_seen[mode] and parking_done
         if mode == 9:
             return self.mode9_emergency_applied
@@ -229,6 +241,8 @@ class MissionCompletionTracker:
             "invalid_modes": sorted(self.invalid_modes),
             "mode2_stop_4s_done": self.mode2_stop_4s_done,
             "mode2_slope_seen": self.mode2_slope_seen,
+            "mode2_pitch_checked": self.mode2_pitch_checked,
+            "mode2_stop_pitch_deg": self.mode2_stop_pitch_deg,
             "mode5_avoidance_rejoined_count": self.mode5_rejoins,
             "parking_slot_seen": self.slot_seen,
             "parking_source": self.parking_source,

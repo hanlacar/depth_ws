@@ -14,6 +14,7 @@ from .mission_completion import MissionCompletionTracker
 from .mission_core import MissionMachine
 from .models import MissionDecision, MissionInputs
 from .ros_helpers import safe_shutdown, status
+from .segment_result import SegmentResultLatch
 
 
 class MissionNode(Node):
@@ -62,6 +63,12 @@ class MissionNode(Node):
         self.last_logged_state = None
         self.last_logged_event = ""
         self.completion = MissionCompletionTracker()
+        self.segment_results = SegmentResultLatch()
+        self.segment3 = {
+            "camera_valid": False, "camera_violation": False,
+            "lidar_hard": False}
+        self.segment9 = {"nominal_3": False, "violation": ""}
+        self.latest_lidar_distance = None
         self.final_drive = 0.0
         self.imu_pitch = 0.0
         self.imu_valid = False
@@ -102,10 +109,9 @@ class MissionNode(Node):
                                  lambda m: setattr(self.value, "steering_deg", float(m.data)), 10)
         self.create_subscription(String, "/camera/mission/section",
                                  lambda m: setattr(self.value, "section_id", str(m.data)), 10)
-        self.create_subscription(String, "/drive_mode",
-                                 lambda m: self.completion.set_mode(m.data), 10)
+        self.create_subscription(String, "/drive_mode", self.on_mode, 10)
         self.create_subscription(Float32, "/cmd_drive",
-                                 lambda m: setattr(self, "final_drive", float(m.data)), 10)
+                                 self.on_final_drive, 10)
         self.create_subscription(Float32, "/imu/pitch_deg",
                                  lambda m: setattr(self, "imu_pitch", float(m.data)), 10)
         self.create_subscription(Bool, "/imu/valid",
@@ -113,7 +119,9 @@ class MissionNode(Node):
         self.create_subscription(String, "/depth_slam/route/mode_status",
                                  lambda m: self.completion.observe_route_status(m.data), 10)
         self.create_subscription(String, "/depth_slam/lidar/safety_event",
-                                 lambda m: self.completion.observe_lidar_safety(m.data), 10)
+                                 self.on_lidar_safety, 10)
+        self.create_subscription(String, "/depth_slam/camera/csv_validation",
+                                 self.on_csv_validation, 10)
         self.create_subscription(String, "/depth_slam/lidar/maneuver_event",
                                  lambda m: self.completion.observe_maneuver(m.data), 10)
         self.create_subscription(String, "/depth_slam/lidar/maneuver",
@@ -141,6 +149,84 @@ class MissionNode(Node):
         self.pub_mode_status = self.create_publisher(
             String, "/depth_slam/mission/mode_status", 10)
         self.create_timer(1.0/30.0, self.tick)
+
+    def _report_segment(self, mode, passed, reason):
+        line = self.segment_results.report(mode, passed, reason)
+        if line is not None:
+            self.get_logger().info(line)
+
+    def on_mode(self, message):
+        try:
+            mode = int(str(message.data).strip())
+        except ValueError:
+            return
+        previous = self.completion.mode
+        if previous == 3 and mode != 3:
+            passed = (self.segment3["camera_valid"] and
+                      not self.segment3["camera_violation"] and
+                      not self.segment3["lidar_hard"])
+            if passed:
+                reason = "CSV inside road, no lane overlap, LiDAR >0.5m"
+            elif self.segment3["lidar_hard"]:
+                reason = "LiDAR obstacle detected within 0.5m"
+            elif self.segment3["camera_violation"]:
+                reason = "CSV road/lane validation violated"
+            else:
+                reason = "no valid road/lane evidence"
+            self._report_segment(3, passed, reason)
+        if previous == 9 and mode != 9:
+            passed = self.segment9["nominal_3"] and not self.segment9["violation"]
+            self._report_segment(
+                9, passed, self.segment9["violation"] or
+                "drive=3 nominal and LiDAR speed limits respected")
+        self.completion.set_mode(mode)
+
+    def on_csv_validation(self, message):
+        if self.completion.mode != 3:
+            return
+        try:
+            value = json.loads(message.data)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        if not bool(value.get("fresh", False)):
+            return
+        crossing = float(value.get("lane_crossing_ratio", 1.0))
+        valid = (bool(value.get("road_valid", False)) and
+                 bool(value.get("lane_valid", False)) and crossing <= 0.0)
+        self.segment3["camera_valid"] |= valid
+        if value.get("state") in ("OUTSIDE_ROAD", "NEAR_BOUNDARY") or \
+                (bool(value.get("road_valid", False)) and not valid):
+            self.segment3["camera_violation"] = True
+            self._report_segment(3, False, "CSV road/lane validation violated")
+
+    def on_lidar_safety(self, message):
+        self.completion.observe_lidar_safety(message.data)
+        try:
+            value = json.loads(message.data)
+            distance = value.get("distance_m")
+            self.latest_lidar_distance = (
+                None if distance is None else float(distance))
+            mode = int(value.get("mode", self.completion.mode or -1))
+            if mode == 3 and bool(value.get("hard_stop", False)):
+                self.segment3["lidar_hard"] = True
+                self._report_segment(
+                    3, False, "LiDAR obstacle detected within 0.5m")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+
+    def on_final_drive(self, message):
+        self.final_drive = float(message.data)
+        if self.completion.mode != 9:
+            return
+        distance = self.latest_lidar_distance
+        if abs(self.final_drive-3.0) <= 1.0e-6:
+            self.segment9["nominal_3"] = True
+        if distance is None:
+            return
+        if distance <= 0.5 and abs(self.final_drive) > 1.0e-6:
+            self.segment9["violation"] = "drive nonzero with obstacle <=0.5m"
+        elif 0.5 < distance <= 1.0 and self.final_drive > 1.0+1.0e-6:
+            self.segment9["violation"] = "drive >1 with obstacle <=1.0m"
 
     def on_traffic(self, message):
         self.value.traffic_state = message.data.upper()
@@ -256,6 +342,40 @@ class MissionNode(Node):
                 decision.traffic_permission, decision.traffic_stop_allowed,
                 decision.intersection_committed)
         for event in self.completion.drain_events():
+            event_name = str(event.get("event", ""))
+            event_mode = int(event.get("mode", -1))
+            if event_name == "MODE2_SLOPE_INVALID":
+                pitch = event.get("pitch_deg")
+                reason = ("STOP reached but IMU pitch invalid" if pitch is None
+                          else f"STOP reached but IMU pitch={float(pitch):.1f}deg")
+                self._report_segment(2, False, reason)
+            elif event_name == "MODE5_MISSION_FAILED":
+                self._report_segment(
+                    5, False, "successful avoidance count=" +
+                    str(event.get("avoidance_rejoined_count", 0)))
+            elif event_name == "MISSION_MODE_COMPLETE":
+                if event_mode == 2:
+                    self._report_segment(
+                        2, True, "CSV STOP and |IMU pitch|>=5deg")
+                elif event_mode in (4, 6, 8):
+                    self._report_segment(
+                        event_mode, True,
+                        "minimum 3s stop and traffic gate released")
+                elif event_mode == 5:
+                    self._report_segment(
+                        5, True, "successful avoidance count=" +
+                        str(self.completion.mode5_rejoins))
+                elif event_mode in (7, 10):
+                    self._report_segment(
+                        event_mode, True,
+                        "LiDAR slot selected and " +
+                        self.completion.parking_source[event_mode] +
+                        " rejoined CSV")
+                elif event_mode == 11:
+                    self._report_segment(
+                        11, True,
+                        f"branch={self.completion.mode11_branch} source="
+                        f"{self.completion.mode11_source} after 5s stop")
             payload = json.dumps(event, sort_keys=True, separators=(",", ":"))
             self.pub_event.publish(String(data=payload))
             self.get_logger().info("[MISSION] "+payload)
@@ -283,7 +403,8 @@ class MissionNode(Node):
             "depth_slam/mission",
             DiagnosticStatus.WARN if decision.stop_required else DiagnosticStatus.OK,
             decision.state,
-             (("section", self.value.section_id), ("stop_reason", decision.stop_reason),
+            (("section", self.value.section_id),
+             ("stop_reason", decision.stop_reason),
              ("traffic_age_s", self.value.traffic_age),
              ("direct_red_override", self.value.traffic_red_override),
              ("direct_green_override", self.value.traffic_green_override),

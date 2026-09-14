@@ -29,7 +29,7 @@ def test_b_distance_zones_static_and_dynamic():
     slow = assess_curved_roi((obstacle(0.75, 0),), 0)
     assert slow.slowdown and not slow.hard_stop
     assert not assess_curved_roi((obstacle(1.25, 0),), 0).slowdown
-    assert assess_curved_roi((obstacle(1.25, 0, DYNAMIC),), 0).slowdown
+    assert not assess_curved_roi((obstacle(1.25, 0, DYNAMIC),), 0).slowdown
 
 
 def test_c_front_rear_mode_gating():
@@ -45,7 +45,7 @@ def test_front_roi_has_exact_half_width_and_distance_contract():
     assert assess_curved_roi((obstacle(0.49, 0.29),), 0).hard_stop
     assert assess_curved_roi((obstacle(1.0, 0.0),), 0).slowdown
     assert not assess_curved_roi((obstacle(1.01, 0.0),), 0).slowdown
-    assert assess_curved_roi((obstacle(1.49, 0.0, DYNAMIC),), 0).slowdown
+    assert not assess_curved_roi((obstacle(1.49, 0.0, DYNAMIC),), 0).slowdown
     assert not assess_curved_roi((obstacle(1.51, 0.0, DYNAMIC),), 0).slowdown
 
 
@@ -211,7 +211,7 @@ def test_f_mode7_and_10_lidar_and_csv_fallback_parking():
         front_only.observe_maneuver({
             "mode": mode, "event": "PARKING_CSV_FALLBACK"})
         front_only.observe_csv_parking_complete(mode)
-        assert front_only.mode_complete(mode)
+        assert not front_only.mode_complete(mode)
         missing = MissionCompletionTracker()
         missing.observe_route_status({"route_complete_modes": [mode]})
         missing.observe_maneuver({"mode": mode, "event": "PARKING_CSV_REJOINED"})

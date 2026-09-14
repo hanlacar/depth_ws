@@ -58,6 +58,7 @@ class CsvRoadValidatorNode(Node):
             "minimum_vehicle_corridor_inside_ratio": 0.75,
             "minimum_visible_path_ratio": 0.70,
             "minimum_road_confidence": 0.70,
+            "lane_max_crossing_ratio": 0.0,
             "camera_mount.configured": False,
             "camera_mount.position_x_m": 0.0,
             "camera_mount.position_y_m": 0.0,
@@ -80,7 +81,8 @@ class CsvRoadValidatorNode(Node):
             minimum_vehicle_corridor_inside_ratio=float(
                 p("minimum_vehicle_corridor_inside_ratio")),
             minimum_visible_path_ratio=float(p("minimum_visible_path_ratio")),
-            minimum_road_confidence=float(p("minimum_road_confidence")))
+            minimum_road_confidence=float(p("minimum_road_confidence")),
+            lane_max_crossing_ratio=float(p("lane_max_crossing_ratio")))
         self.config.validate()
         self.mount = load_camera_mount_config({
             "configured": p("camera_mount.configured"),

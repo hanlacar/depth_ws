@@ -148,7 +148,7 @@ def assess_curved_roi(clusters, steering_deg, *, front_active=True,
             zones[2] += 1
     return RoiAssessment(
         centerline, curvature, radius, zones[0], zones[1], zones[2], nearest,
-        zones[0] > 0, zones[1] > 0 or zones[2] > 0)
+        zones[0] > 0, zones[1] > 0)
 
 
 def mode_gates(mode):

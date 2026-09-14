@@ -18,3 +18,4 @@ csv_road_validator:
     minimum_vehicle_corridor_inside_ratio: 0.75
     minimum_visible_path_ratio: 0.70
     minimum_road_confidence: 0.70
+    lane_max_crossing_ratio: 0.0

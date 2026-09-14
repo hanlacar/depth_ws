@@ -21,13 +21,22 @@ def _setup(context):
 
     depth = enabled("enable_depth")
     imu = enabled("enable_imu")
+    vslam = enabled("enable_vslam")
     overrides = {
         "rgb_camera.color_profile": f"{width}x{height}x{fps}",
-        "enable_depth": depth,
-        "align_depth.enable": depth,
-        "enable_sync": depth,
-        "enable_gyro": imu,
-        "enable_accel": imu,
+        "enable_depth": depth or vslam,
+        "align_depth.enable": depth or vslam,
+        "enable_sync": depth or vslam,
+        # Production RTAB-Map uses aligned RGB-D. Keep unused stereo streams
+        # off so the shared USB hub is not saturated.
+        "enable_infra1": False,
+        "enable_infra2": False,
+        "depth_module.infra_profile": "640x480x60",
+        "enable_gyro": imu or vslam,
+        "enable_accel": imu or vslam,
+        "gyro_fps": 400 if vslam else 200,
+        "accel_fps": 400 if vslam else 100,
+        "unite_imu_method": 2 if vslam else 0,
     }
     if serial:
         overrides["serial_no"] = serial
@@ -51,4 +60,5 @@ def generate_launch_description():
         DeclareLaunchArgument("color_fps", default_value="60"),
         DeclareLaunchArgument("enable_depth", default_value="true"),
         DeclareLaunchArgument("enable_imu", default_value="true"),
+        DeclareLaunchArgument("enable_vslam", default_value="false"),
         OpaqueFunction(function=_setup)])

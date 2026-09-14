@@ -32,8 +32,9 @@ def _valid(candidate):
 
 
 def arbitrate(csv, lidar, hard_emergency=False, mission_hold=False,
-              lidar_slowdown=False, mode=-1, steering_deg=None):
-    """Priority: emergency, mission hold, LiDAR, CSV, safe stop."""
+              lidar_slowdown=False, mode=-1, steering_deg=None,
+              steering_slowdown=False):
+    """Priority: stop, mission hold, distance slow, steering slow, speed."""
     if hard_emergency:
         return ArbiterDecision(0.0, 0, "SAFETY", "HARD_EMERGENCY_STOP")
     if mission_hold:
@@ -46,10 +47,13 @@ def arbitrate(csv, lidar, hard_emergency=False, mission_hold=False,
                                    "CSV", "CSV_TRACKING")
     else:
         return ArbiterDecision(0.0, 0, "NONE", "NO_VALID_SOURCE")
+    if lidar_slowdown and decision.drive > 1.0:
+        return ArbiterDecision(1.0, decision.wheel, decision.owner,
+                               "LIDAR_DISTANCE_SLOWDOWN")
+    if steering_slowdown and decision.drive > 1.0:
+        return ArbiterDecision(1.0, decision.wheel, decision.owner,
+                               "STEERING_SLOWDOWN")
     if int(mode) == 9 and decision.drive > 0.0:
         return ArbiterDecision(3.0, decision.wheel, decision.owner,
                                "MODE9_FIXED_SPEED")
-    if lidar_slowdown and decision.drive > 1.0:
-        return ArbiterDecision(1.0, decision.wheel, decision.owner,
-                               "STEERING_SUSTAINED_SLOWDOWN")
     return decision

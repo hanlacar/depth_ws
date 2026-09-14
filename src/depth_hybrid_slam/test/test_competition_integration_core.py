@@ -196,6 +196,8 @@ def test_modes_7_and_10_parking_selection_and_fallback():
     assert parking_decision(7, False, True, True).owner == "LIDAR"
     assert parking_decision(7, False, True, False,
                             "PLANNER_GIVE_UP").owner == "CSV"
+    missing = parking_decision(7, False, False, False)
+    assert missing.stop and missing.state == "T_WAIT_LIDAR_SLOT"
     assert parking_decision(10, True, False, True).state == "V_LIDAR_PATH"
     assert parking_decision(10, False, True, False,
                             "PATH_ABORT").branch == "B"
@@ -326,40 +328,40 @@ def test_mode9_is_fixed_stage_three_except_hard_emergency():
         csv, CommandCandidate(), mode=9, steering_deg=22.0).drive == 3.0
     assert arbitrate(
         csv, CommandCandidate(), lidar_slowdown=True, mode=9,
-        steering_deg=-22.0).drive == 3.0
+        steering_deg=-22.0).drive == 1.0
+    assert arbitrate(
+        csv, CommandCandidate(), steering_slowdown=True, mode=9,
+        steering_deg=-22.0).drive == 1.0
     assert arbitrate(
         csv, CommandCandidate(), hard_emergency=True,
         lidar_slowdown=True, mode=9, steering_deg=0.0).drive == 0.0
 
 
-def test_non_mode9_steering_slowdown_requires_one_second_both_ways():
+def test_all_mode_steering_slowdown_half_second_enter_one_second_exit():
     latch = SteeringSlowdownLatch(
-        threshold_deg=10.0, enter_duration_s=1.0, exit_duration_s=1.0)
+        threshold_deg=10.0, enter_duration_s=0.5, exit_duration_s=1.0)
 
-    # Strictly above +/-10 degrees must persist for one whole second.
-    assert not latch.update(10.01, mode=8, now=0.0)
-    assert not latch.update(10.01, mode=8, now=0.99)
-    assert latch.update(10.01, mode=8, now=1.0)
+    assert not latch.update(10.0, mode=8, now=0.0)
+    assert not latch.update(10.0, mode=8, now=0.49)
+    assert latch.update(10.0, mode=8, now=0.5)
 
-    # A short return into the <=10 band cannot clear the slowdown.
-    assert latch.update(10.0, mode=8, now=1.1)
-    assert latch.update(10.01, mode=8, now=2.0)
+    # A short below-threshold interval cannot clear the slowdown.
+    assert latch.update(0.0, mode=8, now=0.6)
+    assert latch.update(10.0, mode=8, now=1.0)
     assert latch.below_since is None
 
-    # The clear band also has to remain continuous for one whole second.
-    assert latch.update(-10.0, mode=8, now=2.1)
-    assert latch.update(0.0, mode=8, now=3.09)
-    assert not latch.update(0.0, mode=8, now=3.1)
+    assert latch.update(0.0, mode=8, now=1.1)
+    assert latch.update(0.0, mode=8, now=2.09)
+    assert not latch.update(0.0, mode=8, now=2.11)
 
-    # Stale measured steering cannot fabricate either debounce interval.
+    # Stale measured steering cannot fabricate a debounce interval.
     assert not latch.update(-10.01, mode=8, now=4.0)
     assert not latch.update(None, mode=8, now=5.0)
     assert not latch.update(-10.01, mode=8, now=5.1)
-    assert latch.update(-10.01, mode=8, now=6.1)
+    assert latch.update(-10.01, mode=8, now=5.6)
 
-    # Mode 9 bypasses and resets steering slowdown unconditionally.
-    assert not latch.update(-22.0, mode=9, now=6.2)
-    assert not latch.update(-22.0, mode=8, now=6.3)
+    # Mode 9 obeys the same measured-steering slowdown.
+    assert latch.update(-22.0, mode=9, now=6.2)
 
 
 def test_mode9_emergency_latch_holds_dropouts_and_near_obstacle_until_clear():
@@ -457,10 +459,10 @@ def test_mode11_five_second_default_and_commit_is_immutable():
     gate.observe("2", 0.1)
     gate.observe("2", 0.2)
     assert gate.evaluate(4.99).stop
-    # A stale B signal defaults A.
-    assert gate.evaluate(5.0).branch == "A"
+    # Stale/non-explicit A evidence defaults B.
+    assert gate.evaluate(5.0).branch == "B"
     gate.observe("2", 5.1)
-    assert gate.evaluate(5.2).branch == "A"
+    assert gate.evaluate(5.2).branch == "B"
     fresh = Mode11ExitGate(confirmations=2)
     fresh.enter(0.0)
     fresh.observe("2", 4.8)
@@ -475,7 +477,7 @@ def test_mode11_five_second_default_and_commit_is_immutable():
     assert first.evaluate(5.0).branch == "A"
     unknown = Mode11ExitGate(confirmations=2)
     assert unknown.evaluate(5.0).stop
-    assert unknown.evaluate(10.0).branch == "A"
+    assert unknown.evaluate(10.0).branch == "B"
 
 
 def test_mode11_csv_branch_mapping_is_a_end_aa_b_end_ab():

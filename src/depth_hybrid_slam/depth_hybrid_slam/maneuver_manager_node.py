@@ -24,15 +24,15 @@ class ManeuverManagerNode(Node):
         super().__init__("depth_maneuver_manager")
         self.declare_parameter("publish_hz", 20.0)
         self.declare_parameter("prehardware_case_commands", False)
-        # Production keeps rear safety enabled.  A front-only commissioning
-        # run must opt out explicitly so missing rear parking-slot evidence
-        # falls back to the recorded CSV maneuver instead of hard-stopping.
+        # False selects the commissioned front-LiDAR slot evidence and the
+        # recorded CSV parking path. It must still wait for an actual A/B slot
+        # result; it never silently defaults A without LiDAR evidence.
         self.declare_parameter("rear_lidar_enabled", True)
         self.declare_parameter("route_path", "")
         self.declare_parameter("route_metadata_path", "")
         for name, default in (
                 ("wheelbase_m", 0.73),
-                ("planner_max_steering_deg", 21.0),
+                ("planner_max_steering_deg", 20.0),
                 ("vehicle_width_m", 0.80),
                 ("obstacle_margin_m", 0.15),
                 ("detour_length_m", 1.5),
@@ -492,11 +492,13 @@ class ManeuverManagerNode(Node):
         if self.mode in (7, 10):
             prefix = "T" if self.mode == 7 else "V"
             if not bool(self.get_parameter("rear_lidar_enabled").value):
+                if not self.slots_fresh or not (self.a_free or self.b_free):
+                    return ManeuverDecision(
+                        prefix+"_WAIT_LIDAR_SLOT", "LIDAR", True)
+                branch = "A" if self.a_free else "B"
                 return ManeuverDecision(
                     prefix+"_CSV_FALLBACK", "CSV", False,
-                    branch=(self.case_choices[prefix]
-                            if self.case_choices[prefix] in ("A", "B")
-                            else "A"))
+                    branch=branch)
             parking = self.parking[self.mode]
             branch = (self.parking_branches[self.mode] or
                       ("A" if self.a_free or not self.b_free else "B"))

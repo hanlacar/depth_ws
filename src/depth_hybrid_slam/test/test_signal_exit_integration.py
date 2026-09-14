@@ -76,7 +76,7 @@ def test_merged_five_second_vote_camera_and_default_are_latched():
     default.start(0.0)
     result = default.evaluate(5.0)
     assert result.state == ObservationState.DEFAULTED
-    assert result.route == SelectedRoute.A
+    assert result.route == SelectedRoute.B
 
 
 @pytest.mark.parametrize("signal,expected", (
@@ -94,14 +94,14 @@ def test_mode11_actual_hold_mapping_and_late_opposite(signal, expected):
     assert gate.evaluate(8.0).branch == expected
 
 
-def test_mode11_stale_unknown_and_divided_votes_default_a():
+def test_mode11_stale_unknown_and_divided_votes_default_b():
     for observations in (("B", "B"), ("UNKNOWN", "UNKNOWN"),
                          ("A", "B")):
         gate = Mode11ExitGate(confirmations=2)
         gate.enter(0.0)
         for index, signal in enumerate(observations):
             gate.observe(signal, 0.1+index*0.1)
-        assert gate.evaluate(5.0).branch == "A"
+        assert gate.evaluate(5.0).branch == "B"
         assert gate.commit_source == "DEFAULT"
 
 
@@ -183,7 +183,7 @@ def test_front_roi_exact_static_boundaries(distance, hard, slow):
 
 
 @pytest.mark.parametrize("distance,slow", (
-    (1.49, True), (1.50, True), (1.51, False)))
+    (1.49, False), (1.50, False), (1.51, False)))
 def test_front_roi_dynamic_zone3_boundaries(distance, slow):
     assert assess_curved_roi(
         (_cluster(distance, DYNAMIC),), 0.0).slowdown is slow
@@ -229,12 +229,15 @@ def test_arbiter_all_priority_combinations_and_stale_source_guard_exists():
     assert arbitrate(CommandCandidate(), CommandCandidate()).owner == "NONE"
     source = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam/command_arbiter_node.py") \
         .read_text(encoding="utf-8")
-    for key in ("hard", "mission", "branch", "lidar_hold"):
+    for key in ("mission", "branch", "lidar_hold"):
         assert f'not self._fresh(("{key}",), now)' in source
+    assert 'not self._fresh(("hard", "distance_slowdown",' in source
 
 
 @pytest.mark.parametrize("stop_s,pitch,route_complete,expected", (
     (4.0, 6.0, True, True),
+    (4.0, 5.0, True, True),
+    (4.0, -5.0, True, True),
     (3.9, 6.0, True, False),
     (4.0, 4.9, True, False),
     (0.0, 6.0, True, False),
@@ -256,7 +259,7 @@ def test_mode2_all_stop_pitch_route_combinations(
 @pytest.mark.parametrize("slot,source,expected", (
     ("A", "LIDAR", True), ("B", "LIDAR", True),
     ("A", "CSV_FALLBACK", True), ("B", "CSV_FALLBACK", True),
-    ("", "CSV_FALLBACK", True), ("", "LIDAR", False)))
+    ("", "CSV_FALLBACK", False), ("", "LIDAR", False)))
 def test_parking_slot_source_matrix(mode, slot, source, expected):
     tracker = MissionCompletionTracker()
     tracker.set_mode(mode)

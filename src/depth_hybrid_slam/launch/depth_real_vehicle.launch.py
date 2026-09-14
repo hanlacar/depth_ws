@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
-from depth_hybrid_slam.route_io import load_segmented_route
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
@@ -27,8 +26,6 @@ def _runtime(context):
         raise RuntimeError("start_branch must be A or B")
     if not route_path.is_file() or not metadata_path.is_file():
         raise RuntimeError("final route CSV and metadata are required")
-    route = load_segmented_route(route_path, metadata_path, branch=branch)
-    first = route.points[0]
     share = Path(get_package_share_directory("depth_hybrid_slam"))
     mcu = Path(get_package_share_directory("t870_mcu_simple"))
     camera = Path(get_package_share_directory("camera_navigation"))
@@ -48,13 +45,6 @@ def _runtime(context):
         "end_mode": 11,
     }]
     return [
-        Node(
-            package="tf2_ros", executable="static_transform_publisher",
-            name="map_to_real_odom_route_origin", arguments=[
-                "--x", str(first.x), "--y", str(first.y), "--z", "0.0",
-                "--roll", "0.0", "--pitch", "0.0", "--yaw", str(first.yaw),
-                "--frame-id", "map", "--child-frame-id", "odom",
-            ]),
         Node(
             package="t870_mcu_simple", executable="bridge",
             name="t870_mcu_simple_bridge", output="screen",
@@ -77,16 +67,42 @@ def _runtime(context):
                 "serial_no": LaunchConfiguration("camera_serial"),
                 "device": LaunchConfiguration("device"),
                 "require_cuda": LaunchConfiguration("require_cuda"),
+                "enable_vslam": "true",
+            }.items(), condition=IfCondition(LaunchConfiguration("use_camera"))),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(str(
+                share/"launch"/"hybrid_localization.launch.py")),
+            launch_arguments={
+                "map_path": LaunchConfiguration("map_path"),
+                "route_path": str(route_path),
+                "route_metadata_path": str(metadata_path),
+                "use_vehicle_odom": "true",
+                "publish_camera_mount_tf": "false",
+                "start_rviz": "false",
             }.items(), condition=IfCondition(LaunchConfiguration("use_camera"))),
         Node(
             package="depth_hybrid_slam", executable="odom_localization",
             name="odom_localization", output="screen"),
+        Node(
+            package="depth_hybrid_slam", executable="start_validation",
+            name="depth_start_validation", output="screen", parameters=[{
+                "route_path": str(route_path),
+                "route_metadata_path": str(metadata_path),
+                "user_branch": branch,
+            }]),
         Node(
             package="depth_hybrid_slam", executable="route_follower",
             name="route_follower", output="screen", parameters=follower),
         Node(
             package="depth_hybrid_slam", executable="route_local_path",
             name="depth_route_local_path_connector", output="screen"),
+        Node(
+            package="depth_hybrid_slam", executable="csv_road_validator",
+            name="csv_road_validator", output="screen", parameters=[
+                str(Path(get_package_share_directory("camera_bringup")) /
+                    "config"/"camera_mount.yaml"),
+                str(share/"config"/"csv_road_validator.yaml")],
+            condition=IfCondition(LaunchConfiguration("use_camera"))),
         Node(
             package="depth_hybrid_slam", executable="branch_selector",
             name="depth_route_branch_selector", output="screen",
@@ -151,6 +167,9 @@ def generate_launch_description():
             "route_metadata_path",
             default_value=ROOT+"/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml"),
         DeclareLaunchArgument("start_branch", default_value="A"),
+        DeclareLaunchArgument(
+            "map_path", default_value=ROOT +
+            "/maps/merged_competition_level_aligned_v10/rtabmap.db"),
         DeclareLaunchArgument("mcu_port", default_value="auto"),
         DeclareLaunchArgument("launch_mcu_odom", default_value="true"),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),

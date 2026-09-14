@@ -24,12 +24,15 @@ def generate_launch_description():
         DeclareLaunchArgument("serial_no", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),
         DeclareLaunchArgument("require_cuda", default_value="true"),
+        DeclareLaunchArgument("enable_vslam", default_value="false"),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(
                 camera/"launch"/"d456_bringup.launch.py")),
             launch_arguments={
                 "serial_no": LaunchConfiguration("serial_no"),
-                "enable_depth": "false", "enable_imu": "true",
+                "enable_depth": LaunchConfiguration("enable_vslam"),
+                "enable_imu": "true",
+                "enable_vslam": LaunchConfiguration("enable_vslam"),
             }.items()),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(

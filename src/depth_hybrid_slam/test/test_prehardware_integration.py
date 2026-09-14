@@ -38,10 +38,10 @@ def test_branch_default_b_timeout_and_mode11_wait():
     assert selector.evaluate(0.0).branch == "A"
     selector.set_command("B", 0.1)
     assert selector.evaluate(0.2).branch == "B"
-    assert selector.evaluate(1.2).branch == "A"
+    assert selector.evaluate(1.2).branch == "B"
     selector.set_mode(11, 2.0)
     assert selector.evaluate(4.9).stop
-    assert selector.evaluate(5.0).state == "MODE11_TIMEOUT_DEFAULT_A"
+    assert selector.evaluate(5.0).state == "MODE11_TIMEOUT_DEFAULT_B"
     selector.set_mode(1, 5.1)
     selector.set_mode(11, 6.0)
     selector.set_command("B", 6.1)
@@ -178,7 +178,7 @@ def test_required_production_topic_owners_are_explicit():
     assert 'Float32, "/cmd_drive"' in arbiter
     assert 'Int32, "/cmd_wheel"' in arbiter
     assert '"/depth_slam/camera/csv_validation"' in arbiter
-    assert 'value.get("state") == "OUTSIDE_ROAD"' in arbiter
+    assert 'value.get("state") in ("OUTSIDE_ROAD", "NEAR_BOUNDARY")' in arbiter
     assert 'create_publisher(Float32, "/cmd_drive"' not in lidar
     assert 'create_publisher(Int32, "/cmd_wheel"' not in lidar
     assert '"prehardware_test_only"' not in lidar

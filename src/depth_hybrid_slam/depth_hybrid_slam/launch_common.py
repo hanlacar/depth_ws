@@ -43,6 +43,8 @@ COMMON_DEFAULTS = {
     "use_temporary_db_copy": "true",
     "publish_map_tf_for_view": "true",
     "highest_density_view": "false",
+    "localization_output_prefix": "/depth_slam/localization",
+    "use_vehicle_odom": "false",
 }
 
 
@@ -53,7 +55,8 @@ def common_arguments(overrides=None):
 
 
 def rtabmap_include(localization, launch_prefix="", rtabmap_args=None,
-                    database_path=None):
+                    database_path=None,
+                    odom_topic="/depth_slam/cuvslam/odometry"):
     launch_file = (get_package_share_directory("rtabmap_launch") +
                    "/launch/rtabmap.launch.py")
     # RTAB-Map consumes the selected localization odometry. Its own rgbd/stereo
@@ -69,7 +72,7 @@ def rtabmap_include(localization, launch_prefix="", rtabmap_args=None,
         # mode RTAB-Map 0.22.1 can turn that into an invalid zero-information
         # link, so use the equivalent cuVSLAM TF with explicit variances.
         "odom_frame_id": "odom" if localization else "",
-        "odom_topic": "/depth_slam/cuvslam/odometry",
+        "odom_topic": odom_topic,
         "visual_odometry": "false",
         "icp_odometry": "false",
         "publish_tf_odom": "false",
