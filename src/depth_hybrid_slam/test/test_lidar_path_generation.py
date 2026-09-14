@@ -1,13 +1,20 @@
 import math
+from pathlib import Path
 
 import pytest
 
 from depth_hybrid_slam.lidar_local_planner import (
     HARD_STEERING_LIMIT_DEG, audit_path, path_collision_free, plan_detour,
-    plan_parking, steering_geometry)
+    plan_parking, plan_route_detour, steering_geometry)
+from depth_hybrid_slam.csv_only_branching import load_csv_only_route_case
+from depth_hybrid_slam.lidar_mission_core import (
+    bounded_rejoin, route_rejoin_candidates)
 from depth_hybrid_slam.lidar_mission_core import ParkingManeuver
 from depth_hybrid_slam.lidar_path_tracker import LocalPathTracker
 from depth_hybrid_slam.vehicle_kinematics import AckermannPathEvaluator
+
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _assert_generated_feasible(plan, planner_limit=21.0):
@@ -192,3 +199,91 @@ def test_tracker_aborts_instead_of_clamping_an_over_limit_recovery():
     command = tracker.update((0.0, 0.5, 0.0))
     assert not command.valid
     assert command.drive == 0.0 and command.wheel == 0
+
+
+def test_tracker_keeps_lidar_ownership_until_final_heading_matches_csv():
+    tracker = LocalPathTracker()
+    assert tracker.set_plan(
+        ((0.0, 0.0, 0.0), (1.0, 0.0, math.radians(8.0))),
+        (0.0, 0.0, math.radians(20.0)), 1.0)
+    endpoint = (math.cos(math.radians(20.0)),
+                math.sin(math.radians(20.0)))
+    assert not tracker.update(
+        (*endpoint, math.radians(39.0))).complete
+    assert tracker.update(
+        (*endpoint, math.radians(28.0))).complete
+
+
+def test_curved_csv_detour_uses_forward_index_and_exact_pose_heading_rejoin():
+    route_path = ROOT/"routes/network/route_network_segmented_stop_edited_vforward.csv"
+    route = load_csv_only_route_case(
+        route_path, route_path.with_suffix(".metadata.yaml"), "AAAA")
+    start_index = next(
+        index for index, point in enumerate(route)
+        if point.mode == 5 and point.point_index == 237)
+    start = route[start_index]
+    plan = plan_route_detour(
+        (start.x, start.y, start.yaw), route, start_index, 0.2,
+        obstacles=((2.5, 0.0),), maximum_replans=120)
+    assert plan.valid and plan.route_index > start_index
+    assert route[plan.route_index].segment_id == start.segment_id
+    assert plan.max_steering_deg < HARD_STEERING_LIMIT_DEG
+    assert plan.replan_reason == "FRENET_OFFSET_SHORTEST"
+    assert math.hypot(plan.points[-1][0], plan.points[-1][1]) < 8.0
+    local_x, local_y, local_yaw = plan.points[-1]
+    cosine, sine = math.cos(start.yaw), math.sin(start.yaw)
+    pose = (
+        start.x+cosine*local_x-sine*local_y,
+        start.y+sine*local_x+cosine*local_y,
+        start.yaw+local_yaw,
+    )
+    goal = route[plan.route_index]
+    assert math.hypot(pose[0]-goal.x, pose[1]-goal.y) <= 1.0e-9
+    assert abs(math.atan2(
+        math.sin(pose[2]-goal.yaw), math.cos(pose[2]-goal.yaw))) <= 1.0e-9
+    selected = bounded_rejoin(
+        route_rejoin_candidates(
+            route, start.segment_id, start_index, pose, forward_window=120),
+        start.segment_id, start_index, start.direction,
+        forward_window=120, max_distance_m=0.25, max_heading_deg=10.0)
+    assert selected is not None and selected.index == plan.route_index
+
+
+def test_route_detour_never_selects_past_or_other_segment_rejoin():
+    route_path = ROOT/"routes/network/route_network_segmented_stop_edited_vforward.csv"
+    route = load_csv_only_route_case(
+        route_path, route_path.with_suffix(".metadata.yaml"), "AAAA")
+    start_index = next(
+        index for index, point in enumerate(route)
+        if point.mode == 5 and point.point_index == 337)
+    start = route[start_index]
+    plan = plan_route_detour(
+        (start.x, start.y, start.yaw), route, start_index, -0.2,
+        obstacles=((1.8, 0.0),), maximum_replans=120)
+    assert plan.valid
+    assert plan.route_index > start_index
+    assert route[plan.route_index].segment_id == start.segment_id
+
+
+def test_route_detour_is_minimal_lateral_offset_and_rejects_curb_overlap():
+    class Point:
+        def __init__(self, x):
+            self.x, self.y, self.yaw = x, 0.0, 0.0
+            self.segment_id, self.direction = "M5", 1
+
+    route = tuple(Point(index/10.0) for index in range(121))
+    obstacle = ((3.0, -0.02), (3.0, 0.02))
+    open_plan = plan_route_detour(
+        (0.0, 0.0, 0.0), route, 0, 0.0, obstacles=obstacle,
+        maximum_replans=200)
+    assert open_plan.valid
+    assert open_plan.points[-1][0] < 8.0
+    assert min(point[1] for point in open_plan.points) < -0.55
+    assert open_plan.replan_reason == "FRENET_OFFSET_SHORTEST"
+
+    narrow = plan_route_detour(
+        (0.0, 0.0, 0.0), route, 0, 0.0, obstacles=obstacle,
+        left_boundary_m=1.0, right_boundary_m=-1.0,
+        maximum_replans=200)
+    assert not narrow.valid
+    assert "CURB_BOUNDARY" in narrow.replan_reason

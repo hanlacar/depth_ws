@@ -205,6 +205,9 @@ def test_required_production_topic_owners_are_explicit():
     assert 'plan = self.parking_plans[self.mode]' in manager
     assert 'parking.state == "CSV_APPROACH"' in manager
     assert '"/depth_slam/lidar/csv_rejoin_valid"' in rejoin
+    assert '"/depth_slam/lidar/planned_rejoin_index"' in rejoin
+    assert '"PLANNED_EXACT_ENDPOINT"' in rejoin
+    assert '"/depth_slam/lidar/planned_rejoin_index"' in manager
     assert not (ROOT/"src/camera_navigation/camera_navigation"/
                 "camera_command_selector_node.py").exists()
 
@@ -214,6 +217,9 @@ def test_traffic_gate_is_driven_by_csv_stop_waypoint_state():
                "mission_node.py").read_text()
     assert '"/depth_slam/route/stop_waypoint_state"' in mission
     assert '"MINIMUM_3S_HOLD", "WAIT_TRAFFIC_RELEASE"' in mission
+    assert '"/camera_traffic_light"' in mission
+    assert '"/camera/traffic_light_rgb/state"' in mission
+    assert 'self.value.traffic_red_override = "R" in direct' in mission
 
 
 def test_hil_uses_real_sensors_and_test_only_odom():

@@ -2,7 +2,7 @@ format_version: 3
 finalized: true
 route_name: competition_full_route_default_a_stage1
 route_csv: /home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv
-route_sha256: e308f6e8be749d6372b0814ad105fba78058d9419c4c1874efac42c84bd03160
+route_sha256: b9fca2fc46e98e7ce120b7b8791e39f093d74ebaedf393145b00a0bf048783a0
 rtabmap_db: /home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db
 rtabmap_db_sha256: a9606bed581f1f32b06af5a68b37d41dfccc74f8cda3840bb7fb76c7ac6795ca
 route_coordinate_frame: gps_local_enu
@@ -165,6 +165,8 @@ stop_edit:
   source_metadata: /home/qor/depth_ws/routes/network/route_network_segmented.metadata.yaml
   source_metadata_sha256: 3edf59471f70a7044b1041f1e4ffcde6e863b46398f10edb352cb21ab4ba75e5
   added_stops:
+  - - START_A
+    - 173
   - - AAA_BASE
     - 184
   - - START_B

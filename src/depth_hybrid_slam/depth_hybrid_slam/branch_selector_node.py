@@ -16,9 +16,11 @@ class BranchSelectorNode(Node):
         self.declare_parameter("command_timeout_s", 3.0)
         self.declare_parameter("mode_11_wait_s", 5.0)
         self.declare_parameter("publish_hz", 20.0)
+        self.declare_parameter("initial_branch", "A")
         self.core = BranchSelector(
             self.get_parameter("command_timeout_s").value,
-            self.get_parameter("mode_11_wait_s").value)
+            self.get_parameter("mode_11_wait_s").value,
+            self.get_parameter("initial_branch").value)
         self.create_subscription(
             String, "/depth_slam/route/branch_command", self._command, 10)
         self.create_subscription(String, "/drive_mode", self._mode, 10)
@@ -50,7 +52,7 @@ class BranchSelectorNode(Node):
             "branch": decision.branch,
             "stop": decision.stop,
             "state": decision.state,
-            "default": "A",
+            "default": self.core.initial_branch,
             "mode": self.core.mode,
         }, separators=(",", ":"))))
 

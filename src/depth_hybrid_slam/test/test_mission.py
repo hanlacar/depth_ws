@@ -86,7 +86,7 @@ def test_mode11_stop_is_not_mixed_with_intersection_gate():
     assert decision.state == "CRUISE"
 
 
-def test_mission_uses_fused_red_plus_green_as_immediate_go():
+def test_mission_fresh_red_presence_overrides_simultaneous_green():
     core = MissionMachine()
     decision = core.update(value(
         traffic_state="G", traffic_aspect="GREEN_CIRCLE",
@@ -94,12 +94,12 @@ def test_mission_uses_fused_red_plus_green_as_immediate_go():
         traffic_red_present=True, traffic_green_present=True,
         traffic_diagnostics_age=.1, csv_stop_line_active=True,
         intersection_progress=progress(mode=4)))
-    assert decision.state == "RELEASE_PENDING"
-    assert not decision.stop_required
-    assert "RED_PLUS_GREEN_GO" in core.last_traffic_decision.event
+    assert decision.state == "STOP_LINE_HOLD"
+    assert decision.stop_required
+    assert core.last_traffic_decision.aspect == "R"
 
 
-def test_mission_mode8_uses_fused_red_plus_green_left_as_go():
+def test_mission_mode8_red_presence_overrides_green_left():
     core = MissionMachine()
     decision = core.update(value(
         traffic_state="G", traffic_aspect="GREEN_LEFT",
@@ -107,7 +107,23 @@ def test_mission_mode8_uses_fused_red_plus_green_left_as_go():
         traffic_red_present=True, traffic_green_present=True,
         traffic_diagnostics_age=.1, csv_stop_line_active=True,
         intersection_progress=progress(mode=8)))
-    assert decision.state == "RELEASE_PENDING"
-    assert not decision.stop_required
-    assert "MODE8_RED_PLUS_GREEN_LEFT_GO" in \
-        core.last_traffic_decision.event
+    assert decision.state == "STOP_LINE_HOLD"
+    assert decision.stop_required
+    assert core.last_traffic_decision.aspect == "R"
+
+
+def test_direct_red_topic_holds_regardless_of_fusion_confidence():
+    core = MissionMachine()
+    common = {
+        "csv_stop_line_active": True,
+        "intersection_progress": progress(),
+    }
+    red = core.update(value(
+        traffic_state="UNKNOWN", traffic_confidence=0.0,
+        traffic_red_override=True, **common))
+    assert red.stop_required
+    assert core.last_traffic_decision.aspect == "R"
+    green = core.update(value(
+        now=0.1, traffic_green_override=True, **common))
+    assert not green.stop_required
+    assert core.last_traffic_decision.aspect == "G"

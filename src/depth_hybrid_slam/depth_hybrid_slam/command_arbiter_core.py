@@ -47,14 +47,9 @@ def arbitrate(csv, lidar, hard_emergency=False, mission_hold=False,
     else:
         return ArbiterDecision(0.0, 0, "NONE", "NO_VALID_SOURCE")
     if int(mode) == 9 and decision.drive > 0.0:
-        steering = (float(decision.wheel) if steering_deg is None else
-                    float(steering_deg))
-        if lidar_slowdown or abs(steering) > 5.0:
-            return ArbiterDecision(1.0, decision.wheel, decision.owner,
-                                   "MODE9_SLOW")
         return ArbiterDecision(3.0, decision.wheel, decision.owner,
-                               "MODE9_ACCEL_FAST")
+                               "MODE9_FIXED_SPEED")
     if lidar_slowdown and decision.drive > 1.0:
         return ArbiterDecision(1.0, decision.wheel, decision.owner,
-                               "LIDAR_DISTANCE_SLOWDOWN")
+                               "STEERING_SUSTAINED_SLOWDOWN")
     return decision

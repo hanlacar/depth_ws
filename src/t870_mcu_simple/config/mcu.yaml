@@ -1,0 +1,38 @@
+t870_mcu_simple_bridge:
+  ros__parameters:
+    port: "auto"
+    preferred_symlink: "/dev/t870_mcu"
+    baud: 115200
+    reset_wait_s: 2.0
+    reconnect_s: 1.0
+    tx_hz: 10.0
+    drive_timeout_s: 0.5
+    steer_center_adc: 484
+    steer_counts_per_deg: 18.0
+    max_steer_deg: 22
+    steer_pwm: 130
+    steer_tolerance_adc: 4
+    steer_settle_ms: 250
+    steer_fine_band_adc: 50
+    steer_fine_on_ms: 30
+    steer_fine_cycle_ms: 90
+    steer_timeout_ms: 5000
+    firmware_drive_timeout_ms: 700
+    firmware_status_ms: 200
+    front_forward_level: 0
+    rear_forward_level: 0
+    steer_left_level: 1
+    reverse_pwm: 50
+    stage1_pwm: 50
+    stage2_pwm: 75
+    stage3_pwm: 100
+    encoder_cpr: 163.0
+    counts_per_meter: 797.0
+    # Reject ARM/reboot counter resets as impossible single-sample travel.
+    max_encoder_delta_counts: 5000
+    wheelbase_m: 0.73
+    base_from_rear_m: 0.365
+    odom_publish_hz: 30.0
+    odom_input_timeout_s: 0.5
+    odom_frame: "odom"
+    base_frame: "base_link"

@@ -55,7 +55,7 @@ class IntersectionTrafficGate:
         self.commit_margin_m = float(commit_margin_m)
         self.intersection_modes = frozenset(int(mode)
                                             for mode in intersection_modes)
-        if (self.unknown_hold_s < 3.0 or self.traffic_timeout_s <= 0.0 or
+        if (self.unknown_hold_s < 0.0 or self.traffic_timeout_s <= 0.0 or
                 self.commit_margin_m <= 0.0 or not self.intersection_modes):
             raise ValueError("invalid intersection traffic gate configuration")
         self.reset()
@@ -68,6 +68,7 @@ class IntersectionTrafficGate:
         self.last_route_index = None
         self.high_water_progress_m = None
         self.unknown_since = None
+        self.release_cause = None
 
     def _signal(self, aspect, signal_age_s, mode):
         value = str(aspect).strip().upper()
@@ -75,13 +76,9 @@ class IntersectionTrafficGate:
         if not fresh:
             return "UNKNOWN", ""
         if value in ("R+GREEN_LEFT", "Y+GREEN_LEFT"):
-            if int(mode) == 8:
-                return "G", "MODE8_RED_PLUS_GREEN_LEFT_GO"
-            # A left arrow is not a permitted aspect at the straight/right
-            # intersections; retain the co-active R/Y stop meaning there.
-            return "R", ""
+            return "R", "RED_PRESENT_HOLD"
         if value in ("R+G", "Y+G"):
-            return "G", "RED_PLUS_GREEN_GO"
+            return "R", "RED_PRESENT_HOLD"
         if value == "GREEN_LEFT":
             if int(mode) == 8:
                 return "G", "MODE8_GREEN_LEFT_RELEASE"
@@ -173,19 +170,25 @@ class IntersectionTrafficGate:
             if signal == "G":
                 self.state = RELEASE_PENDING
                 self.unknown_since = None
+                self.release_cause = "GREEN"
                 return self._decision(
                     False, signal, "; ".join(filter(None, (
                         signal_event, "GREEN_RELEASE", "RELEASE_PENDING"))))
             if self.unknown_since is None:
                 self.unknown_since = now
                 return self._decision(
-                    True, signal, f"UNKNOWN_HOLD {self.unknown_hold_s:.1f}s")
-            if now-self.unknown_since < self.unknown_hold_s:
-                return self._decision(True, signal)
+                    True, signal, "UNKNOWN_HOLD_STARTED")
+            elapsed = max(0.0, now-self.unknown_since)
+            if elapsed < self.unknown_hold_s:
+                return self._decision(
+                    True, signal,
+                    f"UNKNOWN_HOLD elapsed={elapsed:.3f}s")
             self.state = RELEASE_PENDING
-            self.unknown_since = None
+            self.release_cause = "UNKNOWN_TIMEOUT"
             return self._decision(
-                False, signal, "UNKNOWN_RELEASE; RELEASE_PENDING")
+                False, signal,
+                f"UNKNOWN_RELEASE_AFTER_{self.unknown_hold_s:.1f}S; "
+                "RELEASE_PENDING")
 
         if self.state == RELEASE_PENDING:
             if self._monotonic_progress(progress):
@@ -208,9 +211,20 @@ class IntersectionTrafficGate:
             if signal == "R":
                 self.state = STOP_LINE_HOLD
                 self.unknown_since = None
+                self.release_cause = None
                 return self._decision(
                     True, signal, "RED_REHOLD_BEFORE_LINE")
-            return self._decision(False, signal)
+            if signal == "G":
+                self.release_cause = "GREEN"
+                return self._decision(False, signal)
+            if self.release_cause == "UNKNOWN_TIMEOUT":
+                return self._decision(
+                    False, signal, "UNKNOWN_TIMEOUT_RELEASE_CONTINUES")
+            self.state = STOP_LINE_HOLD
+            self.unknown_since = now
+            self.release_cause = None
+            return self._decision(
+                True, signal, "UNKNOWN_REHOLD_BEFORE_LINE")
 
         if self.state == INTERSECTION_COMMITTED:
             event = ("RED_IGNORED_AFTER_COMMIT; CSV_TRACKING CONTINUES"

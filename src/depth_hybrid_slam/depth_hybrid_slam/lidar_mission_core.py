@@ -31,7 +31,7 @@ class Mode5Avoidance:
                path_complete=False, rejoin_valid=False, local_wheel=0):
         failure = str(planner_state) in FAILURES
         if failure:
-            if hard_obstacle:
+            if hard_obstacle or avoidance_required:
                 self.state = "PLANNER_FAILED_HARD_STOP"
                 return ManeuverDecision(self.state, "SAFETY", True)
             self.state = "CSV_TRACKING"
@@ -63,6 +63,77 @@ class Mode5Avoidance:
                 return ManeuverDecision(self.state, "SAFETY", True)
             return ManeuverDecision(self.state, "LIDAR", False, 1.0, wheel)
         return ManeuverDecision(self.state, "LIDAR", True)
+
+
+class Mode5ObstacleLatch:
+    """Require a continuous observation, then remember it through planning."""
+
+    def __init__(self, confirmation_s=2.0):
+        self.confirmation_s = float(confirmation_s)
+        if self.confirmation_s < 2.0:
+            raise ValueError("Mode 5 obstacle confirmation must be >= 2 s")
+        self.first_seen_at = None
+        self.latched = False
+
+    def reset(self):
+        self.first_seen_at = None
+        self.latched = False
+
+    def update(self, visible, mode=5, now=None):
+        timestamp = time.monotonic() if now is None else float(now)
+        if int(mode) != 5:
+            self.reset()
+            return False
+        if self.latched:
+            return True
+        if not bool(visible):
+            self.first_seen_at = None
+            return False
+        if self.first_seen_at is None:
+            self.first_seen_at = timestamp
+        if timestamp-self.first_seen_at >= self.confirmation_s:
+            self.latched = True
+        return self.latched
+
+
+class StationaryConfirmation:
+    """Confirm measured standstill before any path generation starts."""
+
+    def __init__(self, duration_s=0.30, linear_limit_mps=0.03,
+                 angular_limit_rps=0.03):
+        self.duration_s = float(duration_s)
+        self.linear_limit_mps = float(linear_limit_mps)
+        self.angular_limit_rps = float(angular_limit_rps)
+        if (self.duration_s <= 0.0 or self.linear_limit_mps < 0.0 or
+                self.angular_limit_rps < 0.0):
+            raise ValueError("invalid stationary confirmation policy")
+        self.since = None
+
+    def reset(self):
+        self.since = None
+
+    def update(self, linear_mps, angular_rps, fresh=True, now=None):
+        timestamp = time.monotonic() if now is None else float(now)
+        stopped = (
+            bool(fresh) and linear_mps is not None and angular_rps is not None and
+            abs(float(linear_mps)) <= self.linear_limit_mps and
+            abs(float(angular_rps)) <= self.angular_limit_rps)
+        if not stopped:
+            self.since = None
+            return False
+        if self.since is None:
+            self.since = timestamp
+        return timestamp-self.since >= self.duration_s
+
+
+def mode5_planning_distance_ready(distance_m, minimum_m=1.0):
+    """Allow generation only before the front LiDAR gap falls below 1 m."""
+    try:
+        distance = float(distance_m)
+        minimum = float(minimum_m)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(distance) and minimum >= 0.0 and distance >= minimum
 
 
 def select_parking_branch(a_free, b_free):
@@ -104,27 +175,20 @@ class Mode9Emergency:
                rejoin_valid=False, acceleration_allowed=True):
         if hard_obstacle:
             self.state = "EMERGENCY_STOP"
-        elif self.state == "EMERGENCY_STOP":
-            self.state = "STEERING_CENTERING"
-        elif self.state == "STEERING_CENTERING" and \
-                abs(float(steering_deg)) <= self.tolerance:
-            self.state = "CSV_REJOIN"
-        elif self.state == "CSV_REJOIN" and rejoin_valid:
-            self.state = "ACCEL_TRACKING"
-        if self.state in ("EMERGENCY_STOP", "STEERING_CENTERING"):
             return ManeuverDecision(self.state, "SAFETY", True)
-        if self.state == "CSV_REJOIN":
-            return ManeuverDecision(self.state, "CSV", False, 1.0, 0)
-        high_speed = (bool(acceleration_allowed) and
-                      abs(float(steering_deg)) <= self.high_speed_steering_deg)
-        return ManeuverDecision(
-            self.state, "CSV", False, 3.0 if high_speed else 1.0)
+        # The LiDAR emergency input is already held until the 1.5 m corridor
+        # has remained clear for one second.  Once that qualified input drops,
+        # Mode 9 resumes its mandated fixed speed without an extra steering or
+        # CSV-rejoin hold.
+        if self.state != "ACCEL_TRACKING":
+            self.state = "ACCEL_TRACKING"
+        return ManeuverDecision(self.state, "CSV", False, 3.0)
 
 
 class Mode9EmergencyLatch:
     """Release a confirmed Mode 9 stop only after continuously clear scans."""
 
-    def __init__(self, clear_distance_m=1.0, clear_duration_s=1.0):
+    def __init__(self, clear_distance_m=1.5, clear_duration_s=1.0):
         self.clear_distance_m = float(clear_distance_m)
         self.clear_duration_s = float(clear_duration_s)
         if self.clear_distance_m < 1.0 or self.clear_duration_s <= 0.0:
@@ -164,6 +228,61 @@ class Mode9EmergencyLatch:
         if timestamp-self.clear_since >= self.clear_duration_s:
             self.reset()
         return self.latched
+
+
+class SteeringSlowdownLatch:
+    """Debounce measured steering before applying or clearing slowdown."""
+
+    def __init__(self, threshold_deg=10.0, enter_duration_s=1.0,
+                 exit_duration_s=1.0):
+        self.threshold_deg = float(threshold_deg)
+        self.enter_duration_s = float(enter_duration_s)
+        self.exit_duration_s = float(exit_duration_s)
+        if (self.threshold_deg <= 0.0 or self.enter_duration_s <= 0.0 or
+                self.exit_duration_s <= 0.0):
+            raise ValueError("invalid steering slowdown policy")
+        self.active = False
+        self.above_since = None
+        self.below_since = None
+
+    def reset(self):
+        self.active = False
+        self.above_since = None
+        self.below_since = None
+
+    def update(self, steering_deg, mode, now=None):
+        timestamp = time.monotonic() if now is None else float(now)
+        if int(mode) == 9:
+            self.reset()
+            return False
+        # Missing/stale measured steering cannot establish either continuous
+        # one-second interval.  Preserve an already active slowdown fail-safe.
+        if steering_deg is None:
+            self.above_since = None
+            self.below_since = None
+            return self.active
+        above = abs(float(steering_deg)) > self.threshold_deg
+        if above:
+            self.below_since = None
+            if self.active:
+                return True
+            if self.above_since is None:
+                self.above_since = timestamp
+            if timestamp-self.above_since >= self.enter_duration_s:
+                self.active = True
+                self.above_since = None
+            return self.active
+        # Exactly +/-threshold is in the user's <= 10 degree clear band.
+        self.above_since = None
+        if not self.active:
+            self.below_since = None
+            return False
+        if self.below_since is None:
+            self.below_since = timestamp
+        if timestamp-self.below_since >= self.exit_duration_s:
+            self.active = False
+            self.below_since = None
+        return self.active
 
 
 class ParkingManeuver:

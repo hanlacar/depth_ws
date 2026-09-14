@@ -25,7 +25,12 @@ def test_csv_only_default_route_has_exact_a_case_and_stops():
     route = load_segmented_route(ROUTE, METADATA, branch="A")
     assert route.points[0].segment_id == "START_A"
     assert route.segment_order == route_case_segments("AAAA", {"V_foword"})
-    assert len([point for point in route.points if point.event == "STOP_LINE"]) == 11
+    assert len([point for point in route.points if point.event == "STOP_LINE"]) == 12
+    mode2 = [point for point in route.points
+             if point.segment_id == "START_A" and point.mode == 2 and
+             point.event == "STOP_LINE"]
+    assert [(point.point_index, point.event) for point in mode2] == [
+        (173, "STOP_LINE")]
     assert sum(route.points[index].direction != route.points[index+1].direction
                for index in range(len(route.points)-1)) == 4
 
@@ -370,7 +375,8 @@ def test_route_follower_case_extension_leaves_production_binding_gate_intact():
     assert "prehardware_csv_only_case_selection" in source
     assert '"/depth_slam/route/selected_case"' in source
     assert '"/depth_slam/route/active_case"' in source
-    assert "self.map_route_verified or\n            (self.test_alignment_override" in source
+    assert "self.map_route_verified or\n            self.odom_route_verified or" in source
+    assert "sha256(path) in route_hashes" in source
     assert "self.map_route_verified = True" not in source
     assert '"/depth_slam/route/stop_waypoint_key"' in source
     assert "preserve_transition_stop" in source

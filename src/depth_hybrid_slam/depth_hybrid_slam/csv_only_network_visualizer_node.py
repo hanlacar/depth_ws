@@ -26,9 +26,10 @@ class CsvOnlyNetworkVisualizerNode(Node):
         self.declare_parameter("route_metadata_path", "")
         self.declare_parameter("display_route_path", "")
         self.declare_parameter("display_metadata_path", "")
-        self.declare_parameter("prehardware_test_only", True)
-        if not bool(self.get_parameter("prehardware_test_only").value):
-            raise ValueError("CSV-only network visualizer is test-only")
+        # Retained for compatibility with the isolated prehardware launch.
+        # This node publishes visualization markers only and is also safe in
+        # the production graph: it owns no pose, sensor, or command topic.
+        self.declare_parameter("prehardware_test_only", False)
         route_path = str(self.get_parameter("route_path").value)
         metadata_path = str(self.get_parameter("route_metadata_path").value)
         display_path = str(self.get_parameter("display_route_path").value)
@@ -68,6 +69,8 @@ class CsvOnlyNetworkVisualizerNode(Node):
         }
         self.create_subscription(
             String, "/depth_slam/route/case_state", self.on_state, 10)
+        self.create_subscription(
+            String, "/depth_slam/route/selected_branch", self.on_branch, 10)
         qos = QoSProfile(
             depth=1, reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -112,6 +115,18 @@ class CsvOnlyNetworkVisualizerNode(Node):
                 self.dirty = True
         except (TypeError, ValueError):
             self.get_logger().error("invalid CSV-only case state JSON")
+
+    def on_branch(self, message):
+        branch = str(message.data).strip().upper()
+        if branch not in ("A", "B"):
+            return
+        selected = {choice: branch for choice in ("START", "T", "V", "END")}
+        if self.status.get("selected") == selected:
+            return
+        self.status["selected"] = selected
+        self.status["route_case"] = branch*4
+        self.status["state"] = f"ACTIVE_START_{branch}"
+        self.dirty = True
 
     def publish_if_changed(self):
         if self.dirty:
@@ -224,10 +239,26 @@ class CsvOnlyNetworkVisualizerNode(Node):
                 label.pose.position.x = points[0].x+offset_x
                 label.pose.position.y = points[0].y+offset_y
                 label.pose.position.z, label.pose.orientation.w = 0.85, 1.0
-                label.scale.z = 1.35
+                label.scale.z = 2.40 if name.startswith("START_") else 1.35
                 self.color(label, branch, max(0.82, alpha))
-                label.text = name
+                selected = self.status.get("selected", {}).get(
+                    self.choice_for_segment(name), "pending")
+                suffix = " [ACTIVE]" if selected == branch else " [AVAILABLE]"
+                label.text = name+suffix
                 output.markers.append(label)
+
+                if name.startswith("START_"):
+                    start = Marker()
+                    start.header = line.header
+                    start.ns, start.id = f"start_{name}", 4000+marker_id
+                    start.type, start.action = Marker.SPHERE, Marker.ADD
+                    start.pose.position.x = points[0].x
+                    start.pose.position.y = points[0].y
+                    start.pose.position.z, start.pose.orientation.w = 0.45, 1.0
+                    scale = 1.35 if selected == branch else 0.85
+                    start.scale.x = start.scale.y = start.scale.z = scale
+                    self.color(start, branch, 1.0)
+                    output.markers.append(start)
 
         stop_id = 0
         for points in self.segments.values():

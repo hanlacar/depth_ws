@@ -256,7 +256,7 @@ def test_mode2_all_stop_pitch_route_combinations(
 @pytest.mark.parametrize("slot,source,expected", (
     ("A", "LIDAR", True), ("B", "LIDAR", True),
     ("A", "CSV_FALLBACK", True), ("B", "CSV_FALLBACK", True),
-    ("", "LIDAR", False)))
+    ("", "CSV_FALLBACK", True), ("", "LIDAR", False)))
 def test_parking_slot_source_matrix(mode, slot, source, expected):
     tracker = MissionCompletionTracker()
     tracker.set_mode(mode)

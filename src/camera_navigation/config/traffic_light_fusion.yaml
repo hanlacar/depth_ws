@@ -6,7 +6,7 @@ traffic_light_fusion_node:
     rgb_aspect_topic: /camera/traffic_light_rgb/aspect
     rgb_confidence_topic: /camera/traffic_light_rgb/confidence
     rgb_diagnostics_topic: /camera/traffic_light_rgb/diagnostics
-    route_mode_topic: /mcu/current_mode
+    route_mode_topic: /drive_mode
     fused_state_topic: /camera/traffic_light_fused/state
     fused_aspect_topic: /camera/traffic_light_fused/aspect
     fused_confidence_topic: /camera/traffic_light_fused/confidence

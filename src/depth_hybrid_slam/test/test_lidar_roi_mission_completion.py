@@ -33,9 +33,9 @@ def test_b_distance_zones_static_and_dynamic():
 
 
 def test_c_front_rear_mode_gating():
-    assert mode_gates(2) == (False, False)
-    assert mode_gates(7) == (False, True)
-    assert mode_gates(10) == (False, True)
+    assert mode_gates(2) == (True, False)
+    assert mode_gates(7) == (True, True)
+    assert mode_gates(10) == (True, True)
     for mode in (1, 3, 4, 5, 6, 8, 9, 11):
         assert mode_gates(mode) == (True, False)
 
@@ -94,6 +94,20 @@ def test_d_mode5_collision_trigger_and_curb_roles():
     assert blocked.path_blocked and blocked.collision_obstacles
     assert curb_only.curbs and not curb_only.obstacles
     assert not curb_only.path_blocked
+
+
+def test_mode5_csv_collision_roi_is_capped_at_one_point_five_metres():
+    route = tuple((x/10.0, 0.0) for x in range(21))
+    outside_roi = obstacle(2.0, 0.0)
+    beside_csv = obstacle(1.0, 0.9)
+    on_csv = obstacle(1.4, 0.0)
+    result = assess_mode5_broad(
+        (outside_roi, beside_csv, on_csv), route, range_m=1.5)
+    assert outside_roi not in result.obstacles
+    assert beside_csv in result.obstacles
+    assert beside_csv not in result.collision_obstacles
+    assert result.collision_obstacles == (on_csv,)
+    assert result.path_blocked
 
 
 def test_mode5_broad_sensing_origin_is_front_laser_but_sweep_is_base_link():
@@ -191,6 +205,13 @@ def test_f_mode7_and_10_lidar_and_csv_fallback_parking():
     for mode in (7, 10):
         assert _parking("LIDAR", mode).mode_complete(mode)
         assert _parking("CSV_FALLBACK", mode).mode_complete(mode)
+        front_only = MissionCompletionTracker()
+        front_only.set_mode(mode)
+        front_only.observe_route_status({"route_complete_modes": [mode]})
+        front_only.observe_maneuver({
+            "mode": mode, "event": "PARKING_CSV_FALLBACK"})
+        front_only.observe_csv_parking_complete(mode)
+        assert front_only.mode_complete(mode)
         missing = MissionCompletionTracker()
         missing.observe_route_status({"route_complete_modes": [mode]})
         missing.observe_maneuver({"mode": mode, "event": "PARKING_CSV_REJOINED"})

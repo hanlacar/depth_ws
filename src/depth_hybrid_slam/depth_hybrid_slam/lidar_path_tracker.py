@@ -16,6 +16,7 @@ class TrackCommand:
 class LocalPathTracker:
     def __init__(self, wheelbase_m=0.73, steering_limit_deg=22.0,
                  lookahead_m=0.60, completion_m=0.05,
+                 completion_heading_deg=10.0,
                  reverse_completion_m=0.15,
                  maximum_deviation_m=0.80):
         if float(wheelbase_m) != 0.73 or float(steering_limit_deg) != 22.0:
@@ -24,6 +25,8 @@ class LocalPathTracker:
         self.limit = float(steering_limit_deg)
         self.lookahead = float(lookahead_m)
         self.completion = float(completion_m)
+        self.completion_heading = math.radians(
+            float(completion_heading_deg))
         self.reverse_completion = float(reverse_completion_m)
         self.maximum_deviation = float(maximum_deviation_m)
         self.points = ()
@@ -41,7 +44,9 @@ class LocalPathTracker:
         self.points = tuple((
             ox+cosine*float(x)-sine*float(y),
             oy+sine*float(x)+cosine*float(y),
-        ) for x, y, _ in local_points)
+            math.atan2(math.sin(yaw+float(point_yaw)),
+                       math.cos(yaw+float(point_yaw))),
+        ) for x, y, point_yaw in local_points)
         self.cursor = 0
         self.drive = float(drive)
         return bool(self.points)
@@ -61,17 +66,21 @@ class LocalPathTracker:
             return TrackCommand(False, False, 0.0, 0, self.cursor)
         final_distance = math.hypot(
             self.points[-1][0]-x, self.points[-1][1]-y)
+        final_heading_error = abs(math.atan2(
+            math.sin(self.points[-1][2]-yaw),
+            math.cos(self.points[-1][2]-yaw)))
         completion = (self.reverse_completion if self.drive < 0.0 else
                       self.completion)
-        if final_distance <= completion:
+        if (final_distance <= completion and
+                final_heading_error <= self.completion_heading):
             return TrackCommand(True, True, 0.0, 0, len(self.points)-1)
         target = self.cursor
         while target < len(self.points)-1:
-            tx, ty = self.points[target]
+            tx, ty, _ = self.points[target]
             if math.hypot(tx-x, ty-y) >= self.lookahead:
                 break
             target += 1
-        tx, ty = self.points[target]
+        tx, ty, _ = self.points[target]
         dx, dy = tx-x, ty-y
         lateral = -math.sin(yaw)*dx+math.cos(yaw)*dy
         distance_sq = max(dx*dx+dy*dy, 1.0e-6)

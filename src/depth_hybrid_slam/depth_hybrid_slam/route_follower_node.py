@@ -32,7 +32,7 @@ from .route_follower_core import RouteFollower
 from .csv_only_branching import load_csv_only_route_case, remap_case_progress
 from .route_io import (
     DEFAULT_BRANCH, forward_tangent_yaw, is_segmented_columns,
-    load_segmented_route,
+    load_segmented_route, sha256,
     verify_route_binding,
 )
 
@@ -90,6 +90,7 @@ class RouteFollowerNode(Node):
                               ("start_mode", 1), ("end_mode", 11),
                               ("direction_stop_trigger_distance_m", 1.0),
                               ("prehardware_test_override_alignment", False),
+                              ("allow_odom_route_origin", False),
                               ("prehardware_csv_only_case_selection", False),
                               ("controller_hz", 30.0)):
             self.declare_parameter(name, default)
@@ -144,6 +145,8 @@ class RouteFollowerNode(Node):
                 False, "MAP_ROUTE_FILES_MISSING")
         self.test_alignment_override = bool(self.get_parameter(
             "prehardware_test_override_alignment").value)
+        self.odom_route_origin = bool(self.get_parameter(
+            "allow_odom_route_origin").value)
         self.csv_only_case_selection = bool(self.get_parameter(
             "prehardware_csv_only_case_selection").value)
         if self.csv_only_case_selection:
@@ -157,10 +160,19 @@ class RouteFollowerNode(Node):
         else:
             self.active_case = ""
         self.route_cumulative = cumulative_route_distance(self.route)
+        route_hashes = set() if self.route_info is None else {
+            str(self.route_info.metadata.get(name, "")) for name in (
+                "route_sha256", "route_csv_sha256", "final_route_csv_sha256")}
+        self.odom_route_verified = bool(
+            self.odom_route_origin and self.route_info is not None and
+            FilePath(path).is_file() and sha256(path) in route_hashes)
         self.control_route_available = (
             self.map_route_verified or
+            self.odom_route_verified or
             (self.test_alignment_override and FilePath(path).is_file() and
              FilePath(map_path).is_file()))
+        if self.odom_route_verified and not self.map_route_verified:
+            self.binding_reason = "ODOM_ROUTE_ORIGIN_VERIFIED"
         if self.test_alignment_override:
             self.get_logger().warn(
                 "PREHARDWARE TEST ONLY: using unvalidated CSV-map transform; "
@@ -192,10 +204,15 @@ class RouteFollowerNode(Node):
                 "[ROUTE] continuity: "
                 f"max_step={info.maximum_step_m:.3f}m "
                 f"max_connection={info.maximum_connection_m:.3f}m")
-        log = self.get_logger().info if self.map_route_verified else self.get_logger().error
-        log("[ROUTE] map-route verification: " +
-            ("PASS" if self.map_route_verified else
-             f"FAIL ({self.binding_reason})"))
+        if self.map_route_verified:
+            self.get_logger().info("[ROUTE] map-route verification: PASS")
+        elif self.odom_route_verified:
+            self.get_logger().info(
+                "[ROUTE] odom-route origin verification: PASS")
+        else:
+            self.get_logger().error(
+                f"[ROUTE] control-route verification: FAIL "
+                f"({self.binding_reason})")
         self.pose = None
         self.pose_receipt = None
         self.safety_ready = False
@@ -273,6 +290,8 @@ class RouteFollowerNode(Node):
             String, "/depth_slam/rejoin/state", 10)
         self.pub_binding = self.create_publisher(
             Bool, "/depth_slam/route/map_route_verified", 10)
+        self.pub_odom_route_binding = self.create_publisher(
+            Bool, "/depth_slam/route/odom_route_origin_verified", 10)
         self.pub_within_map = self.create_publisher(
             Bool, "/depth_slam/route/within_map", 10)
         self.create_subscription(
@@ -783,6 +802,7 @@ class RouteFollowerNode(Node):
         self.pub_state.publish(String(data=reason))
         self.pub_rejoin_state.publish(String(data=self.navigation_state))
         self.pub_binding.publish(Bool(data=self.map_route_verified))
+        self.pub_odom_route_binding.publish(Bool(data=self.odom_route_verified))
         within_map = bool(self.grid and self.pose and self.grid.footprint_free(
             self.pose, float(self.get_parameter("vehicle_length_m").value),
             float(self.get_parameter("vehicle_width_m").value),
@@ -800,6 +820,7 @@ class RouteFollowerNode(Node):
              ("steering_deg", result.steering_deg),
              ("navigation_state", self.navigation_state),
              ("map_route_verified", self.map_route_verified),
+             ("odom_route_origin_verified", self.odom_route_verified),
              ("prehardware_test_override_alignment", self.test_alignment_override),
              ("minimum_turning_radius_m", self.rejoin_planner.radius),
              ("rejoin_candidates_checked", self.rejoin_plan.candidates_checked

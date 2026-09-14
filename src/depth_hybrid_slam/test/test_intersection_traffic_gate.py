@@ -70,24 +70,19 @@ def test_mode4_red_reholds_before_line_but_is_ignored_after_commit():
     assert emergency.state == "HARD_EMERGENCY_STOP" and emergency.drive == 0.0
 
 
-def test_unknown_three_seconds_then_red_rehold_or_commit_and_ignore():
+@pytest.mark.parametrize("mode", (4, 6, 8))
+def test_unknown_releases_after_three_seconds_at_every_intersection(mode):
     gate = IntersectionTrafficGate(unknown_hold_s=3.0)
-    assert gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 0.0).stop
-    assert gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 2.999).stop
-    release = gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 3.0)
+    progress = _progress(mode=mode)
+    assert gate.evaluate(progress, True, "UNKNOWN", 0.0, 0.0).stop
+    assert gate.evaluate(progress, True, "UNKNOWN", 0.0, 2.999).stop
+    release = gate.evaluate(progress, True, "UNKNOWN", 0.0, 3.0)
     assert release.state == RELEASE_PENDING and not release.stop
-    assert gate.evaluate(_progress(), False, "R", 0.0, 3.1).stop
-
-    gate = IntersectionTrafficGate(unknown_hold_s=3.0)
-    gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 0.0)
-    gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 3.0)
-    committed = gate.evaluate(
-        _progress(route_index=102, progress_m=10.5), False,
+    assert "UNKNOWN_RELEASE_AFTER_3.0S" in release.event
+    continuing = gate.evaluate(
+        _progress(mode=mode, route_index=101, progress_m=10.2), False,
         "UNKNOWN", 0.0, 3.1)
-    assert committed.state == INTERSECTION_COMMITTED
-    assert not gate.evaluate(
-        _progress(route_index=110, progress_m=14.0), False,
-        "R", 0.0, 3.2).stop
+    assert continuing.state == RELEASE_PENDING and not continuing.stop
 
 
 def test_valid_red_cancels_unknown_timer_and_valid_green_releases_immediately():
@@ -96,16 +91,16 @@ def test_valid_red_cancels_unknown_timer_and_valid_green_releases_immediately():
     assert gate.evaluate(_progress(), True, "R", 0.0, 2.9).stop
     assert gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 3.0).stop
     assert gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 5.99).stop
-    green = gate.evaluate(_progress(), True, "G", 0.0, 6.0)
-    assert green.state == RELEASE_PENDING and not green.stop
+    timeout = gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 6.0)
+    assert timeout.state == RELEASE_PENDING and not timeout.stop
 
 
 @pytest.mark.parametrize("signal", ("R+G", "Y+G"))
-def test_valid_green_has_priority_over_red_or_yellow(signal):
+def test_red_or_yellow_has_priority_over_simultaneous_green(signal):
     gate = IntersectionTrafficGate()
     decision = gate.evaluate(_progress(), True, signal, 0.0, 0.0)
-    assert decision.state == RELEASE_PENDING and not decision.stop
-    assert "RED_PLUS_GREEN_GO" in decision.event
+    assert decision.state == STOP_LINE_HOLD and decision.stop
+    assert "RED_HOLD" in decision.event
 
 
 def test_crossing_and_red_in_same_update_commits_before_traffic_rehold():
@@ -132,17 +127,20 @@ def test_commit_latch_is_immutable_across_g_r_g_r_sequence():
         assert decision.committed and not decision.stop
 
 
-@pytest.mark.parametrize("signal,event", (
-    ("GREEN_LEFT", "MODE8_GREEN_LEFT_RELEASE"),
-    ("R+GREEN_LEFT", "MODE8_RED_PLUS_GREEN_LEFT_GO"),
-    ("Y+GREEN_LEFT", "MODE8_RED_PLUS_GREEN_LEFT_GO"),
-))
-def test_mode8_green_left_is_permitted_over_red_yellow(signal, event):
+def test_mode8_green_left_releases_when_no_red_or_yellow_is_present():
     gate = IntersectionTrafficGate()
     progress = _progress(mode=8)
-    decision = gate.evaluate(progress, True, signal, 0.0, 0.0)
+    decision = gate.evaluate(progress, True, "GREEN_LEFT", 0.0, 0.0)
     assert decision.state == RELEASE_PENDING and not decision.stop
-    assert event in decision.event
+    assert "MODE8_GREEN_LEFT_RELEASE" in decision.event
+
+
+@pytest.mark.parametrize("signal", ("R+GREEN_LEFT", "Y+GREEN_LEFT"))
+def test_mode8_red_or_yellow_still_holds_with_green_left(signal):
+    decision = IntersectionTrafficGate().evaluate(
+        _progress(mode=8), True, signal, 0.0, 0.0)
+    assert decision.state == STOP_LINE_HOLD and decision.stop
+    assert "RED_HOLD" in decision.event
 
 
 def test_green_left_is_permitted_only_for_mode8():
@@ -156,7 +154,7 @@ def test_green_left_is_permitted_only_for_mode8():
     assert left_only.aspect == "UNKNOWN"
 
 
-def test_mode8_red_only_and_unknown_hold_but_unknown_releases_at_three_seconds():
+def test_mode8_red_holds_but_unknown_releases_after_three_seconds():
     progress = _progress(mode=8)
     red = IntersectionTrafficGate()
     assert red.evaluate(progress, True, "R", 0.0, 0.0).stop
@@ -166,17 +164,19 @@ def test_mode8_red_only_and_unknown_hold_but_unknown_releases_at_three_seconds()
     assert not unknown.evaluate(progress, True, "UNKNOWN", 0.0, 3.0).stop
 
 
-def test_mode8_red_plus_left_commits_then_red_only_cannot_stop():
+def test_mode8_red_plus_left_holds_until_unopposed_left_then_commits():
     gate = IntersectionTrafficGate(commit_margin_m=0.35)
     line = _progress(mode=8)
-    assert not gate.evaluate(
+    assert gate.evaluate(
         line, True, "R+GREEN_LEFT", 0.0, 0.0).stop
+    assert not gate.evaluate(
+        line, True, "GREEN_LEFT", 0.0, 0.1).stop
     crossed = _progress(mode=8, route_index=102, progress_m=10.5)
     assert gate.evaluate(
-        crossed, False, "R+GREEN_LEFT", 0.0, 0.1).committed
+        crossed, False, "GREEN_LEFT", 0.0, 0.2).committed
     red = gate.evaluate(
         _progress(mode=8, route_index=120, progress_m=16.0),
-        False, "R", 0.0, 0.2)
+        False, "R", 0.0, 0.3)
     assert not red.stop and not red.traffic_stop_allowed
     command = arbitrate(
         CommandCandidate(2.0, 22, True, True), CommandCandidate(),
@@ -184,14 +184,14 @@ def test_mode8_red_plus_left_commits_then_red_only_cannot_stop():
     assert command.state == "CSV_TRACKING" and command.drive == 2.0
 
 
-def test_stale_red_becomes_unknown_and_does_not_latch_forever():
+def test_stale_red_becomes_unknown_and_releases_after_three_seconds():
     gate = IntersectionTrafficGate(unknown_hold_s=3.0, traffic_timeout_s=0.3)
     assert gate.evaluate(_progress(), True, "R", 0.0, 0.0).stop
     stale = gate.evaluate(_progress(), True, "R", 0.31, 5.0)
     assert stale.aspect == "UNKNOWN" and stale.stop
     assert gate.evaluate(_progress(), True, "R", 0.31, 7.99).stop
-    release = gate.evaluate(_progress(), True, "R", 0.31, 8.0)
-    assert release.state == RELEASE_PENDING and not release.stop
+    released = gate.evaluate(_progress(), True, "R", 0.31, 8.0)
+    assert released.aspect == "UNKNOWN" and not released.stop
 
 
 def test_wrong_segment_direction_and_backtrack_cannot_commit():

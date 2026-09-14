@@ -7,6 +7,10 @@
     # Camera inputs older than this are UNKNOWN, never a latched R or G.
     traffic_timeout_s: 0.3
     min_traffic_confidence: 0.65
+    # Raw/fused R is a hard traffic hold regardless of fusion confidence.
+    direct_signal_timeout_s: 0.5
+    # At every gated intersection, continuous UNKNOWN releases after 3 s.
+    # RED/YELLOW remain a hold and reset this timer.
     unknown_hold_s: 3.0
     # Commit only after bounded CSV progress passes the line by this distance.
     intersection_commit_margin_m: 0.35

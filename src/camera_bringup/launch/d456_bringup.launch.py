@@ -15,7 +15,20 @@ def _setup(context):
     if min(width, height, fps) <= 0:
         raise RuntimeError("D456 width, height, and FPS must be positive")
     serial = LaunchConfiguration("serial_no").perform(context).strip()
-    overrides = {"rgb_camera.color_profile": f"{width}x{height}x{fps}"}
+    def enabled(name):
+        return LaunchConfiguration(name).perform(context).strip().lower() in (
+            "1", "true", "yes", "on")
+
+    depth = enabled("enable_depth")
+    imu = enabled("enable_imu")
+    overrides = {
+        "rgb_camera.color_profile": f"{width}x{height}x{fps}",
+        "enable_depth": depth,
+        "align_depth.enable": depth,
+        "enable_sync": depth,
+        "enable_gyro": imu,
+        "enable_accel": imu,
+    }
     if serial:
         overrides["serial_no"] = serial
     config = Path(get_package_share_directory("camera_bringup"))/"config"/"d456.yaml"
@@ -36,4 +49,6 @@ def generate_launch_description():
         DeclareLaunchArgument("color_width", default_value="640"),
         DeclareLaunchArgument("color_height", default_value="480"),
         DeclareLaunchArgument("color_fps", default_value="60"),
+        DeclareLaunchArgument("enable_depth", default_value="true"),
+        DeclareLaunchArgument("enable_imu", default_value="true"),
         OpaqueFunction(function=_setup)])

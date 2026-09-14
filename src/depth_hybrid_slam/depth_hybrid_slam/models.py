@@ -82,6 +82,8 @@ class MissionInputs:
     traffic_age: float = float("inf")
     traffic_red_present: bool = False
     traffic_green_present: bool = False
+    traffic_red_override: bool = False
+    traffic_green_override: bool = False
     traffic_diagnostics_age: float = float("inf")
     stop_line_detected: bool = False
     csv_stop_line_active: bool = False

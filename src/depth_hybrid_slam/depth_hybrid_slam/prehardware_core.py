@@ -20,7 +20,8 @@ class BranchDecision:
 class BranchSelector:
     """Default-A selector with a mode-11 decision hold and timeout."""
 
-    def __init__(self, command_timeout_s=3.0, mode_11_wait_s=5.0):
+    def __init__(self, command_timeout_s=3.0, mode_11_wait_s=5.0,
+                 initial_branch="A"):
         self.command_timeout_s = float(command_timeout_s)
         self.mode_11_wait_s = float(mode_11_wait_s)
         if self.command_timeout_s <= 0.0 or self.mode_11_wait_s <= 0.0:
@@ -29,7 +30,11 @@ class BranchSelector:
         self.mode_11_entered_at = None
         self.command_branch = None
         self.command_at = None
-        self.selected_branch = "A"
+        initial = str(initial_branch).strip().upper()
+        if initial not in VALID_BRANCHES:
+            raise ValueError("initial branch must be A or B")
+        self.initial_branch = initial
+        self.selected_branch = initial
         self.mode_11_committed = False
 
     def set_mode(self, mode, now):
@@ -74,10 +79,12 @@ class BranchSelector:
         if fresh:
             self.selected_branch = self.command_branch
             return BranchDecision(self.selected_branch, False, "BRANCH_SELECTED")
-        self.selected_branch = "A"
+        self.selected_branch = self.initial_branch
         state = "INVALID_DEFAULT_A" if self.command_at is not None else \
             "NO_INPUT_DEFAULT_A"
-        return BranchDecision("A", False, state)
+        if self.initial_branch == "B":
+            state = "NO_INPUT_INITIAL_B"
+        return BranchDecision(self.initial_branch, False, state)
 
 
 @dataclass(frozen=True)

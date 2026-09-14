@@ -20,8 +20,8 @@ class LidarRejoinValidatorNode(Node):
         parameters = (
             ("route_path", ""), ("route_metadata_path", ""),
             ("publish_hz", 20.0), ("pose_timeout_s", 0.5),
-            ("forward_window", 120), ("max_distance_m", 2.5),
-            ("max_heading_deg", 35.0),
+            ("forward_window", 120), ("max_distance_m", 0.25),
+            ("max_heading_deg", 10.0),
         )
         for name, default in parameters:
             self.declare_parameter(name, default)
@@ -34,6 +34,7 @@ class LidarRejoinValidatorNode(Node):
         self.branch = "A"
         self.case = ""
         self.index = None
+        self.planned_rejoin_index = -1
         self.segment = ""
         self.pose = None
         self.pose_at = None
@@ -44,6 +45,10 @@ class LidarRejoinValidatorNode(Node):
         self.create_subscription(
             Int32, "/depth_slam/route/active_index",
             lambda m: setattr(self, "index", int(m.data)), 10)
+        self.create_subscription(
+            Int32, "/depth_slam/lidar/planned_rejoin_index",
+            lambda m: setattr(
+                self, "planned_rejoin_index", int(m.data)), 10)
         self.create_subscription(
             String, "/depth_slam/route/active_segment",
             lambda m: setattr(self, "segment", str(m.data)), 10)
@@ -109,9 +114,29 @@ class LidarRejoinValidatorNode(Node):
                  now-self.pose_at <= float(
                      self.get_parameter("pose_timeout_s").value))
         selected = None
-        if fresh and self.index is not None and self.segment:
+        validation_basis = "ACTIVE_FORWARD_WINDOW"
+        if fresh:
             route = self._route()
-            if 0 <= self.index < len(route):
+            if 0 <= self.planned_rejoin_index < len(route):
+                # Mode 5 fixes an exact same-CSV endpoint when its path is
+                # generated. The suspended CSV follower's live cursor may
+                # advance past this endpoint while the offset path is active;
+                # validate the planned endpoint rather than excluding it as
+                # historical progress.
+                target = route[self.planned_rejoin_index]
+                road_valid = self.road_state != "OUTSIDE_ROAD"
+                candidates = route_rejoin_candidates(
+                    route, target.segment_id,
+                    self.planned_rejoin_index, self.pose, 0,
+                    road_valid=road_valid)
+                selected = bounded_rejoin(
+                    candidates, target.segment_id,
+                    self.planned_rejoin_index, int(target.direction), 0,
+                    float(self.get_parameter("max_distance_m").value),
+                    float(self.get_parameter("max_heading_deg").value))
+                validation_basis = "PLANNED_EXACT_ENDPOINT"
+            elif (self.index is not None and self.segment and
+                  0 <= self.index < len(route)):
                 current = route[self.index]
                 direction = int(current.direction)
                 road_valid = self.road_state != "OUTSIDE_ROAD"
@@ -133,6 +158,8 @@ class LidarRejoinValidatorNode(Node):
         self.diag_pub.publish(String(data=json.dumps({
             "valid": valid, "fresh": fresh, "segment": self.segment,
             "current_index": self.index,
+            "planned_rejoin_index": self.planned_rejoin_index,
+            "validation_basis": validation_basis,
             "selected_index": None if selected is None else selected.index,
             "required_steering_deg": (
                 None if selected is None else selected.required_steering_deg),

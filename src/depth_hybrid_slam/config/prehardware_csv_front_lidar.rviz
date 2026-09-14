@@ -14,11 +14,11 @@ Visualization Manager:
     - Alpha: 0.48
       Buffer Length: 1
       Class: rviz_default_plugins/Path
-      Color: 50; 220; 80
+      Color: 255; 210; 0
       Enabled: true
       Line Style: Lines
-      Line Width: 0.16
-      Name: CSV Active Route
+      Line Width: 0.24
+      Name: ACTIVE CSV ROUTE (YELLOW)
       Pose Style: None
       Topic:
         Depth: 1
@@ -29,7 +29,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: Full A/B Network and STOP Markers
+      Name: A=CYAN SOLID / B=MAGENTA DASHED
       Topic:
         Depth: 1
         Durability Policy: Transient Local

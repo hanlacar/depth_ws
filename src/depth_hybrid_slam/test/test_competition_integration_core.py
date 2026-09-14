@@ -9,8 +9,10 @@ from depth_hybrid_slam.csv_road_validator_core import (
 from depth_hybrid_slam.lidar_local_planner import (
     path_collision_free, plan_detour, plan_parking)
 from depth_hybrid_slam.lidar_mission_core import (
-    Mode5Avoidance, Mode9Emergency, Mode9EmergencyLatch, Mode11ExitGate,
-    ParkingManeuver,
+    Mode5Avoidance, Mode5ObstacleLatch, Mode9Emergency,
+    Mode9EmergencyLatch, Mode11ExitGate, ParkingManeuver,
+    StationaryConfirmation, SteeringSlowdownLatch,
+    mode5_planning_distance_ready,
     RejoinCandidate,
     bounded_rejoin, parking_decision, route_rejoin_candidates)
 from depth_hybrid_slam.lidar_path_tracker import LocalPathTracker
@@ -52,7 +54,7 @@ def test_camera_advisory_five_state_contract():
     assert "wheel" not in near.camera_diagnostics(True)
 
 
-def test_intersection_red_green_unknown_and_stale_green():
+def test_intersection_red_green_and_three_second_unknown_release():
     gate = IntersectionTrafficGate(3.0, 0.5)
     progress = IntersectionProgress(
         True, 4, "COMMON_1", 1, 100, 10.0,
@@ -93,14 +95,47 @@ def test_mode5_complete_sequence_and_failure_policy():
     assert core.update(path_complete=True).state == "CSV_REJOIN"
     assert core.update(rejoin_valid=True).state == "CSV_TRACKING"
     assert core.update(True, True, "PATH_ABORT").stop
-    assert core.update(True, False, "NO_VALID_DETOUR").owner == "CSV"
+    assert core.update(True, False, "NO_VALID_DETOUR").owner == "SAFETY"
     failed = core.update(True, True, "NO_FEASIBLE_DETOUR")
     assert failed.stop and failed.owner == "SAFETY"
-    cleared = core.update(True, False, "NO_FEASIBLE_DETOUR")
+    cleared = core.update(False, False, "NO_FEASIBLE_DETOUR")
     assert not cleared.stop and cleared.owner == "CSV"
     failed = core.update(True, True, "NO_FEASIBLE_DETOUR")
     assert core.update(True, False).state == "STOP_FOR_PLANNING"
     assert core.update(False, False).state == "CSV_TRACKING"
+
+
+def test_mode5_obstacle_must_be_visible_two_seconds_then_stays_latched():
+    latch = Mode5ObstacleLatch(confirmation_s=2.0)
+    assert not latch.update(True, mode=5, now=0.0)
+    assert not latch.update(True, mode=5, now=1.99)
+    assert latch.update(True, mode=5, now=2.0)
+    # A qualified obstacle remains remembered if a later scan loses it.
+    assert latch.update(False, mode=5, now=2.1)
+    latch.reset()
+    assert not latch.update(True, mode=5, now=3.0)
+    assert not latch.update(False, mode=5, now=4.9)
+    assert not latch.update(True, mode=5, now=5.0)
+    assert not latch.update(True, mode=4, now=8.0)
+
+
+def test_mode5_planning_waits_for_measured_stationary_confirmation():
+    gate = StationaryConfirmation(
+        duration_s=0.30, linear_limit_mps=0.03,
+        angular_limit_rps=0.03)
+    assert not gate.update(0.04, 0.0, True, 0.0)
+    assert not gate.update(0.0, 0.0, True, 1.0)
+    assert not gate.update(0.0, 0.0, True, 1.29)
+    assert gate.update(0.0, 0.0, True, 1.30)
+    assert not gate.update(0.0, 0.0, False, 2.0)
+
+
+def test_mode5_planning_is_generated_before_one_metre_only():
+    assert not mode5_planning_distance_ready(None)
+    assert not mode5_planning_distance_ready(float("nan"))
+    assert not mode5_planning_distance_ready(0.999)
+    assert mode5_planning_distance_ready(1.0)
+    assert mode5_planning_distance_ready(1.5)
 
 
 def test_bounded_rejoin_rejects_wrong_segment_backtrack_direction_and_limit():
@@ -274,7 +309,7 @@ def test_mode5_direct_start_tangent_sign_and_real_time_tracking():
     assert maximum_cte < 0.15
 
 
-def test_mode9_threshold_hysteresis_center_and_rejoin():
+def test_mode9_is_fixed_stage_three_except_hard_emergency():
     safety = ScanSafety(minimum_points=2, clear_scans=2)
     assert not safety.assess(_points(0.51)).hard_obstacle
     assert safety.assess(_points(0.50)).hard_obstacle
@@ -283,30 +318,52 @@ def test_mode9_threshold_hysteresis_center_and_rejoin():
     assert not safety.assess(_points(0.61)).hard_obstacle
     mode9 = Mode9Emergency()
     assert mode9.update(True).state == "EMERGENCY_STOP"
-    centered = mode9.update(False, steering_deg=8.0)
-    assert centered.state == "STEERING_CENTERING" and centered.stop
-    assert mode9.update(False, steering_deg=3.0).state == "STEERING_CENTERING"
-    assert mode9.update(False, steering_deg=2.0).state == "CSV_REJOIN"
-    assert mode9.update(False, rejoin_valid=True).state == "ACCEL_TRACKING"
-    assert mode9.update(False).drive == 3.0
-    assert mode9.update(False, steering_deg=5.0).drive == 3.0
-    assert mode9.update(False, steering_deg=5.01).drive == 1.0
-    assert mode9.update(False, steering_deg=-5.01).drive == 1.0
+    resumed = mode9.update(False, steering_deg=22.0)
+    assert resumed.state == "ACCEL_TRACKING"
+    assert not resumed.stop and resumed.drive == 3.0
     csv = CommandCandidate(2.0, 8, True, True)
     assert arbitrate(
-        csv, CommandCandidate(), mode=9, steering_deg=5.0).drive == 3.0
-    assert arbitrate(
-        csv, CommandCandidate(), mode=9, steering_deg=5.01).drive == 1.0
+        csv, CommandCandidate(), mode=9, steering_deg=22.0).drive == 3.0
     assert arbitrate(
         csv, CommandCandidate(), lidar_slowdown=True, mode=9,
-        steering_deg=0.0).drive == 1.0
+        steering_deg=-22.0).drive == 3.0
     assert arbitrate(
         csv, CommandCandidate(), hard_emergency=True,
         lidar_slowdown=True, mode=9, steering_deg=0.0).drive == 0.0
 
 
+def test_non_mode9_steering_slowdown_requires_one_second_both_ways():
+    latch = SteeringSlowdownLatch(
+        threshold_deg=10.0, enter_duration_s=1.0, exit_duration_s=1.0)
+
+    # Strictly above +/-10 degrees must persist for one whole second.
+    assert not latch.update(10.01, mode=8, now=0.0)
+    assert not latch.update(10.01, mode=8, now=0.99)
+    assert latch.update(10.01, mode=8, now=1.0)
+
+    # A short return into the <=10 band cannot clear the slowdown.
+    assert latch.update(10.0, mode=8, now=1.1)
+    assert latch.update(10.01, mode=8, now=2.0)
+    assert latch.below_since is None
+
+    # The clear band also has to remain continuous for one whole second.
+    assert latch.update(-10.0, mode=8, now=2.1)
+    assert latch.update(0.0, mode=8, now=3.09)
+    assert not latch.update(0.0, mode=8, now=3.1)
+
+    # Stale measured steering cannot fabricate either debounce interval.
+    assert not latch.update(-10.01, mode=8, now=4.0)
+    assert not latch.update(None, mode=8, now=5.0)
+    assert not latch.update(-10.01, mode=8, now=5.1)
+    assert latch.update(-10.01, mode=8, now=6.1)
+
+    # Mode 9 bypasses and resets steering slowdown unconditionally.
+    assert not latch.update(-22.0, mode=9, now=6.2)
+    assert not latch.update(-22.0, mode=8, now=6.3)
+
+
 def test_mode9_emergency_latch_holds_dropouts_and_near_obstacle_until_clear():
-    latch = Mode9EmergencyLatch(clear_distance_m=1.0,
+    latch = Mode9EmergencyLatch(clear_distance_m=1.5,
                                 clear_duration_s=1.0)
     mode9 = Mode9Emergency()
 
@@ -325,23 +382,21 @@ def test_mode9_emergency_latch_holds_dropouts_and_near_obstacle_until_clear():
         assert latch.update(False, None, False, False, 11.0+index*0.05)
     assert latch.clear_since is None
 
-    # C: moving the obstacle only to 0.8 m resets clear confirmation.
-    assert latch.update(False, 0.8, True, True, 22.0)
+    # C: any obstacle at or inside 1.5 m resets clear confirmation.
+    assert latch.update(False, 1.49, True, True, 22.0)
     assert latch.clear_since is None
     assert mode9.update(latch.latched).state == "EMERGENCY_STOP"
 
-    # D: release happens only after one continuous second beyond 1.0 m.
-    assert latch.update(False, 1.01, True, True, 23.0)
-    assert latch.update(False, 1.01, True, False, 24.5)
-    assert latch.update(False, 0.8, True, True, 24.6)
-    assert latch.update(False, 1.01, True, True, 25.0)
-    assert latch.update(False, 1.01, True, True, 25.99)
-    assert not latch.update(False, 1.01, True, True, 26.0)
+    # D: release happens only after one continuous second beyond 1.5 m.
+    assert latch.update(False, 1.51, True, True, 23.0)
+    assert latch.update(False, 1.51, True, False, 24.5)
+    assert latch.update(False, 1.49, True, True, 24.6)
+    assert latch.update(False, 1.51, True, True, 25.0)
+    assert latch.update(False, 1.51, True, True, 25.99)
+    assert not latch.update(False, 1.51, True, True, 26.0)
 
-    # E: only after release may centering, rejoin, and acceleration proceed.
-    assert mode9.update(False, steering_deg=8.0).state == "STEERING_CENTERING"
-    assert mode9.update(False, steering_deg=2.0).state == "CSV_REJOIN"
-    resumed = mode9.update(False, steering_deg=0.0, rejoin_valid=True)
+    # E: the qualified clear immediately restores fixed stage 3.
+    resumed = mode9.update(False, steering_deg=22.0)
     assert resumed.state == "ACCEL_TRACKING" and resumed.drive == 3.0
 
 
@@ -391,6 +446,9 @@ def test_lidar_markers_remove_vehicle_sweep_and_keep_front_sensor_zones():
     assert 'line(marker_id, "zones"' in source
     assert 'line(5, "csv_sweep",' not in source
     assert 'line(4, "mode5_broad"' not in source
+    assert '"static_obstacles_blue"' in source
+    assert '"dynamic_obstacles_green"' in source
+    assert '"roi_obstacles_red"' in source
 
 
 def test_mode11_five_second_default_and_commit_is_immutable():

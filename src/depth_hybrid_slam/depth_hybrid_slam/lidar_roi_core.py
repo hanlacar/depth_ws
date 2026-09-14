@@ -118,10 +118,11 @@ def clusters_in_centerline_corridor(clusters, centerline, *,
 
 
 def assess_curved_roi(clusters, steering_deg, *, front_active=True,
-                      fresh=True, half_width_m=0.30, wheelbase_m=0.73):
+                      fresh=True, half_width_m=0.30, wheelbase_m=0.73,
+                      length_m=1.5):
     """Apply 0.5/1.0/1.5 m rules along an Ackermann arc corridor."""
     centerline, curvature, radius = ackermann_centerline(
-        steering_deg, wheelbase_m)
+        steering_deg, wheelbase_m, length_m=length_m)
     if not front_active:
         return RoiAssessment(centerline, curvature, radius, 0, 0, 0,
                              math.inf, False, False)
@@ -152,9 +153,10 @@ def assess_curved_roi(clusters, steering_deg, *, front_active=True,
 
 def mode_gates(mode):
     value = int(mode)
-    # Modes 7/10 are rear-LiDAR-only parking maneuvers.  Mode 5 keeps its
-    # independent broad front ROI in the perception adapter.
-    return value not in (2, 7, 10) and 1 <= value <= 11, value in (7, 10)
+    # The front scanner owns emergency detection throughout every live mode.
+    # A rear scanner, when installed, adds parking evidence in Modes 7/10 but
+    # is never a prerequisite for the front emergency path.
+    return 1 <= value <= 11, value in (7, 10)
 
 
 def transform_point(point, pose):

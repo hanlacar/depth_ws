@@ -7,8 +7,11 @@ depth_lidar_perception:
     wheelbase_m: 0.73
     emergency_distance_m: 0.50
     clear_distance_m: 0.60
-    mode9_clear_distance_m: 1.0
+    mode9_clear_distance_m: 1.5
     mode9_clear_duration_s: 1.0
+    steering_slowdown_threshold_deg: 10.0
+    steering_slowdown_enter_s: 1.0
+    steering_slowdown_exit_s: 1.0
     corridor_half_width_m: 0.30
     minimum_cluster_points: 2
     cluster_gap_m: 0.16
@@ -18,7 +21,9 @@ depth_lidar_perception:
     dynamic_confirmation_count: 3
     dynamic_timeout_s: 0.75
     dynamic_association_distance_m: 0.50
-    mode5_range_m: 2.0
+    # Mode 5 front_lidar ROI must never extend beyond 1.5 m.
+    mode5_range_m: 1.5
+    csv_path_timeout_s: 0.5
     mode5_fov_deg: 80.0
     mode5_lateral_m: 1.0
     vehicle_width_m: 0.80
@@ -34,25 +39,34 @@ depth_command_arbiter:
 
 depth_lidar_rejoin_validator:
   ros__parameters:
-    # Still same-segment, same-direction, forward-only and <22 deg.  The
-    # parking endpoint needs the next steer-feasible point beyond the former
-    # 0.8 m radius; 2.5 m covers both audited T_A/T_B handoffs without
-    # weakening the curvature, heading, direction or progress gates.
+    # Handoff remains under LiDAR ownership until both endpoint errors meet
+    # the commissioned CSV-follower acceptance envelope.
     forward_window: 120
-    max_distance_m: 2.5
-    max_heading_deg: 35.0
+    max_distance_m: 0.25
+    max_heading_deg: 10.0
 
 depth_maneuver_manager:
   ros__parameters:
     publish_hz: 20.0
-    # Keep true in production.  The front-only A2M12 commissioning launch
-    # overrides this to false and uses the recorded CSV in Modes 7/10.
-    rear_lidar_enabled: true
+    # This vehicle configuration has one front LiDAR. Recorded CSV remains
+    # authoritative for Modes 7/10 instead of waiting for a rear scanner.
+    rear_lidar_enabled: false
     wheelbase_m: 0.73
     # Canonical generation constraint. Curvature and radius are derived.
     planner_max_steering_deg: 21.0
     vehicle_width_m: 0.80
     obstacle_margin_m: 0.15
-    detour_length_m: 5.5
+    # After the 2 s observation and measured stop, search the shortest
+    # feasible Frenet-style lateral shift and exact CSV rejoin.
+    detour_length_m: 1.5
+    detour_maximum_ahead_m: 8.0
     detour_lateral_m: 0.65
-    planner_maximum_replans: 24
+    planner_maximum_replans: 48
+    obstacle_confirmation_s: 2.0
+    # Generate only while the last confirmed front_lidar obstacle range is
+    # still at least 1.0 m. A closer obstacle remains a stopped condition.
+    minimum_planning_lidar_distance_m: 1.0
+    stopped_confirmation_s: 0.30
+    stopped_linear_speed_mps: 0.03
+    stopped_angular_speed_rps: 0.03
+    odom_timeout_s: 0.50

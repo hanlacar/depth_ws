@@ -25,6 +25,7 @@ class MissionNode(Node):
             self.declare_parameter(name, default)
         for name, default in (("traffic_timeout_s", 0.3),
                               ("min_traffic_confidence", 0.65),
+                              ("direct_signal_timeout_s", 0.5),
                               ("unknown_hold_s", 3.0),
                               ("intersection_commit_margin_m", 0.35)):
             self.declare_parameter(name, default)
@@ -53,6 +54,11 @@ class MissionNode(Node):
         self.csv_stop_line_active = False
         self.traffic_received = None
         self.traffic_diagnostics_received = None
+        self.direct_signals = {
+            "FUSED": ("UNKNOWN", None),
+            "YOLO": ("UNKNOWN", None),
+            "RGB": ("UNKNOWN", None),
+        }
         self.last_logged_state = None
         self.last_logged_event = ""
         self.completion = MissionCompletionTracker()
@@ -61,6 +67,12 @@ class MissionNode(Node):
         self.imu_valid = False
         self.maneuver_state = ""
         self.create_subscription(String, "/camera/traffic_light_fused/state", self.on_traffic, 10)
+        self.create_subscription(
+            String, "/camera_traffic_light",
+            lambda message: self.on_direct_signal("YOLO", message.data), 10)
+        self.create_subscription(
+            String, "/camera/traffic_light_rgb/state",
+            lambda message: self.on_direct_signal("RGB", message.data), 10)
         self.create_subscription(String, "/camera/traffic_light_fused/aspect",
                                  lambda m: setattr(self.value, "traffic_aspect", m.data.upper()), 10)
         self.create_subscription(Float32, "/camera/traffic_light_fused/confidence",
@@ -118,6 +130,10 @@ class MissionNode(Node):
             Bool, "/depth_slam/mission/traffic_stop_allowed", 10)
         self.pub_intersection_committed = self.create_publisher(
             Bool, "/depth_slam/mission/intersection_committed", 10)
+        self.pub_traffic_gate_state = self.create_publisher(
+            String, "/depth_slam/mission/traffic_gate_state", 10)
+        self.pub_traffic_gate_reason = self.create_publisher(
+            String, "/depth_slam/mission/traffic_gate_reason", 10)
         self.pub_diag = self.create_publisher(
             DiagnosticArray, "/depth_slam/mission/diagnostics", 10)
         self.pub_event = self.create_publisher(
@@ -129,6 +145,18 @@ class MissionNode(Node):
     def on_traffic(self, message):
         self.value.traffic_state = message.data.upper()
         self.traffic_received = time.monotonic()
+        self.on_direct_signal("FUSED", message.data)
+
+    def on_direct_signal(self, source, state):
+        value = str(state).strip().upper()
+        if value in ("R", "RED", "RED_X", "Y", "YELLOW"):
+            value = "R"
+        elif value in ("G", "GREEN", "GREEN_CIRCLE", "GREEN_DOWN",
+                       "GREEN_LEFT", "GREEN_OTHER"):
+            value = "G"
+        else:
+            value = "UNKNOWN"
+        self.direct_signals[str(source)] = (value, time.monotonic())
 
     def on_csv_stop_state(self, message):
         self.csv_stop_line_active = str(message.data) in (
@@ -183,6 +211,17 @@ class MissionNode(Node):
         self.value.traffic_diagnostics_age = (
             float("inf") if self.traffic_diagnostics_received is None else
             now-self.traffic_diagnostics_received)
+        timeout = float(self.get_parameter(
+            "direct_signal_timeout_s").value)
+        direct = tuple(
+            state for state, received in self.direct_signals.values()
+            if received is not None and 0.0 <= now-received <= timeout)
+        # Any current R input wins over G/UNKNOWN. Once every R source has
+        # actually changed to UNKNOWN/G (or gone stale), normal G or the
+        # three-second UNKNOWN release policy can proceed.
+        self.value.traffic_red_override = "R" in direct
+        self.value.traffic_green_override = (
+            not self.value.traffic_red_override and "G" in direct)
         decision = self.core.update(self.value)
         traffic = self.core.last_traffic_decision
         if traffic is not None and traffic.active:
@@ -232,14 +271,22 @@ class MissionNode(Node):
             data=decision.traffic_stop_allowed))
         self.pub_intersection_committed.publish(Bool(
             data=decision.intersection_committed))
+        self.pub_traffic_gate_state.publish(String(data=(
+            traffic.state if traffic is not None and traffic.active else
+            "INACTIVE_MODE_GATE")))
+        self.pub_traffic_gate_reason.publish(String(data=(
+            traffic.event if traffic is not None and traffic.active else
+            "TRAFFIC_CONTROL_NOT_APPLICABLE")))
         diag = DiagnosticArray()
         diag.header.stamp = self.get_clock().now().to_msg()
         diag.status = [status(
             "depth_slam/mission",
             DiagnosticStatus.WARN if decision.stop_required else DiagnosticStatus.OK,
             decision.state,
-            (("section", self.value.section_id), ("stop_reason", decision.stop_reason),
+             (("section", self.value.section_id), ("stop_reason", decision.stop_reason),
              ("traffic_age_s", self.value.traffic_age),
+             ("direct_red_override", self.value.traffic_red_override),
+             ("direct_green_override", self.value.traffic_green_override),
              ("traffic_stop_allowed", decision.traffic_stop_allowed),
              ("intersection_committed", decision.intersection_committed),
              ("pitch_deg", self.value.pitch_deg),

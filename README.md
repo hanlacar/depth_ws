@@ -1,243 +1,114 @@
-# depth_ws production guide
+# depth_ws 실차 운용·구간 점검표
 
-ROS 2 Jazzy 기반의 실제 Intel RealSense D456, 전·후방 SLAMTEC RPLIDAR A2M12, 외부 차량 ODOM, CSV 경로 및 Mode 1~11 주행 스택이다. Gazebo와 Camera/LiDAR/IMU/vehicle 가짜 ROS runtime은 포함하지 않는다. 유일한 예외는 바퀴를 띄운 HIL을 위한 TEST ONLY ODOM이다.
+ROS 2 Jazzy 기반 HENES T870 실차 구성이다. 하나의 Intel RealSense D456, 전방 SLAMTEC RPLIDAR A2M12, Arduino MCU의 실제 encoder/steering ODOM, A/B CSV 경로를 사용한다. 후방 라이다와 가짜 ODOM은 이 최종 실행 구성에서 사용하지 않는다. 전체 토픽·frame 계약은 [FINAL_SENSOR_CONTRACT.md](FINAL_SENSOR_CONTRACT.md)를 기준으로 한다.
 
-확정된 전체 토픽·frame·publisher/consumer 계약은 [FINAL_SENSOR_CONTRACT.md](FINAL_SENSOR_CONTRACT.md)를 기준으로 한다.
+## 실행 전 전제
 
-## 환경과 빌드
+- 차량을 띄우거나 E-stop을 즉시 누를 수 있는 상태에서 처음 확인한다.
+- D456과 전방 라이다가 USB 허브에 연결돼 있어도 전방 라이다 장치가 `/dev/ttyUSB0`인지 확인해야 한다.
+- 시작 경로는 터미널 1의 `start_branch:=A` 또는 `start_branch:=B`로 반드시 명시한다. 기본값은 A지만 현장에서는 생략하지 않는다.
+- 터미널 1은 카메라·라이다·CSV 제어를 먼저 올리며 실제 `/odom`이 없으면 정지 대기한다. 터미널 2에서 MCU가 READY가 되는 순간 주행 조건이 모두 충족되면 차가 바로 움직일 수 있다.
+- 최종 `/cmd_drive`, `/cmd_wheel` 발행자는 `depth_command_arbiter` 하나이고, 두 토픽과 `/odom`의 실차 소비·발행자는 `t870_mcu_simple_bridge` 하나여야 한다.
 
-모든 터미널에서 다음을 실행한다.
+## 실행 방법 3개
+
+### 1. 터미널 1 — CSV + D456 + 전방 라이다
 
 ```bash
 cd ~/depth_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source tools/ros_network_env.sh
+ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py \
+  start_branch:=A \
+  front_serial_port:=/dev/ttyUSB0 \
+  enable_control:=true \
+  user_approved:=true
 ```
 
-처음 빌드하거나 소스가 바뀐 경우:
+B 경로는 위 명령의 `start_branch:=A`만 `start_branch:=B`로 바꾼다.
+
+### 2. 터미널 2 — 실차 MCU + 실제 ODOM
 
 ```bash
 cd ~/depth_ws
 source /opt/ros/jazzy/setup.bash
-(
-  export PYTHONPATH=/usr/lib/python3/dist-packages:${PYTHONPATH}
-  colcon build --symlink-install
-)
 source install/setup.bash
+source tools/ros_network_env.sh
+ros2 launch t870_mcu_simple mcu.launch.py port:=auto
 ```
 
-테스트는 사용자 Python package를 사용할 수 있어야 하므로 build용 `PYTHONPATH` 변경을 현재 shell에 남기지 않는다.
+정상 연결은 `serial opened`, `Arduino READY`, `bridge_ready:true`, `firmware_armed:true` 순서로 확인한다. `/mcu/command_diagnostics`에서 요청 stage와 applied stage/PWM이 같아야 한다. PWM은 후진 -1=50, 1단=50, 2단=75, 3단=100이다. ARM 또는 재부팅 때 encoder가 0으로 바뀌는 샘플은 ODOM 이동량으로 적분하지 않는다.
+
+### 3. 터미널 3 — RViz2
 
 ```bash
-colcon test
-colcon test-result --verbose
-python3 tools/audit_depth_ws_self_contained.py
-git diff --check
+cd ~/depth_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source tools/ros_network_env.sh
+rviz2 -d ~/depth_ws/install/depth_hybrid_slam/share/depth_hybrid_slam/config/prehardware_csv_front_lidar.rviz
 ```
 
-`tools/ros_network_env.sh`는 기본 route interface를 자동 선택하고 Docker bridge를 제외한다. 같은 subnet의 원격 RViz는 각 장치에서 이 파일을 source한 뒤 같은 `ROS_DOMAIN_ID`를 사용한다. 필요한 경우 source 전에 `ROS_STATIC_PEER=<IP>`를 지정한다.
+RViz의 기준 경로와 차량 TF가 겹쳐 시작하고, 이동 중 `map → odom → base_link → front_laser/camera_link`가 끊기지 않아야 한다. 장애물 marker는 정적 파랑, 동적 초록, 현재 ROI 내부 위험점 빨강이다.
 
-## 실제 센서 실행
+## 공통 제어 로직
 
-### D456 production stack
+명령 우선순위는 `0.5 m 이내 전방 긴급정지 → mission/branch/LiDAR hold → LiDAR 우회 명령 → CSV 명령`이다. 안전·mission·branch·LiDAR hold 입력 중 하나가 0.5초 이상 끊기면 fail-safe 정지한다. 카메라 도로영역 판정은 보조 입력이며 CSV가 기준이다.
 
-카메라 driver와 IMU filter, YOLO, RGB 신호등, camera mission을 함께 실행한다.
+9구간을 제외한 모든 구간은 실제 `/mcu/steer_deg` 절댓값이 10도 초과로 1초 유지되면 1단으로 감속한다. 10도 이하가 다시 1초 유지돼야 원래 stage로 복귀한다. 9구간은 이 감속을 무시하고 전진 3단을 고정한다.
 
-```bash
-ros2 launch camera_bringup d456_production.launch.py \
-  launch_camera:=true serial_no:=338122302896
-```
+모든 CSV `STOP_LINE`은 최소 3초 정지한다. 신호 교차로인 4·6·8구간에서는 현재 입력 중 하나라도 R 또는 Y이면 계속 정지하고 UNKNOWN 타이머도 초기화한다. 모든 R/Y가 사라진 뒤 G이면 즉시 출발 허가, UNKNOWN이면 3초 연속 유지 후 출발 허가다. 정지선을 0.35 m 이상 정상 통과해 교차로 진입이 commit된 뒤에는 뒤늦은 신호로 교차로 안에서 급정지하지 않는다.
 
-D456 공개 토픽을 확인한다.
+## A/B 경로 구성 확인
 
-```bash
-ros2 topic info -v /camera/image_raw
-ros2 topic info -v /camera/camera_info
-ros2 topic info -v /camera/aligned_depth_to_color/image_raw
-ros2 topic info -v /camera/camera/gyro/sample
-ros2 topic info -v /camera/camera/accel/sample
-ros2 topic info -v /imu/pitch_deg
-```
+| 시작 선택 | 순서 | 총 점 수 | 반대 경로 포함 여부 |
+|---|---|---:|---|
+| A | START_A → COMMON_1 → T_foword → T_A → COMMON_2 → V_foword → V_A → END_common → END_AA | 3,242 | START_B/T_B/V_B/END_AB 제외 |
+| B | START_B → COMMON_1 → T_foword → T_B → COMMON_2 → V_foword → V_B → END_common → END_AB | 3,259 | START_A/T_A/V_A/END_AA 제외 |
 
-RGB는 driver-native `/camera/camera/color/image_raw`에서 `/camera/image_raw`으로 remap된다. aligned depth는 `/camera/aligned_depth_to_color/image_raw`이다.
+시작 후 `/depth_slam/route/active_branch`는 선택한 A 또는 B, `/depth_slam/route/active_segment`는 위 순서의 첫 segment, `/depth_slam/route/selected_branch`도 같은 값이어야 한다. 반대 branch 선이 RViz에 참고용으로 보일 수 있어도 follower의 활성 경로에는 들어가지 않는다.
 
-### Front A2M12 하나
+## 구간별 현장 점검표
 
-기본 포트는 `/dev/ttyUSB0`이며 공개 출력은 반드시 `/front/scan`이다.
+| 구간 | A/B CSV 범위 | 기대 동작 | 확인할 핵심 상태 |
+|---:|---|---|---|
+| 1 | START_A/B 0–101 | 전진 2단 CSV 추종 | `/drive_mode=1`, arbiter `CSV_TRACKING`, MCU applied stage 2 |
+| 2 | A 102–230, B 102–241; 정지점 A:173/B:178 | 전진 2단, 정지점에서 실제 4초 정지 | stop key가 START_A:173 또는 START_B:178, mission reason `MODE2_4S_STOP`; `/imu/pitch_deg≥5`와 valid는 mission 완료 진단 조건 |
+| 3 | A 231–600, B 242–580 | 전진 2단 CSV 추종 | 조향 10도 1초 조건이면 `STEERING_SUSTAINED_SLOWDOWN`과 stage 1, 해제도 1초 확인 |
+| 4 | START_A 601–652 또는 START_B 581–634, 이어 COMMON_1 0–156; 정지점 25 | 첫 신호 교차로 | R/Y=`STOP_LINE_HOLD·RED_HOLD`, G=`RELEASE_PENDING`, UNKNOWN=`UNKNOWN_HOLD` 3초 뒤 release |
+| 5 | COMMON_1 157–409 | 전진 2단, 반복 가능한 정적 장애물 우회 | 아래 ‘5구간 우회’의 상태 순서와 planned rejoin index 확인 |
+| 6 | COMMON_1 410–659; 정지점 554 | 두 번째 신호 교차로 | 4구간과 동일하며 R이 지속되는 동안 `/cmd_drive=0` 유지 |
+| 7 | T_foword 0–95 후 T_A 또는 T_B | 전방 라이다 구성에서는 기록 CSV 주차: 전진→정지→1단 후진→정지→전진 | A 전환점 4/80, B 전환점 5/66; maneuver `T_CSV_FALLBACK`; 후방 slot 없이도 CSV 완료가 mission 완료로 인정됨 |
+| 8 | COMMON_2 0–707; 정지점 397 | 세 번째 신호 교차로 | R/Y 우선. R 없는 GREEN_LEFT는 허용. R+G 또는 R+GREEN_LEFT는 정지 |
+| 9 | COMMON_2 708–1216 | 전 구간 무조건 전진 3단 고정 | arbiter `MODE9_FIXED_SPEED`, applied stage 3; 0.5 m 긴급정지는 예외 |
+| 10 | V_foword 0–107 후 V_A 또는 V_B | 전방 라이다 구성에서는 기록 CSV 주차: 전진→정지→1단 후진→정지→전진 | A 전환점 11/66, B 전환점 0/70; maneuver `V_CSV_FALLBACK`; 후방 slot 불필요 |
+| 11 | END_common 0–145 후 END_AA 0–78 또는 END_AB 0–90 | 진입 시 5초 정지하고 출구 선택, 마지막 정지점 145에서 최소 3초 정지 | GREEN→A, RED→B, UNKNOWN/무신호→A; commit 뒤 늦은 반대 신호 무시 |
 
-```bash
-ros2 launch depth_hybrid_slam dual_rplidar.launch.py \
-  launch_lidar_drivers:=true \
-  launch_rear_lidar_driver:=false \
-  front_serial_port:=/dev/ttyUSB0
-```
+구간 진행은 `/drive_mode`, `/depth_slam/route/active_segment`, `/depth_slam/route/active_index`, `/depth_slam/route/mode_status`로 확인한다. 최종 실제 명령은 `/cmd_drive`, `/cmd_wheel`, 명령 소유자는 `/depth_slam/command_arbiter/diagnostics`, MCU 적용 결과는 `/mcu/command_diagnostics`, 위치는 `/odom`으로 대조한다.
 
-```bash
-ros2 topic info -v /front/scan
-ros2 topic hz /front/scan
-ros2 run tf2_ros tf2_echo base_link front_laser
-```
+## 5구간 우회 확인
 
-### Front + Rear A2M12
+- 우회 판단 ROI는 front_lidar 기준 최대 1.5 m이며 갑자기 2 m 이상으로 늘어나지 않는다.
+- 현재 CSV 진행방향의 차량 swept footprint가 장애물과 충돌할 때만 정지·우회 대상으로 삼는다. 옆 연석은 장애물로 보더라도 CSV 충돌선 밖이면 우회 트리거가 아니다.
+- 같은 장애물이 최소 2초 확인되고 차량 정지가 확인된 뒤 경로를 만든다. 마지막 확인 장애물이 front_lidar에서 1.0 m보다 가까워졌으면 새 경로를 만들지 않고 정지한다.
+- planner는 장애물 옆으로 필요한 만큼만 CSV를 평행 이동한 짧은 경로를 찾고, 같은 CSV segment의 정확한 앞쪽 점으로 재합류한다. 우회 중에는 1단으로 서행한다.
+- 정상 상태 순서는 `CSV_TRACKING → STOP_CONFIRM_OBSTACLE → PLAN → LIDAR_PATH → CSV_REJOIN → CSV_TRACKING`이다. 두 번째 이후 우회도 매번 새 `/depth_slam/lidar/planned_rejoin_index`를 직접 검증하므로 진행 index가 앞서가도 재합류가 막히지 않아야 한다.
+- `/depth_slam/lidar/perception`에서 mode 5 range가 1.5, `/depth_slam/lidar/maneuver`에서 hold/owner/state, `/depth_slam/lidar/csv_rejoin_valid`에서 재합류 판정을 확인한다.
 
-후방 기본 포트는 `/dev/ttyUSB1`이며 공개 출력은 `/rear/scan`이다. Rear LiDAR 판단은 Mode 7/10에서만 활성화된다.
+## 9구간 긴급정지 확인
 
-```bash
-ros2 launch depth_hybrid_slam dual_rplidar.launch.py \
-  launch_lidar_drivers:=true \
-  launch_rear_lidar_driver:=true \
-  front_serial_port:=/dev/ttyUSB0 \
-  rear_serial_port:=/dev/ttyUSB1
-```
+전방 장애물이 0.5 m 이내면 stage 3보다 긴급정지가 우선해 `/cmd_drive=0`이 된다. 한 번 정지한 뒤에는 1.5 m 이내에 장애물이 전혀 없는 상태가 연속 1초 유지돼야 `ACCEL_TRACKING`으로 돌아가고 다시 stage 3을 적용한다. 라이다 scan이 0.5초 이상 stale이어도 정지한다.
 
-```bash
-ros2 topic info -v /front/scan
-ros2 topic info -v /rear/scan
-ros2 topic hz /rear/scan
-ros2 run tf2_ros tf2_echo base_link rear_laser
-```
+## 신호등 오판 점검
 
-Driver-native 출력과 과거의 legacy aliases는 production 공개 토픽이 아니다.
+신호 원본은 `/camera_traffic_light`, `/camera/traffic_light_rgb/state`, fusion 결과는 `/camera/traffic_light_fused/state`다. 세 입력 중 fresh한 R/Y가 하나라도 있으면 confidence와 G보다 우선한다. 실제 R이 계속 보이는데 차가 움직인다면 `/depth_slam/mission/traffic_gate_state`, `/depth_slam/mission/traffic_gate_reason`, `/camera/traffic_light_fused/diagnostics`에서 각각 RED_HOLD 여부와 `valid_red_present`를 대조한다. R publisher 자체가 0.5초 이상 끊긴 경우에는 R이 아니라 UNKNOWN으로 처리되고 3초 뒤 출발할 수 있으므로 카메라 토픽 주기도 함께 확인한다.
 
-## 시각화와 상태 확인
+## 검사 결과와 남은 현장 항목
 
-Camera annotated image:
-
-```bash
-ros2 run rqt_image_view rqt_image_view /camera/debug/annotated
-```
-
-LiDAR ROI RViz:
-
-```bash
-rviz2 -d ~/depth_ws/install/depth_hybrid_slam/share/depth_hybrid_slam/config/lidar_roi_debug.rviz
-```
-
-저장 지도와 canonical route RViz:
-
-```bash
-ros2 launch depth_hybrid_slam map_route_view.launch.py \
-  map_path:=~/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
-  route_path:=~/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv \
-  start_rviz:=true
-```
-
-핵심 perception/mission 출력을 확인한다.
-
-```bash
-ros2 topic echo /camera/traffic_light_fused/state
-ros2 topic echo /camera/traffic_light_fused/aspect
-ros2 topic echo /camera/mission/stop_line_detected
-ros2 topic echo /camera/mission/stop_line_distance_m
-ros2 topic echo /depth_slam/camera/csv_validation
-ros2 topic echo /depth_slam/lidar/perception
-```
-
-## TEST ONLY ODOM
-
-이 publisher는 **실차 ODOM 연결 전, 차량을 공중에 띄운 HIL 전용**이다. 실제 `/mcu/encoder`와 `/mcu/steer_a0`가 모두 fresh일 때만 `/odom` 및 `odom -> base_link`를 내보내며 임의 motion은 만들지 않는다. 실제 ODOM owner와 절대 동시에 실행하지 않는다.
-
-```bash
-ros2 run depth_hybrid_slam test_odom_publisher --ros-args \
-  -p test_only_acknowledged:=true
-```
-
-```bash
-ros2 topic info -v /odom
-ros2 topic echo /depth_slam/test_odom/state
-```
-
-## 실제 센서 HIL
-
-아래 launch는 실제 D456/A2M12와 TEST ONLY ODOM을 사용한다. 최종 `/cmd_drive`, `/cmd_wheel`도 발행하므로 차량을 공중에 띄우거나 구동계를 분리한 상태에서만 실행한다.
-
-Mode 4 → 5:
-
-```bash
-ros2 launch depth_hybrid_slam prehardware_csv_camera_lidar.launch.py \
-  start_mode:=4 end_mode:=5 \
-  use_rear_lidar:=false start_rviz:=true
-```
-
-Mode 8 → 9:
-
-```bash
-ros2 launch depth_hybrid_slam prehardware_csv_camera_lidar.launch.py \
-  start_mode:=8 end_mode:=9 \
-  use_rear_lidar:=false start_rviz:=true
-```
-
-Mode 11 real-camera HIL:
-
-```bash
-ros2 launch depth_hybrid_slam prehardware_csv_camera_lidar.launch.py \
-  start_mode:=11 end_mode:=11 \
-  use_rear_lidar:=false start_rviz:=true
-```
-
-Mode 11의 pure-core 회귀만 실행하려면:
-
-```bash
-pytest -q src/depth_hybrid_slam/test/test_signal_exit_integration.py
-```
-
-## Full route production
-
-Production launch는 실제 D456과 전·후방 A2M12를 시작하지만 ODOM은 만들지 않는다. 먼저 차량의 유일한 production ODOM owner가 `/odom`과 `odom -> base_link`를 발행해야 한다.
-
-현재 canonical metadata는 `alignment.validated: false`이므로 production route control은 의도적으로 fail-closed된다. 실제 지도-경로 정합 검증 없이 이 값을 바꾸거나 HIL override를 production에 사용하지 않는다.
-
-센서/ODOM/경로 상태만 확인하는 안전 실행:
-
-```bash
-ros2 launch depth_hybrid_slam production_ready.launch.py \
-  enable_control:=false dry_run:=true user_approved:=false
-```
-
-실제 정합 검증이 완료되고 차량을 주행시킬 때만 다음 세 플래그를 함께 변경한다.
-
-```bash
-ros2 launch depth_hybrid_slam production_ready.launch.py \
-  enable_control:=true dry_run:=false user_approved:=true
-```
-
-## Command ownership 확인
-
-최종 차량 명령의 유일한 owner는 `depth_command_arbiter`다.
-
-```bash
-ros2 topic echo /cmd_drive
-ros2 topic echo /cmd_wheel
-ros2 topic info -v /cmd_drive
-ros2 topic info -v /cmd_wheel
-```
-
-각 `ros2 topic info -v` 결과에서 publisher count를 확인한다.
-
-- `/front/scan`: `front_rplidar_node` 1개
-- `/rear/scan`: `rear_rplidar_node` 1개(dual 실행 시)
-- `/camera/image_raw`: RealSense driver 1개
-- `/odom`: real owner 1개 또는 TEST ONLY 환경의 test owner 1개
-- `/cmd_drive`: `depth_command_arbiter` 1개
-- `/cmd_wheel`: `depth_command_arbiter` 1개
-
-## 실제 차량 실행 순서
-
-1. 차량을 정지시키고 E-stop을 준비한다.
-2. Front/Rear serial port와 D456 serial을 확인한다.
-3. production ODOM owner 하나만 시작하고 `/odom`, `odom -> base_link`를 확인한다.
-4. `enable_control:=false dry_run:=true user_approved:=false`로 production launch를 시작한다.
-5. `/front/scan`, `/rear/scan`, D456, `/imu/valid`, localization tracking, route binding, mission 및 safety 상태를 확인한다.
-6. `/cmd_drive`, `/cmd_wheel` publisher가 arbiter 하나뿐인지 확인한다.
-7. canonical map-route alignment가 실제 검증된 경우에만 세 control flag를 활성화한다.
-8. Mode 11 종료 후 `/camera/exit_branch_signal`과 최종 정지 상태를 확인한다.
-
-## 보호된 production 기준
-
-- Mode 1~11과 16개 branch case를 유지한다.
-- Mode 2는 `/imu/pitch_deg >= +5.0`과 valid IMU를 사용한다.
-- Mode 5 planner limit은 `21 deg`, hard steering limit은 `±22 deg`, wheelbase는 `0.73 m`다.
-- Mode 9 emergency는 장애물 제거 뒤 1초 연속 clear 후에만 해제된다.
-- Mode 11은 GREEN→A, RED→B, UNKNOWN→default A, 5초 STOP이며 늦은 반대 신호를 무시한다.
-- Canonical CSV SHA-256은 `e308f6e8be749d6372b0814ad105fba78058d9419c4c1874efac42c84bd03160`이다.
+- A/B topology, 반대 branch 제외, 모든 STOP_LINE과 전·후진 경계는 CSV 로더 기준으로 일치한다.
+- `/cmd_drive`와 `/cmd_wheel`은 arbiter 단일 publisher, `/odom`은 MCU bridge 단일 owner 계약으로 구성돼 있다.
+- 7·10구간의 전방 라이다 CSV fallback은 후방 slot 검출 없이도 완료 진단이 닫히도록 정합화했다.
+- 코드 회귀검사는 ROS-independent unit/integration test, 전체 colcon test, self-contained audit를 기준으로 한다.
+- 실제 차량에서는 USB 포트, encoder 방향·counts-per-meter, steering center/부호, 제동거리, 각 신호등 토픽의 지속 주기를 반드시 저속으로 재확인해야 한다.
+- 현재 metadata의 저장 RTAB-Map 정합은 `validated:false`, symmetric RMS 1.83 m로 허용 1.0 m를 넘는다. 이 실행은 첫 실제 ODOM pose를 CSV 원점에 맞추는 odom-relative 방식이라 주행을 막지는 않지만, RViz의 저장 지도와 CSV가 정밀하게 일치한다고 간주하면 안 된다.

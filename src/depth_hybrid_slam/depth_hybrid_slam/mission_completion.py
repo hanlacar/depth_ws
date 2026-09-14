@@ -174,8 +174,16 @@ class MissionCompletionTracker:
         if mode == 5:
             return self.mode5_rejoins >= 2 and mode not in self.invalid_modes
         if mode in (7, 10):
-            return (self.slot_seen[mode] and self.parking_completed[mode] and
-                    self.parking_rejoined[mode])
+            parking_done = (self.parking_completed[mode] and
+                            self.parking_rejoined[mode])
+            # The production vehicle intentionally runs one front LiDAR only.
+            # In that graph modes 7/10 follow their recorded CSV maneuver, so
+            # no rear-LiDAR slot observation can exist.  Keep the slot
+            # requirement for an actual LiDAR maneuver, but let a completed
+            # CSV fallback satisfy the mission audit on its own.
+            if self.parking_source[mode] == "CSV_FALLBACK":
+                return parking_done
+            return self.slot_seen[mode] and parking_done
         if mode == 9:
             return self.mode9_emergency_applied
         if mode == 11:

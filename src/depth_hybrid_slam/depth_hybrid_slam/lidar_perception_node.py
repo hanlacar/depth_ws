@@ -20,7 +20,7 @@ from .lidar_roi_core import (
     clusters_in_centerline_corridor, DYNAMIC, DynamicClusterTracker, mode_gates,
     speed_bump_suppressed)
 from .lidar_scan_core import ScanSafety
-from .lidar_mission_core import Mode9EmergencyLatch
+from .lidar_mission_core import Mode9EmergencyLatch, SteeringSlowdownLatch
 
 
 def scan_points(message):
@@ -49,8 +49,11 @@ class LidarPerceptionNode(Node):
             ("steering_timeout_s", 0.5), ("odom_timeout_s", 0.5),
             ("wheelbase_m", 0.73),
             ("emergency_distance_m", 0.50), ("clear_distance_m", 0.60),
-            ("mode9_clear_distance_m", 1.0),
+            ("mode9_clear_distance_m", 1.5),
             ("mode9_clear_duration_s", 1.0),
+            ("steering_slowdown_threshold_deg", 10.0),
+            ("steering_slowdown_enter_s", 1.0),
+            ("steering_slowdown_exit_s", 1.0),
             ("corridor_half_width_m", 0.30),
             ("minimum_cluster_points", 2), ("cluster_gap_m", 0.16),
             ("clear_confirm_scans", 3), ("parking_free_distance_m", 1.0),
@@ -58,7 +61,8 @@ class LidarPerceptionNode(Node):
             ("dynamic_confirmation_count", 3),
             ("dynamic_timeout_s", 0.75),
             ("dynamic_association_distance_m", 0.50),
-            ("mode5_range_m", 2.0), ("mode5_fov_deg", 80.0),
+            ("mode5_range_m", 1.5), ("mode5_fov_deg", 80.0),
+            ("csv_path_timeout_s", 0.5),
             ("mode5_lateral_m", 1.0), ("vehicle_width_m", 0.80),
             ("obstacle_margin_m", 0.15), ("speed_bump_zones", [""]),
         )
@@ -89,6 +93,9 @@ class LidarPerceptionNode(Node):
         self.actual_steering = 0.0
         self.actual_steering_at = None
         self.local_path = ()
+        self.local_path_frame = "odom"
+        self.csv_path = ()
+        self.csv_path_at = None
         self.camera_road = self.camera_fresh = False
         self.object_evidence_valid, self.object_detected = False, True
         self.last_event_state = None
@@ -96,6 +103,10 @@ class LidarPerceptionNode(Node):
         self.front_clear_count = 0
         self.mode9_emergency = Mode9EmergencyLatch(
             p("mode9_clear_distance_m"), p("mode9_clear_duration_s"))
+        self.steering_slowdown = SteeringSlowdownLatch(
+            p("steering_slowdown_threshold_deg"),
+            p("steering_slowdown_enter_s"),
+            p("steering_slowdown_exit_s"))
         self.speed_bump_zones = self._zones(p("speed_bump_zones"))
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -108,6 +119,9 @@ class LidarPerceptionNode(Node):
         self.create_subscription(Float32, "/mcu/steer_deg", self._actual_steering, 10)
         self.create_subscription(Path, "/depth_slam/lidar/local_path",
                                  self._local_path, 10)
+        self.create_subscription(
+            Path, "/depth_slam/csv_validation/local_path",
+            self._csv_path, 10)
         self.create_subscription(String, "/depth_slam/camera/csv_validation",
                                  self._camera_validation, 10)
         self.create_subscription(String, "/camera/mission/diagnostics",
@@ -200,6 +214,18 @@ class LidarPerceptionNode(Node):
     def _local_path(self, message):
         self.local_path = tuple((p.pose.position.x, p.pose.position.y)
                                 for p in message.poses)
+        self.local_path_frame = str(message.header.frame_id).lstrip("/") or \
+            "odom"
+
+    def _csv_path(self, message):
+        frame = str(message.header.frame_id).lstrip("/")
+        if frame != "base_link":
+            self.csv_path = ()
+            self.csv_path_at = None
+            return
+        self.csv_path = tuple((p.pose.position.x, p.pose.position.y)
+                              for p in message.poses)
+        self.csv_path_at = time.monotonic()
 
     def _camera_validation(self, message):
         try:
@@ -223,7 +249,7 @@ class LidarPerceptionNode(Node):
             return self.actual_steering, "/mcu/steer_deg"
         return 0.0, "STALE"
 
-    def _markers(self, assessment, broad):
+    def _markers(self, assessment, broad, clusters):
         values = MarkerArray()
         stamp = self.get_clock().now().to_msg()
 
@@ -290,22 +316,49 @@ class LidarPerceptionNode(Node):
                 namespace, marker_id, Marker.DELETE)
             values.markers.append(marker)
         line(6, "local_path", self.local_path, 0.04,
-             (1.0, 1.0, 1.0, 1.0), "base_link")
-        for marker_id, namespace, clusters, color, frame_id in (
-                (20, "obstacles", self.local_clusters,
-                 (1.0, 0.2, 0.1, 1.0), self.front_frame),
-                (21, "dynamic", tuple(
-                    c for c in self.local_clusters if c.motion == DYNAMIC),
-                 (1.0, 0.0, 1.0, 1.0), self.front_frame),
+             (1.0, 1.0, 1.0, 1.0), self.local_path_frame)
+        # Classification colors are disjoint. Anything intersecting the
+        # active steering ROI overrides its motion color and is shown red.
+        roi = clusters_in_centerline_corridor(
+            clusters, assessment.centerline,
+            half_width_m=self.get_parameter("corridor_half_width_m").value,
+            length_m=self.get_parameter("mode5_range_m").value)
+        roi_ids = {id(cluster) for cluster in roi}
+        curb_track_ids = {
+            cluster.track_id for cluster in broad.curbs
+            if cluster.track_id >= 0}
+        ordinary = tuple(
+            cluster for cluster in clusters
+            if id(cluster) not in roi_ids and
+            cluster.track_id not in curb_track_ids)
+        marker_groups = (
+                (20, "static_obstacles_blue", tuple(
+                    c for c in ordinary if c.motion == "STATIC"),
+                 (0.05, 0.25, 1.0, 1.0), self.front_frame),
+                (21, "dynamic_obstacles_green", tuple(
+                    c for c in ordinary if c.motion == DYNAMIC),
+                 (0.05, 1.0, 0.15, 1.0), self.front_frame),
+                (23, "roi_obstacles_red", roi,
+                 (1.0, 0.05, 0.05, 1.0), self.front_frame),
+                (24, "unknown_obstacles_yellow", tuple(
+                    c for c in ordinary if c.motion not in ("STATIC", DYNAMIC)),
+                 (1.0, 0.75, 0.05, 1.0), self.front_frame),
                 (22, "curbs", broad.curbs,
-                 (0.2, 1.0, 0.9, 1.0), "base_link")):
+                 (0.2, 1.0, 0.9, 1.0), "base_link"))
+        for namespace, marker_id in (("obstacles", 20), ("dynamic", 21)):
+            marker = Marker()
+            marker.header.frame_id, marker.header.stamp = self.front_frame, stamp
+            marker.ns, marker.id, marker.action = (
+                namespace, marker_id, Marker.DELETE)
+            values.markers.append(marker)
+        for marker_id, namespace, group, color, frame_id in marker_groups:
             marker = Marker()
             marker.header.frame_id, marker.header.stamp = frame_id, stamp
             marker.ns, marker.id, marker.type = namespace, marker_id, Marker.POINTS
             marker.action, marker.pose.orientation.w = Marker.ADD, 1.0
             marker.scale.x = marker.scale.y = 0.07
             marker.color.r, marker.color.g, marker.color.b, marker.color.a = color
-            marker.points = [_point(*point) for cluster in clusters
+            marker.points = [_point(*point) for cluster in group
                              for point in cluster.points]
             values.markers.append(marker)
         return values
@@ -351,9 +404,12 @@ class LidarPerceptionNode(Node):
             local_filtered, steering, front_active=front_active,
             fresh=front_fresh,
             half_width_m=self.get_parameter("corridor_half_width_m").value,
-            wheelbase_m=self.get_parameter("wheelbase_m").value)
-        slowdown = (assessment.slowdown or
-                    (self.mode == 9 and abs(float(steering)) > 5.0))
+            wheelbase_m=self.get_parameter("wheelbase_m").value,
+            length_m=1.5)
+        distance_slowdown_evidence = assessment.slowdown
+        slowdown = self.steering_slowdown.update(
+            steering if steering_source != "STALE" else None,
+            self.mode, now)
         if self.mode == 9:
             hard_stop = self.mode9_emergency.update(
                 assessment.hard_stop, assessment.nearest_m,
@@ -381,22 +437,33 @@ class LidarPerceptionNode(Node):
         mode5_local = clusters_in_centerline_corridor(
             local_filtered, assessment.centerline,
             half_width_m=self.get_parameter("corridor_half_width_m").value,
-            length_m=1.5)
+            length_m=self.get_parameter("mode5_range_m").value)
         mode5_ids = {id(cluster) for cluster in mode5_local}
-        mode5_obstacles = tuple(
-            base for base, local in zip(filtered, local_filtered)
-            if id(local) in mode5_ids)
+        csv_path_fresh = (
+            self.csv_path_at is not None and
+            now-self.csv_path_at <= float(self.get_parameter(
+                "csv_path_timeout_s").value))
         broad = assess_mode5_broad(
-            filtered, (),
+            filtered, self.csv_path if csv_path_fresh else (),
             range_m=self.get_parameter("mode5_range_m").value,
             fov_deg=self.get_parameter("mode5_fov_deg").value,
             lateral_m=self.get_parameter("mode5_lateral_m").value,
             clearance_m=(self.get_parameter("vehicle_width_m").value/2.0 +
                          self.get_parameter("obstacle_margin_m").value),
             sensor_pose=(self.front_sensor_pose or (0.0, 0.0, 0.0)))
-        # Mode 5 uses only the visible front_laser-origin three-zone corridor.
-        # The removed base_link CSV sweep must not create an avoidance request.
-        avoidance = self.mode == 5 and front_fresh and bool(mode5_obstacles)
+        mode5_obstacles = broad.collision_obstacles
+        collision_ids = {id(cluster) for cluster in mode5_obstacles}
+        collision_local = tuple(
+            local for base, local in zip(filtered, local_filtered)
+            if id(base) in collision_ids)
+        nearest_collision_lidar_m = min(
+            (math.hypot(x, y) for cluster in collision_local
+             for x, y in cluster.points), default=math.inf)
+        # The 1.5 m ROI is a sensing/visualization boundary. Mode 5 stops only
+        # when the fresh CSV local path's swept vehicle footprint intersects
+        # an obstacle inside that front_laser-origin boundary.
+        avoidance = (self.mode == 5 and front_fresh and csv_path_fresh and
+                     broad.path_blocked)
         rear_result = (self.rear_safety.assess(self.rear, rear_fresh)
                        if rear_active else None)
         rear_hard = bool(rear_result and rear_result.hard_obstacle)
@@ -453,10 +520,38 @@ class LidarPerceptionNode(Node):
                 self.mode9_emergency.clear_since is None else
                 max(0.0, now-self.mode9_emergency.clear_since)),
             "slowdown_required": slowdown,
+            "slowdown_policy": "MEASURED_STEERING_1S_HYSTERESIS",
+            "distance_slowdown_evidence": distance_slowdown_evidence,
+            "steering_slowdown_threshold_deg": self.steering_slowdown.threshold_deg,
+            "steering_above_elapsed_s": (
+                0.0 if self.steering_slowdown.above_since is None else
+                max(0.0, now-self.steering_slowdown.above_since)),
+            "steering_below_elapsed_s": (
+                0.0 if self.steering_slowdown.below_since is None else
+                max(0.0, now-self.steering_slowdown.below_since)),
             "rear_hard_obstacle": rear_hard,
             "path_blocked": avoidance,
             "avoidance_required": avoidance,
+            "csv_path_fresh": csv_path_fresh,
+            "csv_collision_count": len(mode5_obstacles),
+            "avoidance_nearest_lidar_m": (
+                None if not math.isfinite(nearest_collision_lidar_m) else
+                nearest_collision_lidar_m),
             "obstacle_y_m": obstacle_y,
+            "motion_classification": {
+                "static": sum(c.motion == "STATIC" for c in local_filtered),
+                "dynamic": sum(c.motion == DYNAMIC for c in local_filtered),
+                "unknown": sum(c.motion not in ("STATIC", DYNAMIC)
+                               for c in local_filtered),
+                "roi_red": len(mode5_local),
+            },
+            "obstacle_tracks": [
+                {"track_id": c.track_id, "motion": c.motion,
+                 "speed_mps": round(c.speed_mps, 3),
+                 "centroid": [round(c.centroid[0], 3),
+                              round(c.centroid[1], 3)],
+                 "in_roi": id(c) in mode5_ids}
+                for c in local_filtered],
             "obstacles": [[round(p[0], 3), round(p[1], 3)]
                           for c in mode5_obstacles for p in c.points][:64],
             "curbs": [[round(p[0], 3), round(p[1], 3)]
@@ -464,7 +559,8 @@ class LidarPerceptionNode(Node):
             "speed_bump_suppression_configured": bool(self.speed_bump_zones),
         }
         self.diag_pub.publish(String(data=json.dumps(diagnostic, separators=(",", ":"))))
-        self.marker_pub.publish(self._markers(assessment, broad))
+        self.marker_pub.publish(self._markers(
+            assessment, broad, local_filtered))
 
 
 def main(args=None):

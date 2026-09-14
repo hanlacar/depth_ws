@@ -6,6 +6,8 @@
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>camera_bringup</exec_depend>
+  <exec_depend>camera_rgb_traffic_light</exec_depend>
+  <exec_depend>camera_yolo_inference</exec_depend>
   <exec_depend>launch</exec_depend><exec_depend>launch_ros</exec_depend>
   <depend>rclpy</depend><depend>sensor_msgs</depend><depend>std_msgs</depend>
   <depend>std_srvs</depend>

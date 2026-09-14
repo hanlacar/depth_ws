@@ -51,7 +51,15 @@ class MissionMachine:
         state = str(value.traffic_state).upper()
 
         gate_aspect = "UNKNOWN"
-        if traffic_fresh:
+        diagnostic_fresh = (
+            value.traffic_diagnostics_age <= self.traffic_timeout)
+        red_present = diagnostic_fresh and value.traffic_red_present
+        green_present = diagnostic_fresh and value.traffic_green_present
+        if value.traffic_red_override or red_present:
+            gate_aspect = "R"
+        elif value.traffic_green_override:
+            gate_aspect = "G"
+        elif traffic_fresh:
             gate_aspect = ("G" if aspect == "GREEN_DOWN" else
                            "R" if aspect == "RED_X" or "YELLOW" in aspect else
                            state if state in ("R", "G") else "UNKNOWN")
@@ -59,22 +67,19 @@ class MissionMachine:
                     if isinstance(value.intersection_progress,
                                   IntersectionProgress)
                     else IntersectionProgress())
-        diagnostic_fresh = (
-            value.traffic_diagnostics_age <= self.traffic_timeout)
-        red_present = diagnostic_fresh and value.traffic_red_present
-        green_present = diagnostic_fresh and value.traffic_green_present
-        if traffic_fresh and green_present:
-            if red_present and aspect == "GREEN_LEFT":
-                gate_aspect = "R+GREEN_LEFT"
-            elif red_present:
-                gate_aspect = "R+G"
-            elif aspect == "GREEN_LEFT":
+        red_override = value.traffic_red_override or red_present
+        if not red_override and traffic_fresh and green_present:
+            if aspect == "GREEN_LEFT":
                 gate_aspect = "GREEN_LEFT"
-        elif traffic_fresh and aspect == "GREEN_LEFT":
+        elif (not red_override and traffic_fresh and
+              aspect == "GREEN_LEFT"):
             gate_aspect = "GREEN_LEFT"
+        gate_signal_age = (
+            0.0 if red_override or value.traffic_green_override else
+            value.traffic_age)
         traffic = self.traffic_gate.evaluate(
             progress, value.csv_stop_line_active, gate_aspect,
-            value.traffic_age, value.now)
+            gate_signal_age, value.now)
         self.last_traffic_decision = traffic
         if traffic.active:
             return MissionDecision(
