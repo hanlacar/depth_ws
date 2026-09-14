@@ -20,14 +20,14 @@ invent it; any undefined string is treated as `NORMAL`. When the shared mode
 contract later adds intersection, its exact upstream spelling can be adopted.
 
 Every actual mode transition resets relative yaw, preventing accumulation
-across missions. Parking controllers can also call `/imu_reset` at each stage.
+across missions. Parking controllers can also call `/imu/reset_reference` at each stage.
 IMU distance and absolute position are intentionally not estimated.
 
 ## Filter and frames
 
 Samples with NaN/Inf, duplicate/reversed timestamps, or excessive `dt` are
 dropped. Every process starts in `CALIBRATING` and requires a continuous
-three-second stationary window. During this state `/imu_valid=false`,
+three-second stationary window. During this state `/imu/valid=false`,
 `/imu/slope=false`, and relative Yaw is not integrated. Movement discards the
 window and starts it again. Failure to finish within 15 seconds leaves the node
 invalid instead of silently using zero corrections.
@@ -73,33 +73,32 @@ not provide an orientation estimate.
 
 ## Outputs
 
-Mission-facing outputs are `/imu_pitch`, `/imu_roll`, `/imu_yaw`,
-`/imu_yaw_rate` (`Float32`) plus `/imu_valid` and `/imu/slope` (`Bool`).
+Mission-facing outputs are `/imu/pitch_deg`, `/imu/roll_deg`,
+`/imu/relative_yaw_deg`, `/imu/angular_velocity_z` (`Float32`) plus `/imu/valid`
+and `/imu/slope` (`Bool`). `/imu/data`, `/imu/rpy_deg`, `/imu/angle`, and
+`/imu/stationary` provide the remaining filtered diagnostics.
 Angles and yaw rate are rounded to two decimals only when published. Filtering
 and slope decisions use the unrounded Python/NumPy float value. This
-format does not claim 0.01-degree physical accuracy. `/imu_reset` resets only
+format does not claim 0.01-degree physical accuracy. `/imu/reset_reference` resets only
 relative Yaw; it never reruns or clears startup Roll/Pitch calibration.
-
-Legacy `/imu/...` data, RPY, angle, validity, stationary, relative-Yaw, roll,
-pitch, yaw-rate topics and reset services remain as compatibility publishers.
 No `/slope/stop`, drive, wheel, or MCU command is published.
 
 ## Build and run
 
-Camera terminal:
+Integrated workspace terminal:
 
 ```bash
-cd ~/camera_ws
+cd /home/qor/depth_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=0
 ros2 launch camera_bringup d456_bringup.launch.py
 ```
 
-Independent IMU terminal (do not source `camera_ws` here):
+Independent IMU terminal (source the same self-contained workspace):
 
 ```bash
-cd ~/imu_ws
+cd /home/qor/depth_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=0
@@ -109,7 +108,7 @@ ros2 launch imu_manager imu_manager.launch.py
 Reset relative Yaw when required:
 
 ```bash
-ros2 service call /imu_reset std_srvs/srv/Trigger "{}"
+ros2 service call /imu/reset_reference std_srvs/srv/Trigger "{}"
 ```
 
 At node startup, obey the warning:
@@ -119,7 +118,7 @@ Keep vehicle stationary on level ground during startup calibration.
 ```
 
 Keep the complete vehicle and D456 stationary for at least three seconds,
-confirm `/imu_valid=true` and approximately `/imu_pitch=0.00`, then drive. An
+confirm `/imu/valid=true` and approximately `/imu/pitch_deg=0.00`, then drive. An
 IMU cannot prove that the startup surface is level; that is an operator
 precondition.
 
@@ -212,19 +211,20 @@ continuous stationary time actually used for the final bias window.
 `/imu/slope` is a current-condition `Bool`, not a stop command. It uses the
 unrounded, startup-level-relative base-link Pitch. In REP-103 base axes a
 nose-up vehicle has positive Pitch, so only sustained positive Pitch can enter
-the uphill state; level and negative/downhill Pitch are false. The legacy
-`/slope_state` topic publishes the same value for compatibility.
+the uphill state; level and negative/downhill Pitch are false.
 
-The default entry condition is Pitch `>= 3.0` degrees for 10 consecutive
+The IMU diagnostic slope state enters at Pitch `>= 3.0` degrees for 10 consecutive
 attitude updates. Once true, the state remains true through threshold noise and
 exits only after Pitch `<= 1.5` degrees for 10 consecutive updates. Configure
 `uphill_enter_pitch_deg`, `uphill_exit_pitch_deg`, and
 `uphill_confirmation_frames` in `imu_manager.yaml` for the vehicle and road.
-The entry threshold exceeds five times the approximately 0.58-degree tilt
+This diagnostic threshold is separate from Mode 2 completion, which requires
+valid `/imu/pitch_deg >= +5.0` in the route follower. The entry threshold exceeds
+five times the approximately 0.58-degree tilt
 equivalent of the configured 0.10 m/s^2 startup acceleration-noise limit.
 
 NaN/Inf, calibration failure, stale gyro/accel receipt, or any other invalid
-IMU state immediately clears the state to false. `/imu_valid` remains the
+IMU state immediately clears the state to false. `/imu/valid` remains the
 separate diagnostic validity signal. Roll, Yaw, quaternion angle, combined
 tilt, and camera mounting Pitch are never slope inputs. There is no five-second
 stop timer, drive command, behavior-arbiter link, or mode dependency.

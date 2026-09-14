@@ -145,24 +145,12 @@ class ImuManagerNode(Node):
         self.angle_pub = self.create_publisher(Vector3Stamped, "/imu/angle", 10)
         self.yaw_pub = self.create_publisher(Float32, "/imu/relative_yaw_deg", 10)
         self.pitch_pub = self.create_publisher(Float32, "/imu/pitch_deg", 10)
-        self.pitch_compat_pub = self.create_publisher(Float32, "/imu/pitch", 10)
         self.roll_pub = self.create_publisher(Float32, "/imu/roll_deg", 10)
-        self.roll_compat_pub = self.create_publisher(Float32, "/imu/roll", 10)
-        self.yaw_compat_pub = self.create_publisher(Float32, "/imu/yaw", 10)
-        self.yaw_rate_compat_pub = self.create_publisher(Float32, "/imu/yaw_rate", 10)
         self.yaw_rate_pub = self.create_publisher(Float32, "/imu/angular_velocity_z", 10)
         self.valid_pub = self.create_publisher(Bool, "/imu/valid", 10)
-        self.valid_compat_pub = self.create_publisher(Bool, "/imu_valid", 10)
         self.stationary_pub = self.create_publisher(Bool, "/imu/stationary", 10)
         self.slope_pub = self.create_publisher(Bool, "/imu/slope", 10)
-        self.slope_compat_pub = self.create_publisher(Bool, "/slope_state", 10)
-        self.pitch_vehicle_pub = self.create_publisher(Float32, "/imu_pitch", 10)
-        self.roll_vehicle_pub = self.create_publisher(Float32, "/imu_roll", 10)
-        self.yaw_vehicle_pub = self.create_publisher(Float32, "/imu_yaw", 10)
-        self.yaw_rate_vehicle_pub = self.create_publisher(Float32, "/imu_yaw_rate", 10)
         self.create_service(Trigger, "/imu/reset_reference", self.reset_reference_callback)
-        self.create_service(Trigger, "/imu/reset", self.reset_reference_callback)
-        self.create_service(Trigger, "/imu_reset", self.reset_reference_callback)
         self.create_timer(1.0 / float(self.get_parameter("publish_rate_hz").value), self.publish_outputs)
         if self.safe_invalid:
             self.get_logger().error("sensor_axis_matrix must contain nine finite values; outputs remain invalid")
@@ -333,21 +321,10 @@ class ImuManagerNode(Node):
                                  (self.roll_pub, self.filter.roll_deg),
                                  (self.yaw_rate_pub, 0.0 if self.filter.gyro is None else self.filter.gyro[2] - self.filter.gyro_bias[2])):
             msg = Float32(); msg.data = float(value); publisher.publish(msg)
-        yaw_rate_deg_s = 0.0 if self.filter.gyro is None else math.degrees(self.filter.gyro[2] - self.filter.gyro_bias[2])
-        for publisher, value in ((self.pitch_compat_pub, self.filter.pitch_deg),
-                                 (self.roll_compat_pub, self.filter.roll_deg),
-                                 (self.yaw_compat_pub, self.filter.relative_yaw_deg),
-                                 (self.yaw_rate_compat_pub, yaw_rate_deg_s)):
-            msg = Float32(); msg.data = float(round(value, 2)); publisher.publish(msg)
-        for publisher, value in ((self.pitch_vehicle_pub, self.filter.pitch_deg),
-                                 (self.roll_vehicle_pub, self.filter.roll_deg),
-                                 (self.yaw_vehicle_pub, self.filter.relative_yaw_deg),
-                                 (self.yaw_rate_vehicle_pub, yaw_rate_deg_s)):
-            msg = Float32(); msg.data = float(round(value, 2)); publisher.publish(msg)
-        msg = Bool(); msg.data = bool(valid); self.valid_pub.publish(msg); self.valid_compat_pub.publish(msg)
+        msg = Bool(); msg.data = bool(valid); self.valid_pub.publish(msg)
         msg = Bool(); msg.data = bool(self.filter.stationary); self.stationary_pub.publish(msg)
         slope = Bool(); slope.data = bool(valid and self.slope_detector.state)
-        self.slope_pub.publish(slope); self.slope_compat_pub.publish(slope)
+        self.slope_pub.publish(slope)
 
 
 def main(args=None):

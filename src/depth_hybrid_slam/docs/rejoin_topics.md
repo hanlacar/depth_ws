@@ -2,7 +2,8 @@
 
 차량 제원과 기본값은 `config/vehicle_navigation.yaml`이 단일 실행 설정이다.
 wheelbase 0.73 m, 조향 한계 ±22°, 최소 회전반경 1.8068134 m이며 T870 명령 부호는
-왼쪽 양수, 오른쪽 음수다. 모든 실제 명령은 기존 `/slam_drive`와 `/slam_wheel`만 사용한다.
+왼쪽 양수, 오른쪽 음수다. follower는 후보 명령만 발행하고 최종 실제 명령
+`/cmd_drive`, `/cmd_wheel`은 command arbiter 하나만 발행한다.
 
 기본 `dry_run=true`, `enable_control=false`, `user_approved=false`에서는 실제 명령을
 발행하지 않는다. 실제 제어에는 최신 pose, `TRACKING`/`RELOCALIZED` 안정화, map/route

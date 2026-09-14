@@ -15,7 +15,7 @@ RealSense, controller, MCU, Arduino, motor, Gazebo를 시작하지 않는다.
 | YOLO+RGB 융합 | `traffic_light_fusion_node`; `/camera/traffic_light_fused/{state,aspect,confidence,diagnostics}` |
 | 정지선 거리 | `camera_mission_perception_node`; 정지선 RLE mask와 aligned depth를 같은 stamp로 결합하고 `base_link`로 변환한 뒤 `front_axle_x=0.365 m`를 빼서 거리 계산 |
 | mission overlay | `/camera/mission/debug_overlay` (`sensor_msgs/Image`) |
-| 장착값 | `camera_mount.yaml`: x=0.015 m, z=0.970 m, 물리 pitch=-5°; T870 REP-103 TF의 pitch=+0.0872665 rad와 같은 하향 자세 |
+| 장착값 | `camera_mount.yaml`: x=0.32 m, y=0 m, z=0.85 m, roll=0°, physical pitch=-5°, yaw=0° |
 | RealSense TF | camera driver가 `camera_link→stream optical frame`만 발행; 차량 mount와 odometry TF는 발행하지 않음 |
 
 ### depth_ws
@@ -31,9 +31,8 @@ RealSense, controller, MCU, Arduino, motor, Gazebo를 시작하지 않는다.
 | rosbag | `competition_bag_topics.yaml`; raw camera/cuVSLAM/SLAM 문맥과 선택적 aligned depth/MapData |
 
 T870 차량 기준은 wheelbase 0.730 m, `base_link`는 차축 높이의 네 바퀴 중심,
-`base_link→camera_link=(0.015, 0, 0.835, pitch=+0.0872665 rad)`이다.
-ground-plane projection의 0.970 m는 지면 기준 광학 중심 높이이며
-`0.835 + wheel_radius 0.135`와 일치한다.
+`base_link→camera_link=(0.32, 0, 0.85, pitch=-0.0872665 rad)`이다.
+ground-plane projection과 static TF는 같은 commissioned source를 사용한다.
 
 ## 교차검증 계약
 

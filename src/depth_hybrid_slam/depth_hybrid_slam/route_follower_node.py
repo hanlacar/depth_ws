@@ -17,6 +17,8 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from .models import ControllerResult, Pose2D, RoutePoint
 from .mode_completion import RouteModeCompletionTracker
+from .intersection_route import (
+    cumulative_route_distance, intersection_progress, progress_json)
 from .prehardware_core import StopWaypointMachine
 from .rejoin_core import GridMap, RejoinPlanner, RejoinStateMachine
 from .ros_helpers import (
@@ -29,7 +31,8 @@ from .ros_helpers import (
 from .route_follower_core import RouteFollower
 from .csv_only_branching import load_csv_only_route_case, remap_case_progress
 from .route_io import (
-    DEFAULT_BRANCH, is_segmented_columns, load_segmented_route,
+    DEFAULT_BRANCH, forward_tangent_yaw, is_segmented_columns,
+    load_segmented_route,
     verify_route_binding,
 )
 
@@ -153,6 +156,7 @@ class RouteFollowerNode(Node):
                 self.route_path, self.route_metadata_path, self.active_case))
         else:
             self.active_case = ""
+        self.route_cumulative = cumulative_route_distance(self.route)
         self.control_route_available = (
             self.map_route_verified or
             (self.test_alignment_override and FilePath(path).is_file() and
@@ -195,6 +199,8 @@ class RouteFollowerNode(Node):
         self.pose = None
         self.pose_receipt = None
         self.safety_ready = False
+        self.external_maneuver_active = False
+        self.external_rejoin_index = None
         self.mission_stop = True
         self.mission_speed_limit = 0.0
         self.localization_state = "INITIALIZING"
@@ -213,6 +219,7 @@ class RouteFollowerNode(Node):
         self.stop_waypoint = StopWaypointMachine(3.0)
         self.mode_completion = (
             RouteModeCompletionTracker(self.route) if self.route else None)
+        self.last_completion_error = ""
         self.pub_drive = self.create_publisher(
             Float32, "/depth_slam/follower/candidate_drive", 10)
         self.pub_wheel = self.create_publisher(
@@ -228,6 +235,8 @@ class RouteFollowerNode(Node):
             String, "/depth_slam/route/active_case", 10)
         self.pub_active_segment = self.create_publisher(
             String, "/depth_slam/route/active_segment", 10)
+        self.pub_intersection_progress = self.create_publisher(
+            String, "/depth_slam/route/intersection_progress", 10)
         self.pub_mode_status = self.create_publisher(
             String, "/depth_slam/route/mode_status", 10)
         self.pub_stop_state = self.create_publisher(
@@ -243,6 +252,8 @@ class RouteFollowerNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub_path = self.create_publisher(
             Path, "/depth_slam/route/reference_path", latched_path)
+        self.pub_collision_preview = self.create_publisher(
+            Path, "/depth_slam/route/collision_preview", 10)
         self.pub_raw_path = self.create_publisher(
             Path, "/depth_slam/route/raw_csv_path", latched_path)
         self.pub_piecewise_path = self.create_publisher(
@@ -275,6 +286,12 @@ class RouteFollowerNode(Node):
         self.create_subscription(Bool, "/depth_slam/mission/stop_required",
                                  lambda m: setattr(self, "mission_stop", bool(m.data)), 10)
         self.create_subscription(
+            Bool, "/depth_slam/lidar/candidate_valid",
+            self.on_external_maneuver, 10)
+        self.create_subscription(
+            Int32, "/depth_slam/lidar/csv_rejoin_index",
+            self.on_external_rejoin_index, 10)
+        self.create_subscription(
             Float32,
             "/depth_slam/mission/speed_limit",
             lambda m: setattr(
@@ -303,8 +320,12 @@ class RouteFollowerNode(Node):
         selected = [point for point in points if start <= int(point.mode) <= end]
         if not selected:
             raise ValueError("selected mode range contains no route points")
-        return [replace(point, index=index)
-                for index, point in enumerate(selected)]
+        selected = [replace(point, index=index)
+                    for index, point in enumerate(selected)]
+        if start > 1 and int(selected[0].direction) > 0:
+            selected[0] = replace(
+                selected[0], yaw=forward_tangent_yaw(selected))
+        return selected
 
     @staticmethod
     def _equivalent_segment(segment_id, branch):
@@ -340,6 +361,7 @@ class RouteFollowerNode(Node):
                 new_index = candidates[0]
         self.route_info = new_info
         self.route = new_route
+        self.route_cumulative = cumulative_route_distance(self.route)
         self.active_branch = branch
         self.core.reset_progress()
         self.rejoin_follower.reset_progress()
@@ -374,6 +396,7 @@ class RouteFollowerNode(Node):
             self.stop_waypoint.active_key and previous is not None and
             previous.segment_id.startswith(("T_", "V_")))
         self.route = new_route
+        self.route_cumulative = cumulative_route_distance(self.route)
         self.active_case = route_case
         self.active_branch = route_case[0]
         self.core.reset_progress()
@@ -463,11 +486,58 @@ class RouteFollowerNode(Node):
                 preview.poses.append(pose)
             self.pub_piecewise_path.publish(preview)
 
+    def publish_collision_preview(self, active_index, distance_m=2.0):
+        """Publish only the current segment/direction's monotonic future."""
+        message = Path()
+        message.header.frame_id = "map"
+        message.header.stamp = self.get_clock().now().to_msg()
+        if not self.route:
+            self.pub_collision_preview.publish(message)
+            return
+        start = min(max(0, int(active_index)), len(self.route)-1)
+        segment = self.route[start].segment_id
+        direction = self.route[start].direction
+        traveled = 0.0
+        previous = None
+        for point in self.route[start:]:
+            if point.segment_id != segment or point.direction != direction:
+                break
+            if previous is not None:
+                traveled += math.hypot(point.x-previous.x, point.y-previous.y)
+            if traveled > float(distance_m):
+                break
+            pose = PoseStamped()
+            pose.header = message.header
+            pose.pose.position.x, pose.pose.position.y = point.x, point.y
+            pose.pose.orientation = quaternion_from_yaw(point.yaw)
+            message.poses.append(pose)
+            previous = point
+        self.pub_collision_preview.publish(message)
+
     def on_pose(self, message):
         p = message.pose.pose.position
         self.pose = Pose2D(p.x, p.y, yaw_from_quaternion(message.pose.pose.orientation),
                            stamp_seconds(message.header.stamp))
         self.pose_receipt = time.monotonic()
+
+    def on_external_rejoin_index(self, message):
+        index = int(message.data)
+        if 0 <= index < len(self.route):
+            self.external_rejoin_index = index
+
+    def on_external_maneuver(self, message):
+        active = bool(message.data)
+        if self.external_maneuver_active and not active:
+            # The strict validator selected this exact same-segment, forward-
+            # window route point. Transfer it atomically when LiDAR releases
+            # ownership; otherwise the CSV follower briefly evaluates the
+            # parked pose against its pre-maneuver high-water cursor.
+            if self.external_rejoin_index is not None:
+                previous = self.core.last_index
+                if previous is None or self.external_rejoin_index >= previous:
+                    self.core.last_index = self.external_rejoin_index
+                self.external_rejoin_index = None
+        self.external_maneuver_active = active
 
     def on_localization_state(self, message):
         state = str(message.data).split(":", 1)[0]
@@ -559,12 +629,20 @@ class RouteFollowerNode(Node):
             reason = self.binding_reason
             result = original
         else:
-            if self.navigation_state == "FOLLOW_ROUTE":
+            if self.external_maneuver_active:
+                # A valid LiDAR temporary path intentionally leaves the CSV
+                # centerline. The final arbiter owns that command, so the CSV
+                # follower must not start a competing deviation/rejoin plan.
+                self.machine.state = "FOLLOW_ROUTE"
+                self.machine.verify_since = None
+                self.navigation_state = "FOLLOW_ROUTE"
+            elif self.navigation_state == "FOLLOW_ROUTE":
                 self.navigation_state = self.machine.observe_route(
                     original.cross_track_error)
             elif self.navigation_state == "ROUTE_DEVIATION_STOP":
                 self.navigation_state = self.machine.vehicle_stopped()
-            if self.navigation_state == "PLAN_REJOIN":
+            if (not self.external_maneuver_active and
+                    self.navigation_state == "PLAN_REJOIN"):
                 if self.grid_ready():
                     self.rejoin_plan = self.rejoin_planner.plan(
                         pose, self.route, max(0, original.nearest_index),
@@ -579,7 +657,8 @@ class RouteFollowerNode(Node):
                         self.core.last_index = self.rejoin_plan.route_index
                     self.navigation_state = self.machine.plan_completed(
                         self.rejoin_plan.feasible)
-            if self.navigation_state == "FOLLOW_REJOIN_PATH":
+            if (not self.external_maneuver_active and
+                    self.navigation_state == "FOLLOW_REJOIN_PATH"):
                 result = self.rejoin_follower.compute(
                     pose, self.rejoin_route, allow_motion=True)
                 remaining = self.rejoin_route[max(0, result.nearest_index):]
@@ -590,7 +669,8 @@ class RouteFollowerNode(Node):
                     self.navigation_state = self.machine.path_blocked()
                 elif result.reason == "ROUTE_COMPLETE":
                     self.navigation_state = self.machine.path_completed()
-            elif self.navigation_state == "VERIFY_REJOIN":
+            elif (not self.external_maneuver_active and
+                  self.navigation_state == "VERIFY_REJOIN"):
                 result = self.core.compute(pose, self.route, allow_motion=False)
                 self.navigation_state = self.machine.verify(
                     result.cross_track_error, result.heading_error,
@@ -599,11 +679,11 @@ class RouteFollowerNode(Node):
                     self.rejoin_route = []
             else:
                 result = original
-            reason = (
-                self.navigation_state
-                if self.navigation_state != "FOLLOW_ROUTE"
-                else result.reason
-            )
+            reason = ("EXTERNAL_MANEUVER_ACTIVE"
+                      if self.external_maneuver_active else
+                      self.navigation_state
+                      if self.navigation_state != "FOLLOW_ROUTE" else
+                      result.reason)
         waypoint_key, waypoint_reached = (self._stop_line_ahead(
             max(0, original.nearest_index), pose) if self.route and
             not stale and localized else ("", False))
@@ -637,8 +717,8 @@ class RouteFollowerNode(Node):
                                     "FOLLOW_ROUTE", "FOLLOW_REJOIN_PATH")) else requested_drive
         self.pub_preview_drive.publish(Float32(data=preview_drive))
         self.pub_preview_wheel.publish(Int32(data=int(round(result.steering_deg))))
-        # The follower owns candidate topics only. BehaviorSelector is the sole
-        # owner of /slam_* and applies road/localization/branch gates.
+        # The follower owns candidate topics only. The command arbiter is the
+        # sole owner of /cmd_* and applies mission/maneuver/safety gates.
         if channel_enabled:
             self.pub_drive.publish(Float32(data=float(requested_drive if allow else 0.0)))
             self.pub_wheel.publish(Int32(data=int(round(result.steering_deg if allow else 0.0))))
@@ -649,6 +729,12 @@ class RouteFollowerNode(Node):
             self.pub_active_index.publish(Int32(data=mode_index))
             self.pub_active_segment.publish(String(
                 data=self.route[mode_index].segment_id))
+            self.publish_collision_preview(mode_index)
+            progress = intersection_progress(
+                self.route, self.route_cumulative, mode_index,
+                original.progress)
+            self.pub_intersection_progress.publish(
+                String(data=progress_json(progress)))
         if self.route and self.mode_completion is not None:
             mode_index = min(max(0, original.nearest_index), len(self.route)-1)
             normal_reason = original.reason in (
@@ -671,13 +757,19 @@ class RouteFollowerNode(Node):
             completion_stopped = (
                 self.mission_stop or waypoint_decision.stop or
                 transition_release)
-            for event in self.mode_completion.observe(
-                    mode_index, original.progress,
-                    healthy=completion_healthy,
-                    stopped=completion_stopped,
-                    failure_reason=failure_reason,
-                    controller_reason=original.reason):
-                self.get_logger().info(event)
+            if not self.external_maneuver_active:
+                for event in self.mode_completion.observe(
+                        mode_index, original.progress,
+                        healthy=completion_healthy,
+                        stopped=completion_stopped,
+                        failure_reason=failure_reason,
+                        controller_reason=original.reason):
+                    self.get_logger().info(event)
+            completion_error = self.mode_completion.last_error
+            if completion_error and completion_error != self.last_completion_error:
+                self.get_logger().error(
+                    f"[MODE COMPLETE BLOCKED] {completion_error}")
+                self.last_completion_error = completion_error
             self.pub_mode_status.publish(String(
                 data=self.mode_completion.status_json()))
         self.pub_active_branch.publish(String(data=self.active_branch))
@@ -721,6 +813,7 @@ class RouteFollowerNode(Node):
              ("rejoin_maximum_curvature", self.rejoin_plan.maximum_curvature
               if self.rejoin_plan else 0.0),
              ("active_branch", self.active_branch),
+             ("external_maneuver_active", self.external_maneuver_active),
              ("stop_waypoint_state", waypoint_decision.state),
              ("stop_waypoint_elapsed_s", waypoint_decision.elapsed_s),
              ("direction_transition_release_stop", transition_release),

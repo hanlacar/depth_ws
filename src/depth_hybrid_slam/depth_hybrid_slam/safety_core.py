@@ -8,17 +8,21 @@ from .models import SafetyDecision
 class SafetyGate:
     def __init__(self, pose_timeout_s=0.15, controller_timeout_s=0.10,
                  min_confidence=0.7, max_cross_track_m=1.0,
-                 max_heading_deg=80.0):
+                 max_heading_deg=80.0, require_tracking=True,
+                 require_map_route_match=True, require_within_map=True):
         self.pose_timeout = float(pose_timeout_s)
         self.controller_timeout = float(controller_timeout_s)
         self.min_confidence = float(min_confidence)
         self.max_cross_track = float(max_cross_track_m)
         self.max_heading = math.radians(max_heading_deg)
+        self.require_tracking = bool(require_tracking)
+        self.require_map_route_match = bool(require_map_route_match)
+        self.require_within_map = bool(require_within_map)
 
     def evaluate(self, value):
         reasons = []
-        if not value.tracking_valid:
-            reasons.append("CUVSLAM_TRACKING_LOSS")
+        if self.require_tracking and not value.tracking_valid:
+            reasons.append("LOCALIZATION_TRACKING_LOSS")
         if value.localization_state not in ("TRACKING", "RELOCALIZED"):
             reasons.append("LOCALIZATION_NOT_READY")
         if value.localization_confidence < self.min_confidence:
@@ -27,9 +31,9 @@ class SafetyGate:
             reasons.append("STALE_POSE")
         if value.pose_jump:
             reasons.append("POSE_JUMP")
-        if not value.map_route_match:
+        if self.require_map_route_match and not value.map_route_match:
             reasons.append("MAP_ROUTE_MISMATCH")
-        if not value.within_map:
+        if self.require_within_map and not value.within_map:
             reasons.append("OUTSIDE_MAP")
         if abs(value.cross_track_error) > self.max_cross_track:
             reasons.append("ROUTE_DEVIATION")

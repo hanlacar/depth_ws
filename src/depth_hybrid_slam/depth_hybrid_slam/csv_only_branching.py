@@ -589,8 +589,19 @@ class IndependentRouteCaseSelector:
             if str(stop_key) in keys and str(stop_state) != "IDLE":
                 started = self.decision_stop_timestamps.setdefault(
                     "T", self.last_now)
-                if self.last_now-started >= self.decision_window_s:
+                minimum_hold_proven = str(stop_state) in (
+                    "WAIT_TRAFFIC_RELEASE", "RELEASED")
+                if (self.last_now-started >= self.decision_window_s or
+                        minimum_hold_proven):
                     changed = self._commit("T", self.last_now) or changed
+            elif (segment in ("T_A", "T_B") and int(direction) < 0 and
+                  any(int(point_index) > int(values[0])
+                      for values in transitions.values())):
+                # At high controller rates RELEASED and its stop key can be
+                # shorter than the selector's 20 Hz sampling period. Reaching
+                # the first reverse point proves that the route follower has
+                # completed the mandatory direction-transition hold.
+                changed = self._commit("T", self.last_now) or changed
 
         lifecycle = self.parking_lifecycle["V"]
         if lifecycle in ("PENDING", "B_REQUESTED"):
@@ -603,8 +614,17 @@ class IndependentRouteCaseSelector:
                         str(stop_state) != "IDLE"):
                     started = self.decision_stop_timestamps.setdefault(
                         "V", self.last_now)
-                    if self.last_now-started >= self.decision_window_s:
+                    minimum_hold_proven = str(stop_state) in (
+                        "WAIT_TRAFFIC_RELEASE", "RELEASED")
+                    if (self.last_now-started >= self.decision_window_s or
+                            minimum_hold_proven):
                         changed = self._commit("V", self.last_now) or changed
+                elif (segment == "V_foword" and
+                      int(point_index) > commit_index):
+                    # Same sampled-event fallback as T: p105 remains the
+                    # immutable safe commit boundary; p106 merely proves its
+                    # stop/release cycle has completed.
+                    changed = self._commit("V", self.last_now) or changed
             elif segment == "V_A":
                 # Compatibility for the preserved legacy CSV.  The V_foword
                 # candidate never enters V_A while the choice is pending.
@@ -634,6 +654,14 @@ class IndependentRouteCaseSelector:
 
     def advance(self, now):
         self.last_now = float(now)
+        for choice, started in tuple(self.decision_stop_timestamps.items()):
+            if (self.choices.get(choice) is None and
+                    self.last_now-float(started) >= self.decision_window_s):
+                # The stop-start sample is durable evidence. Commit after the
+                # full window even if the 20 Hz selector missed the follower's
+                # short RELEASED/key edge; otherwise branch_stop deadlocks at
+                # the already-completed CSV stop line.
+                self._commit(choice, self.last_now)
         for choice in tuple(self.hold_until):
             if self.last_now >= self.hold_until[choice]:
                 self.hold_until.pop(choice, None)

@@ -1,7 +1,7 @@
 """ROS-independent data contracts used by nodes and deterministic tests."""
 
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Any, Sequence
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,12 @@ class MissionInputs:
     traffic_aspect: str = "UNKNOWN"
     traffic_confidence: float = 0.0
     traffic_age: float = float("inf")
+    traffic_red_present: bool = False
+    traffic_green_present: bool = False
+    traffic_diagnostics_age: float = float("inf")
     stop_line_detected: bool = False
+    csv_stop_line_active: bool = False
+    intersection_progress: Any = None
     stop_line_distance_m: float = float("inf")
     sign_detected: bool = False
     sign_confidence: float = 1.0
@@ -97,6 +102,8 @@ class MissionDecision:
     stop_reason: str
     speed_limit: float
     traffic_permission: str
+    traffic_stop_allowed: bool = True
+    intersection_committed: bool = False
 
 
 @dataclass

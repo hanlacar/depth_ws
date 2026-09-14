@@ -104,12 +104,43 @@ class ValidationResult:
     lane_support_ratio: float = 0.0
     lane_crossing_ratio: float = 0.0
     lane_heading_error_deg: float = 180.0
+    nearest_left_boundary_m: float = math.inf
+    nearest_right_boundary_m: float = math.inf
     evaluated_center_points: int = 0
     evaluated_corridor_points: int = 0
     reason: str = ""
 
     def diagnostics(self):
         return asdict(self)
+
+    @property
+    def advisory_state(self):
+        """Stable camera advisory vocabulary; it never requests steering."""
+        if self.state == VALID_ROAD_AND_LANE:
+            return "VALID_LANE"
+        if self.state == VALID_ROAD_ONLY:
+            return "VALID_ROAD_ONLY"
+        if self.state == DEGRADED_LANE_UNCERTAIN:
+            return "NEAR_BOUNDARY"
+        if self.state in (INVALID_OUTSIDE_ROAD, INVALID_INSUFFICIENT_ROAD):
+            return "OUTSIDE_ROAD"
+        return "UNKNOWN"
+
+    def camera_diagnostics(self, fresh):
+        return {
+            "state": self.advisory_state,
+            "road_valid": self.state in (
+                VALID_ROAD_AND_LANE, VALID_ROAD_ONLY,
+                DEGRADED_LANE_UNCERTAIN),
+            "lane_valid": self.state == VALID_ROAD_AND_LANE,
+            "road_confidence": self.road_confidence,
+            "lane_confidence": self.lane_support_ratio,
+            "visible_ratio": self.visible_path_ratio,
+            "corridor_inside_ratio": self.vehicle_corridor_inside_ratio,
+            "nearest_left_boundary_m": self.nearest_left_boundary_m,
+            "nearest_right_boundary_m": self.nearest_right_boundary_m,
+            "fresh": bool(fresh),
+        }
 
 
 def unavailable_result(state, reason):
@@ -292,6 +323,27 @@ def _lane_evidence(lane, path, config):
     return True, bool(consistent), support_ratio, crossing_ratio, heading_error
 
 
+def _nearest_lane_boundaries(lane, path, config):
+    """Return nearest observed left/right boundary in path-relative metres."""
+    rows, cols = np.nonzero(lane)
+    if not len(rows) or not len(path):
+        return math.inf, math.inf
+    lane_xy = grid_to_metric(rows, cols, config)
+    left, right = math.inf, math.inf
+    stride = max(1, len(path)//40)
+    for point in path[::stride]:
+        delta = lane_xy-point[:2]
+        c, s = math.cos(point[2]), math.sin(point[2])
+        longitudinal = c*delta[:, 0]+s*delta[:, 1]
+        lateral = -s*delta[:, 0]+c*delta[:, 1]
+        values = lateral[np.abs(longitudinal) <= 0.15]
+        if np.any(values > 0.0):
+            left = min(left, float(np.min(values[values > 0.0])))
+        if np.any(values < 0.0):
+            right = min(right, float(np.min(np.abs(values[values < 0.0]))))
+    return left, right
+
+
 def validate_metric_bev(road_mask, lane_mask, visibility_mask,
                         path_xy_yaw, config=ValidatorConfig()):
     config.validate()
@@ -336,6 +388,9 @@ def validate_metric_bev(road_mask, lane_mask, visibility_mask,
     lane_visible, lane_consistent, lane_support, lane_crossing, lane_heading = \
         _lane_evidence(lane & visibility, path[visible], config) \
         if visible_count else (False, False, 0.0, 0.0, 180.0)
+    nearest_left, nearest_right = _nearest_lane_boundaries(
+        lane & visibility, path[visible], config) if visible_count else (
+            math.inf, math.inf)
 
     common = dict(
         center_inside_ratio=center_ratio,
@@ -347,6 +402,8 @@ def validate_metric_bev(road_mask, lane_mask, visibility_mask,
         lane_support_ratio=lane_support,
         lane_crossing_ratio=lane_crossing,
         lane_heading_error_deg=lane_heading,
+        nearest_left_boundary_m=nearest_left,
+        nearest_right_boundary_m=nearest_right,
         evaluated_center_points=len(path),
         evaluated_corridor_points=len(corridor))
     if road_confidence < config.minimum_road_confidence:

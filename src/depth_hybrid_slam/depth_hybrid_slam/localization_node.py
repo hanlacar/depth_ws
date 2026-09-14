@@ -54,6 +54,8 @@ class LocalizationNode(Node):
         self.pub_map = self.create_publisher(String, "/depth_slam/localization/map_id", 10)
         self.pub_route = self.create_publisher(String, "/depth_slam/localization/route_id", 10)
         self.pub_jump = self.create_publisher(Bool, "/depth_slam/localization/pose_jump", 10)
+        self.pub_tracking = self.create_publisher(
+            Bool, "/depth_slam/localization/tracking_valid", 10)
         self.create_subscription(Bool, "/depth_slam/cuvslam/tracking_valid",
                                  lambda m: setattr(self, "tracking", bool(m.data)), 10)
         self.create_subscription(Odometry, "/depth_slam/cuvslam/odometry", self.on_odom, 10)
@@ -124,6 +126,7 @@ class LocalizationNode(Node):
         state = apply_route_policy(state, localization_mode,
                                    require_route_match, map_route_match)
         self.pub_state.publish(String(data=state))
+        self.pub_tracking.publish(Bool(data=state in ("TRACKING", "RELOCALIZED")))
         self.pub_relocalized.publish(Bool(data=self.relocalized_confirmed))
         self.pub_jump.publish(Bool(data=self.core.pose_jump))
         self.pub_map.publish(String(data=str(self.get_parameter("map_id").value)))

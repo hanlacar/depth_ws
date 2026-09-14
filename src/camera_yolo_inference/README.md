@@ -25,7 +25,7 @@ The canonical competition validation output is
 current semantic colors, a compact active-class legend, and W/Y/STOP presence
 flags. Rendering is subscriber-gated, latest-only, asynchronous, and limited
 to `perception_overlay_max_fps` (45 FPS by default), independently of inference.
-`/perception/detections_image` remains the detailed development output.
+`/camera/debug/annotated` remains the detailed development output.
 
 The node also publishes all 11 semantic masks under `/perception/masks/*`, the
 three compatibility masks under `/camera/*_mask`, detections JSON, inference

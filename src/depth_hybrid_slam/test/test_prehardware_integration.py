@@ -1,8 +1,8 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
-from depth_hybrid_slam.mcu_source_adapter_core import adapt_slam_command
 from depth_hybrid_slam.prehardware_core import (
     BranchSelector,
     LidarPolicy,
@@ -18,8 +18,8 @@ from depth_hybrid_slam.route_io import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CSV = ROOT/"routes/network/route_network_segmented.csv"
-METADATA = ROOT/"routes/network/route_network_segmented.metadata.yaml"
+CSV = ROOT/"routes/network/route_network_segmented_stop_edited_vforward.csv"
+METADATA = CSV.with_suffix(".metadata.yaml")
 
 
 def behavior(validator="VALID_ROAD_ONLY", **overrides):
@@ -107,13 +107,18 @@ def test_behavior_outside_road_and_stale_path_stop():
     assert behavior(localization_state="LOST").stop
 
 
-def test_behavior_stop_sources_and_mcu_adapter_end_to_end():
+def test_behavior_stop_sources():
     for name in ("mission_stop", "camera_stop", "branch_stop", "lidar_stop"):
         assert behavior(**{name: True}).stop
     allowed = behavior(candidate_drive=2.0, candidate_wheel=12)
-    adapted = adapt_slam_command(
-        allowed.drive, allowed.wheel, allowed.stop, (0.0, 0.0, 0.0), 0.5)
-    assert adapted.drive == 2.0 and adapted.wheel == -12 and not adapted.stop
+    assert allowed.drive == 2.0 and allowed.wheel == 12 and not allowed.stop
+
+
+def test_csv_camera_lidar_arbiter_uses_csv_only_branch_gate():
+    launch = (ROOT/"src/depth_hybrid_slam/launch/" /
+              "prehardware_csv_camera_lidar.launch.py").read_text()
+    assert '("/depth_slam/route/branch_stop",' in launch
+    assert '"/depth_slam/csv_only/branch_stop")' in launch
 
 
 def test_stop_waypoint_holds_three_seconds_and_waits_for_red():
@@ -160,18 +165,101 @@ def test_mode9_three_meter_sudden_obstacle_hard_stop():
 def test_required_production_topic_owners_are_explicit():
     follower = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
                 "route_follower_node.py").read_text()
-    behavior_source = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
-                       "behavior_selector_node.py").read_text()
+    arbiter = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+               "command_arbiter_node.py").read_text()
     lidar = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
-             "lidar_source_node.py").read_text()
-    camera = (ROOT/"src/camera_navigation/camera_navigation"/
-              "camera_command_selector_node.py").read_text()
-    assert '"/slam_drive"' not in follower
-    assert 'Float32, "/slam_drive"' in behavior_source
-    for token in ('"/lidar_drive"', '"/lidar_wheel"', '"/lidar_stop"'):
-        assert token in lidar
-    for token in ('"/camera_drive"', '"/camera_wheel"', '"/camera_stop"'):
-        assert token in camera
-    combined = follower+behavior_source+lidar+camera
-    assert '"/mcu/cmd_drive"' not in combined
-    assert '"/mcu/cmd_wheel"' not in combined
+             "lidar_perception_node.py").read_text()
+    rejoin = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+              "lidar_rejoin_validator_node.py").read_text()
+    assert '"/cmd_drive"' not in follower
+    assert '"/depth_slam/lidar/candidate_valid"' in follower
+    assert 'if not self.external_maneuver_active' in follower
+    assert '"EXTERNAL_MANEUVER_ACTIVE"' in follower
+    assert 'Float32, "/cmd_drive"' in arbiter
+    assert 'Int32, "/cmd_wheel"' in arbiter
+    assert '"/depth_slam/camera/csv_validation"' in arbiter
+    assert 'value.get("state") == "OUTSIDE_ROAD"' in arbiter
+    assert 'create_publisher(Float32, "/cmd_drive"' not in lidar
+    assert 'create_publisher(Int32, "/cmd_wheel"' not in lidar
+    assert '"prehardware_test_only"' not in lidar
+    assert 'Int32, "/cmd_wheel", self._fallback_steering' not in lidar
+    assert '"/depth_slam/lidar/rear_hard_emergency"' in lidar
+    assert 'self.hard or self.rear_hard' in (
+        ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+        "maneuver_manager_node.py").read_text()
+    assert 'valid = decision.owner == "LIDAR"' in (
+        ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+        "maneuver_manager_node.py").read_text()
+    assert 'command = f"{choice}:{branch}"' in (
+        ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+        "maneuver_manager_node.py").read_text()
+    assert 'self.case_choices[prefix] == branch' in (
+        ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+        "maneuver_manager_node.py").read_text()
+    assert 'expected_csv_direction = -1.0 if self.mode == 7 else 1.0' in (
+        ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+        "maneuver_manager_node.py").read_text()
+    manager = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+               "maneuver_manager_node.py").read_text()
+    assert 'self.parking_plans = {7: None, 10: None}' in manager
+    assert 'plan = self.parking_plans[self.mode]' in manager
+    assert 'parking.state == "CSV_APPROACH"' in manager
+    assert '"/depth_slam/lidar/csv_rejoin_valid"' in rejoin
+    assert not (ROOT/"src/camera_navigation/camera_navigation"/
+                "camera_command_selector_node.py").exists()
+
+
+def test_traffic_gate_is_driven_by_csv_stop_waypoint_state():
+    mission = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+               "mission_node.py").read_text()
+    assert '"/depth_slam/route/stop_waypoint_state"' in mission
+    assert '"MINIMUM_3S_HOLD", "WAIT_TRAFFIC_RELEASE"' in mission
+
+
+def test_hil_uses_real_sensors_and_test_only_odom():
+    launch = (ROOT/"src/depth_hybrid_slam/launch"/
+              "prehardware_csv_camera_lidar.launch.py").read_text()
+    assert '"d456_production.launch.py"' in launch
+    assert '"dual_rplidar.launch.py"' in launch
+    route_loop = (ROOT/"src/depth_hybrid_slam/launch"/
+                  "prehardware_csv_only_closed_loop.launch.py").read_text()
+    assert 'executable="test_odom_publisher"' in route_loop
+    assert '"test_only_acknowledged": True' in route_loop
+    for forbidden in ("synthetic_scan", "virtual_vehicle", "virtual_mcu"):
+        assert forbidden not in launch+route_loop
+
+
+def test_production_lidar_drivers_have_one_explicit_owner_per_scan_topic():
+    launch = (ROOT/"src/depth_hybrid_slam/launch"/
+              "dual_rplidar.launch.py").read_text()
+    production = (ROOT/"src/depth_hybrid_slam/launch"/
+                  "competition_csv_camera_lidar.launch.py").read_text()
+    assert 'remappings=[("scan", "/front/scan")]' in launch
+    assert 'remappings=[("scan", "/rear/scan")]' in launch
+    assert 'default_value="false"' in launch
+    assert '"dual_rplidar.launch.py"' in production
+
+
+def test_d456_production_tf_reads_the_single_commissioned_mount_source():
+    mount_path = ROOT/"src/camera_bringup/config/camera_mount.yaml"
+    mount = yaml.safe_load(mount_path.read_text())["/**"]["ros__parameters"][
+        "camera_mount"]
+    assert mount == {
+        "configured": True,
+        "position_x_m": 0.32,
+        "position_y_m": 0.0,
+        "height_z_m": 0.85,
+        "reference_roll_deg": 0.0,
+        "reference_pitch_deg": -5.0,
+        "reference_yaw_deg": 0.0,
+    }
+    launch = (ROOT/"src/camera_bringup/launch"/
+              "d456_production.launch.py").read_text()
+    assert '(bringup/"config"/"camera_mount.yaml")' in launch
+    assert "_mount_tf(bringup)" in launch
+
+
+def test_production_mode11_selector_has_post_window_transport_grace():
+    launch = (ROOT/"src/depth_hybrid_slam/launch"/
+              "competition_csv_camera_lidar.launch.py").read_text()
+    assert '"mode_11_wait_s": 5.5' in launch

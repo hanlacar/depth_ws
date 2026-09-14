@@ -14,7 +14,7 @@ def generate_launch_description():
     arguments = [
         DeclareLaunchArgument("output_directory", default_value="/home/qor/depth_ws/routes/recorded_map"),
         DeclareLaunchArgument("map_path", default_value="/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db"),
-        DeclareLaunchArgument("gps_reference_path", default_value="/home/qor/depth_ws/routes/network/route_network_segmented.csv"),
+        DeclareLaunchArgument("gps_reference_path", default_value="/home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv"),
         DeclareLaunchArgument("resample_spacing_m", default_value="0.10"),
         DeclareLaunchArgument("stationary_duplicate_m", default_value="0.01"),
         DeclareLaunchArgument("recovery_jump_m", default_value="0.75"),

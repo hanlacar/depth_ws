@@ -38,7 +38,7 @@ class MapRouteRecorderNode(Node):
         defaults = (
             ("output_directory", "/home/qor/depth_ws/routes/recorded_map"),
             ("map_path", "/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db"),
-            ("gps_reference_path", "/home/qor/depth_ws/routes/network/route_network_segmented.csv"),
+            ("gps_reference_path", "/home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv"),
             ("pose_topic", "/depth_slam/localization/pose"),
             ("state_topic", "/depth_slam/localization/state"),
             ("confidence_topic", "/depth_slam/localization/confidence"),

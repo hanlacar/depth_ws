@@ -1,6 +1,7 @@
 """Mission state machine consuming camera_ws results; no detector is duplicated."""
 
 from .models import MissionDecision
+from .traffic_gate import IntersectionProgress, IntersectionTrafficGate
 
 
 class MissionMachine:
@@ -9,7 +10,9 @@ class MissionMachine:
                  min_traffic_confidence=0.65, ramp_pitch_deg=15.0,
                  ramp_duration_s=0.5, ramp_stop_s=4.0,
                  sign_confirmations=3, stop_distance_m=0.7,
-                 slowdown_distance_m=2.5):
+                 slowdown_distance_m=2.5, unknown_hold_s=3.0,
+                 intersection_commit_margin_m=0.35,
+                 intersection_modes=(4, 6, 8)):
         self.ramp_sections = set(ramp_sections)
         self.acceleration_sections = set(acceleration_sections)
         self.finish_sections = set(finish_sections)
@@ -27,6 +30,12 @@ class MissionMachine:
         self.sign_count = 0
         self.accel_slow_latched = False
         self.previous_section = None
+        self.traffic_gate = IntersectionTrafficGate(
+            unknown_hold_s=unknown_hold_s,
+            traffic_timeout_s=self.traffic_timeout,
+            commit_margin_m=intersection_commit_margin_m,
+            intersection_modes=intersection_modes)
+        self.last_traffic_decision = None
 
     def update(self, value):
         section = str(value.section_id)
@@ -41,25 +50,39 @@ class MissionMachine:
         aspect = str(value.traffic_aspect).upper()
         state = str(value.traffic_state).upper()
 
-        if section in self.finish_sections and value.stop_line_detected:
-            if traffic_fresh and aspect == "GREEN_DOWN":
-                return MissionDecision("FINISH_PASS", False, "", 1.0, "GO")
-            reason = "FINISH_RED_X" if aspect == "RED_X" else "FINISH_NO_PERMISSION"
-            return MissionDecision("FINISH_STOP", True, reason, 0.0, "STOP")
-
-        if value.stop_line_detected:
-            if not traffic_fresh or state == "UNKNOWN":
-                return MissionDecision("TRAFFIC_UNKNOWN", True,
-                                       "STALE_OR_UNKNOWN_TRAFFIC", 0.0, "STOP")
-            if state == "R":
-                if (self.stop_distance < value.stop_line_distance_m <=
-                        self.slowdown_distance):
-                    return MissionDecision("RED_APPROACH", False,
-                                           "RED_BRAKING_APPROACH", 1.0, "STOP_PENDING")
-                return MissionDecision("RED_STOP", True, "RED_AT_STOP_LINE",
-                                       0.0, "STOP")
-            if state == "G":
-                return MissionDecision("GREEN_PASS", False, "", 1.0, "GO")
+        gate_aspect = "UNKNOWN"
+        if traffic_fresh:
+            gate_aspect = ("G" if aspect == "GREEN_DOWN" else
+                           "R" if aspect == "RED_X" or "YELLOW" in aspect else
+                           state if state in ("R", "G") else "UNKNOWN")
+        progress = (value.intersection_progress
+                    if isinstance(value.intersection_progress,
+                                  IntersectionProgress)
+                    else IntersectionProgress())
+        diagnostic_fresh = (
+            value.traffic_diagnostics_age <= self.traffic_timeout)
+        red_present = diagnostic_fresh and value.traffic_red_present
+        green_present = diagnostic_fresh and value.traffic_green_present
+        if traffic_fresh and green_present:
+            if red_present and aspect == "GREEN_LEFT":
+                gate_aspect = "R+GREEN_LEFT"
+            elif red_present:
+                gate_aspect = "R+G"
+            elif aspect == "GREEN_LEFT":
+                gate_aspect = "GREEN_LEFT"
+        elif traffic_fresh and aspect == "GREEN_LEFT":
+            gate_aspect = "GREEN_LEFT"
+        traffic = self.traffic_gate.evaluate(
+            progress, value.csv_stop_line_active, gate_aspect,
+            value.traffic_age, value.now)
+        self.last_traffic_decision = traffic
+        if traffic.active:
+            return MissionDecision(
+                traffic.state, traffic.stop,
+                "" if not traffic.stop else "TRAFFIC_"+traffic.state,
+                0.0 if traffic.stop else 2.0,
+                "STOP" if traffic.stop else "GO",
+                traffic.traffic_stop_allowed, traffic.committed)
 
         if section in self.ramp_sections:
             if value.uphill_detected and value.pitch_deg >= self.ramp_pitch:

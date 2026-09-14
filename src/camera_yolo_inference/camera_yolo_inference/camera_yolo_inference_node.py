@@ -191,7 +191,7 @@ class CameraYoloInferenceNode(Node):
         self.refinement_diag_pub = self.create_publisher(
             String, "/camera/perception_refinement_diagnostics", output_qos)
         self.detections_image_pub = self.create_publisher(
-            Image, "/perception/detections_image", output_qos)
+            Image, "/camera/debug/annotated", output_qos)
         overlay_qos = QoSProfile(history=QoSHistoryPolicy.KEEP_LAST, depth=1,
                                  reliability=QoSReliabilityPolicy.RELIABLE,
                                  durability=QoSDurabilityPolicy.VOLATILE)
@@ -333,7 +333,7 @@ class CameraYoloInferenceNode(Node):
         """Debug-only text overlay driven by internal event counters (1s
         rolling window), never by ros2 topic hz. Runs only when the
         renderer already ran (subscriber-gated), so it adds no cost when
-        nothing is watching /perception/detections_image."""
+        nothing is watching /camera/debug/annotated."""
         def rate(event):
             return self.unique_rates.snapshot(event)["1s"]["header_fps"]
 

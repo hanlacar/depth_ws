@@ -125,11 +125,16 @@ def collect_traffic_light_evidence(instances, role_class_ids,
 
 
 def choose_candidate(evidences, confirmed_state, config=TrafficLightConfig()):
-    """Resolve multi-color frames without a fixed color priority."""
+    """Resolve multi-color frames with the competition green-first policy."""
     if not evidences:
         return None, "no_reliable_detection"
     if len(evidences) == 1:
         return evidences[0].state, "single_color"
+
+    green = next((item for item in evidences if item.state == "G"), None)
+    red = next((item for item in evidences if item.state == "R"), None)
+    if green is not None and red is not None:
+        return "G", "green_priority_over_red"
 
     top, second = evidences[:2]
     if top.score-second.score >= config.traffic_light_conflict_score_margin:

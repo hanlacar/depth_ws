@@ -1,36 +1,54 @@
 from depth_hybrid_slam.mission_core import MissionMachine
 from depth_hybrid_slam.models import MissionInputs
+from depth_hybrid_slam.traffic_gate import IntersectionProgress
 
 
 def value(now=0.0, **kwargs):
     return MissionInputs(now=now, **kwargs)
 
 
-def test_red_green_and_no_line_policy():
+def progress(mode=4, route_index=100, progress_m=10.0):
+    return IntersectionProgress(
+        valid=True, mode=mode, segment_id="COMMON_1", direction=1,
+        route_index=route_index, progress_m=progress_m,
+        stop_segment_id="COMMON_1", stop_direction=1,
+        stop_route_index=100, stop_index=25, stop_progress_m=10.0,
+        exit_route_index=130, exit_progress_m=20.0)
+
+
+def test_mode4_red_green_and_no_csv_line_policy():
     core = MissionMachine()
     red = core.update(value(traffic_state="R", traffic_confidence=.9,
-                            traffic_age=.1, stop_line_detected=True))
+                            traffic_age=.1, csv_stop_line_active=True,
+                            intersection_progress=progress()))
     green = core.update(value(traffic_state="G", traffic_confidence=.9,
-                              traffic_age=.1, stop_line_detected=True))
-    no_line = core.update(value(traffic_state="R", traffic_confidence=.9,
-                                traffic_age=.1, stop_line_detected=False))
+                              traffic_age=.1, csv_stop_line_active=True,
+                              intersection_progress=progress()))
+    other = MissionMachine()
+    no_line = other.update(value(
+        traffic_state="R", traffic_confidence=.9, traffic_age=.1,
+        intersection_progress=progress()))
     assert red.stop_required and not green.stop_required
     assert not no_line.stop_required
 
 
-def test_unknown_or_stale_at_line_stops():
+def test_unknown_or_stale_at_mode4_csv_line_stops():
     core = MissionMachine()
-    assert core.update(value(stop_line_detected=True)).stop_required
+    common = {"csv_stop_line_active": True,
+              "intersection_progress": progress()}
+    assert core.update(value(**common)).stop_required
     assert core.update(value(traffic_state="G", traffic_confidence=.9,
-                             traffic_age=.31, stop_line_detected=True)).stop_required
+                             traffic_age=.31, **common)).stop_required
 
 
-def test_red_approach_slows_before_stop_distance():
+def test_red_at_mode4_csv_stop_line_holds():
     core = MissionMachine()
     decision = core.update(value(traffic_state="R", traffic_confidence=.9,
-                                 traffic_age=.1, stop_line_detected=True,
+                                 traffic_age=.1, csv_stop_line_active=True,
+                                 intersection_progress=progress(),
                                  stop_line_distance_m=1.5))
-    assert not decision.stop_required and decision.speed_limit == 1.0
+    assert decision.stop_required and decision.speed_limit == 0.0
+    assert decision.state == "STOP_LINE_HOLD"
 
 
 def test_ramp_requires_section_duration_and_holds_once():
@@ -57,10 +75,39 @@ def test_acceleration_latches_slow_after_steering():
                              steering_deg=0)).speed_limit == 2
 
 
-def test_finish_red_x_green_down_and_unknown():
+def test_mode11_stop_is_not_mixed_with_intersection_gate():
     core = MissionMachine(finish_sections=("finish",))
-    common = {"section_id": "finish", "stop_line_detected": True,
-              "traffic_confidence": .9, "traffic_age": .1}
-    assert core.update(value(traffic_aspect="RED_X", **common)).stop_required
-    assert not core.update(value(traffic_aspect="GREEN_DOWN", **common)).stop_required
-    assert core.update(value(traffic_aspect="UNKNOWN", **common)).stop_required
+    mode11 = progress(mode=11)
+    decision = core.update(value(
+        section_id="finish", csv_stop_line_active=True,
+        intersection_progress=mode11, traffic_aspect="RED_X",
+        traffic_confidence=.9, traffic_age=.1))
+    assert not decision.stop_required
+    assert decision.state == "CRUISE"
+
+
+def test_mission_uses_fused_red_plus_green_as_immediate_go():
+    core = MissionMachine()
+    decision = core.update(value(
+        traffic_state="G", traffic_aspect="GREEN_CIRCLE",
+        traffic_confidence=.9, traffic_age=.1,
+        traffic_red_present=True, traffic_green_present=True,
+        traffic_diagnostics_age=.1, csv_stop_line_active=True,
+        intersection_progress=progress(mode=4)))
+    assert decision.state == "RELEASE_PENDING"
+    assert not decision.stop_required
+    assert "RED_PLUS_GREEN_GO" in core.last_traffic_decision.event
+
+
+def test_mission_mode8_uses_fused_red_plus_green_left_as_go():
+    core = MissionMachine()
+    decision = core.update(value(
+        traffic_state="G", traffic_aspect="GREEN_LEFT",
+        traffic_confidence=.9, traffic_age=.1,
+        traffic_red_present=True, traffic_green_present=True,
+        traffic_diagnostics_age=.1, csv_stop_line_active=True,
+        intersection_progress=progress(mode=8)))
+    assert decision.state == "RELEASE_PENDING"
+    assert not decision.stop_required
+    assert "MODE8_RED_PLUS_GREEN_LEFT_GO" in \
+        core.last_traffic_decision.event

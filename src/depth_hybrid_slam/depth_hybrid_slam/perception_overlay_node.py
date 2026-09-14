@@ -1,4 +1,4 @@
-"""Compose existing mission overlay, traffic bbox, and VSLAM verdict."""
+"""Compose existing camera detections and canonical mission verdicts."""
 
 import json
 import math
@@ -10,7 +10,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
+from std_msgs.msg import Bool, Float32, String
 
 from .perception_vslam_core import json_stamp_seconds, select_traffic_detection
 from .ros_helpers import safe_shutdown
@@ -36,11 +36,31 @@ class PerceptionOverlayNode(Node):
         self.declare_parameter("detections_topic", "/perception/detections_json")
         self.declare_parameter(
             "status_topic", "/depth_slam/perception/cross_validation_status")
+        self.declare_parameter("output_overlay_topic",
+                               "/depth_slam/perception/debug_overlay")
+        self.declare_parameter("traffic_state_topic",
+                               "/camera/traffic_light_fused/state")
+        self.declare_parameter("traffic_aspect_topic",
+                               "/camera/traffic_light_fused/aspect")
+        self.declare_parameter("traffic_confidence_topic",
+                               "/camera/traffic_light_fused/confidence")
+        self.declare_parameter("stop_line_topic",
+                               "/camera/mission/stop_line_detected")
+        self.declare_parameter("stop_line_distance_topic",
+                               "/camera/mission/stop_line_distance_m")
+        self.declare_parameter("road_validation_topic",
+                               "/depth_slam/camera/csv_validation")
         self.declare_parameter("maximum_stamp_delta_sec", 0.08)
         self.detection = None
         self.status = {}
+        self.traffic_state = "UNKNOWN"
+        self.traffic_aspect = "UNKNOWN"
+        self.traffic_confidence = 0.0
+        self.stop_detected = False
+        self.stop_distance_m = math.nan
+        self.road_validation = {}
         self.publisher = self.create_publisher(
-            Image, "/depth_slam/perception/debug_overlay", 1)
+            Image, str(self.get_parameter("output_overlay_topic").value), 1)
         self.create_subscription(
             Image, str(self.get_parameter("input_overlay_topic").value),
             self.on_image, qos_profile_sensor_data)
@@ -50,6 +70,29 @@ class PerceptionOverlayNode(Node):
         self.create_subscription(
             String, str(self.get_parameter("status_topic").value),
             self.on_status, 10)
+        self.create_subscription(
+            String, str(self.get_parameter("traffic_state_topic").value),
+            lambda message: setattr(
+                self, "traffic_state", str(message.data).upper()), 10)
+        self.create_subscription(
+            String, str(self.get_parameter("traffic_aspect_topic").value),
+            lambda message: setattr(
+                self, "traffic_aspect", str(message.data).upper()), 10)
+        self.create_subscription(
+            Float32, str(self.get_parameter("traffic_confidence_topic").value),
+            lambda message: setattr(
+                self, "traffic_confidence", float(message.data)), 10)
+        self.create_subscription(
+            Bool, str(self.get_parameter("stop_line_topic").value),
+            lambda message: setattr(
+                self, "stop_detected", bool(message.data)), 10)
+        self.create_subscription(
+            Float32, str(self.get_parameter("stop_line_distance_topic").value),
+            lambda message: setattr(
+                self, "stop_distance_m", float(message.data)), 10)
+        self.create_subscription(
+            String, str(self.get_parameter("road_validation_topic").value),
+            self.on_road_validation, 10)
 
     def on_detection(self, message):
         try:
@@ -64,6 +107,12 @@ class PerceptionOverlayNode(Node):
             self.status = json.loads(message.data)
         except (TypeError, ValueError):
             self.status = {}
+
+    def on_road_validation(self, message):
+        try:
+            self.road_validation = json.loads(message.data)
+        except (TypeError, ValueError):
+            self.road_validation = {}
 
     @staticmethod
     def _text(canvas, value, origin, color):
@@ -80,7 +129,7 @@ class PerceptionOverlayNode(Node):
         stamp = float(message.header.stamp.sec)+float(
             message.header.stamp.nanosec)*1.0e-9
         traffic = self.status.get("traffic_light", {})
-        expected = traffic.get("state", "")
+        expected = str(traffic.get("state") or self.traffic_state).upper()
         selected = None
         if self.detection is not None:
             detection_stamp, document = self.detection
@@ -89,32 +138,45 @@ class PerceptionOverlayNode(Node):
                 selected = select_traffic_detection(document, expected)
                 if selected is None:
                     selected = select_traffic_detection(document)
-        valid = bool(traffic.get("valid"))
+        state = expected if expected in ("R", "G") else "UNKNOWN"
+        aspect = str(traffic.get("aspect") or self.traffic_aspect).upper()
+        aspect = {"GREEN_CIRCLE": "CIRCLE", "GREEN_LEFT": "GREEN_LEFT",
+                  "GREEN_DOWN": "GREEN_DOWN"}.get(aspect, "UNKNOWN")
+        confidence = float(traffic.get("confidence", self.traffic_confidence))
+        valid = bool(traffic.get("valid", state in ("R", "G")))
         color = (70, 230, 70) if valid else (0, 190, 255)
         if selected is not None:
             x1, y1, x2, y2 = (int(round(value)) for value in selected["bbox"])
             x1, x2 = max(0, x1), min(canvas.shape[1]-1, x2)
             y1, y2 = max(0, y1), min(canvas.shape[0]-1, y2)
             cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
-            label = (f"TL bbox={selected['class_name']} state={expected or '?'} "
-                     f"conf={float(traffic.get('confidence', 0.0)):.2f}")
+            label = (f"TL bbox={selected['class_name']} state={state} "
+                     f"aspect={aspect} conf={confidence:.2f}")
             self._text(canvas, label, (x1, max(18, y1-6)), color)
         stop = self.status.get("stop_line", {})
-        distance = stop.get("front_axle_distance_m")
+        stop_valid = bool(stop.get("valid", self.stop_detected))
+        distance = stop.get("front_axle_distance_m", self.stop_distance_m)
         distance_text = ("n/a" if distance is None or not isinstance(
             distance, (int, float)) or not math.isfinite(float(distance))
             else f"{float(distance):.2f} m")
+        try:
+            road_confidence = float(
+                self.road_validation.get("road_confidence", 0.0))
+        except (TypeError, ValueError):
+            road_confidence = 0.0
+        if not math.isfinite(road_confidence):
+            road_confidence = 0.0
         lines = [
-            (f"FINAL TL: {'VALID' if valid else 'UNCONFIRMED'} "
-             f"state={traffic.get('state', 'UNKNOWN')} "
-             f"confidence={float(traffic.get('confidence', 0.0)):.2f} "
+            (f"TRAFFIC: {'VALID' if valid else 'UNCONFIRMED'} "
+             f"state={state} aspect={aspect} confidence={confidence:.2f} "
              f"reason={traffic.get('reason', 'NO_INPUT')}"),
-            (f"STOP LINE: {'VALID' if stop.get('valid') else 'UNCONFIRMED'} "
+            (f"STOP LINE: {'VALID' if stop_valid else 'UNCONFIRMED'} "
              f"front_axle_distance={distance_text} "
              f"reason={stop.get('reason', 'NO_INPUT')}"),
-            (f"VSLAM: tracking={self.status.get('cuvslam_tracking_valid', False)} "
-             f"mapping={self.status.get('mapping_state', 'MISSING')} "
-             f"localization={self.status.get('localization_state', 'MISSING')}"),
+            (f"ROAD: {self.road_validation.get('state', 'UNKNOWN')} "
+             f"confidence={road_confidence:.2f} "
+             f"LEFT={self.road_validation.get('nearest_left_boundary_m')}m "
+             f"RIGHT={self.road_validation.get('nearest_right_boundary_m')}m"),
         ]
         y0 = max(20, canvas.shape[0]-62)
         cv2.rectangle(canvas, (0, y0-18),

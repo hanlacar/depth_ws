@@ -1,12 +1,12 @@
-# Commissioned camera_ws metric-projection contract copied into depth_ws.
-# This is optical-centre calibration, distinct from the MCU camera_link TF.
+# Canonical commissioned D456 optical-centre mount, rear-axle base_link origin.
+# REP-103: +x forward, +y left, +z up. Physical downward pitch is negative.
 /**:
   ros__parameters:
     camera_mount:
       configured: true
-      position_x_m: 0.015
+      position_x_m: 0.32
       position_y_m: 0.0
-      height_z_m: 0.970
+      height_z_m: 0.85
       reference_roll_deg: 0.0
       reference_pitch_deg: -5.0
       reference_yaw_deg: 0.0
@@ -25,11 +25,3 @@
     accel_topic: /camera/camera/accel/sample
     gyro_topic: /camera/camera/gyro/sample
     camera_info_topic: /camera/camera_info
-    pixel_path_topic: /camera/image_path_typed
-    metric_path_frame_id: base_link
-    metric_path_max_range_m: 30.0
-    metric_minimum_points: 3
-    metric_minimum_spacing_m: 0.05
-    metric_maximum_point_jump_m: 4.0
-    metric_maximum_reverse_step_m: 0.25
-    metric_minimum_path_length_m: 1.0

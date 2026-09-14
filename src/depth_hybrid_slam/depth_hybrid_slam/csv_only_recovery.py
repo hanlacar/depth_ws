@@ -5,7 +5,7 @@ import math
 
 from .models import Pose2D
 from .route_follower_core import RouteFollower
-from .virtual_mcu_core import VirtualAckermannVehicle
+from .vehicle_kinematics import AckermannPathEvaluator
 
 
 @dataclass(frozen=True)
@@ -41,8 +41,8 @@ def lateral_offset_xy(x, y, route_yaw, offset_m):
     return x-math.sin(yaw)*offset, y+math.cos(yaw)*offset
 
 
-def virtual_vehicle():
-    return VirtualAckermannVehicle(
+def kinematic_vehicle():
+    return AckermannPathEvaluator(
         {1: 0.527, 2: 0.791, 3: 1.055}, 0.527,
         wheelbase_m=0.730, counts_per_meter=797.0,
         max_steering_deg=22.0, direction_change_hold_s=3.0,
@@ -69,7 +69,7 @@ def simulate_lateral_recovery(route, start_index, offset_m, duration_s=10.0,
         wheelbase=0.730, max_steering_deg=22.0, corridor_m=corridor_m,
         max_index_backtrack=0)
     follower.last_index = index
-    vehicle = virtual_vehicle()
+    vehicle = kinematic_vehicle()
     vehicle.x, vehicle.y = lateral_offset_xy(
         point.x, point.y, point.yaw, offset)
     vehicle.yaw = point.yaw
@@ -129,4 +129,3 @@ def simulate_lateral_recovery(route, start_index, offset_m, duration_s=10.0,
         initial, maximum, minimum, decrease_time, recovery_025,
         recovered_010, stop, stop_reason, wrong_segment, direction_jump,
         backtrack, maximum_steering, "PASS" if passed else "FAIL")
-

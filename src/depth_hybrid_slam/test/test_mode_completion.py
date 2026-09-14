@@ -1,4 +1,5 @@
 import json
+import itertools
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,13 @@ def test_route_only_lifecycle_is_ordered_exactly_once_and_course_is_terminal():
     assert tracker.completed_modes == {1, 2, 3}
     assert tracker.course_complete
 
+    events = tracker.observe(
+        4, 1.0, healthy=False, failure_reason="PLAN_REJOIN",
+        controller_reason="ROUTE_DEVIATION_STOP")
+    assert events == ()
+    assert tracker.invalid_modes == set()
+    assert tracker.last_error == ""
+
 
 def test_route_mission_and_mode_completion_remain_separate():
     tracker = RouteModeCompletionTracker([point(0, 1), point(1, 1)])
@@ -85,6 +93,31 @@ def test_stop_failure_and_cursor_backtrack_cannot_complete_a_mode(blocked):
     assert 1 in tracker.invalid_modes
 
 
+@pytest.mark.parametrize("readiness", [
+    "STALE_POSE", "LOCALIZATION_NOT_STABLE", "SAFETY_NOT_READY"])
+def test_transient_readiness_loss_pauses_without_poisoning_route_completion(
+        readiness):
+    tracker = RouteModeCompletionTracker(route_three_modes())
+    observe(tracker, 0)
+    tracker.observe(
+        1, 0.2, healthy=False, failure_reason=readiness,
+        controller_reason="OK")
+    assert tracker.invalid_modes == set()
+    assert observe(tracker, 2) == (
+        "[MODE 1 COMPLETE] criterion=ROUTE_ONLY", "[MODE 2 START]")
+
+
+def test_readiness_loss_during_boundary_crossing_is_unsafe():
+    tracker = RouteModeCompletionTracker(route_three_modes())
+    observe(tracker, 0)
+    events = tracker.observe(
+        2, 0.4, healthy=False, failure_reason="STALE_POSE",
+        controller_reason="OK")
+    assert events == ()
+    assert tracker.invalid_modes == {1}
+    assert tracker.last_error == "UNSAFE_MODE_TRANSITION"
+
+
 def test_skipping_last_waypoint_cannot_complete_even_when_mode_changes():
     tracker = RouteModeCompletionTracker([
         point(0, 1), point(1, 1), point(2, 1),
@@ -94,6 +127,31 @@ def test_skipping_last_waypoint_cannot_complete_even_when_mode_changes():
     assert events == ("[MODE 2 START]",)
     assert tracker.last_error == "WAYPOINT_PROGRESS_INCOMPLETE"
     assert tracker.completed_modes == set()
+
+
+def test_terminal_branch_entry_can_complete_across_overlapping_connection():
+    route = [
+        point(0, 7, "APPROACH"), point(1, 7, "APPROACH"),
+        point(2, 7, "T_B"), point(3, 7, "T_B"), point(4, 7, "T_B"),
+        point(5, 8, "COMMON_2"), point(6, 8, "COMMON_2"),
+    ]
+    tracker = RouteModeCompletionTracker(route)
+    observe(tracker, 0)
+    events = observe(tracker, 5)
+    assert events == (
+        "[MODE 7 COMPLETE] criterion=ROUTE_ONLY", "[MODE 8 START]")
+
+
+def test_nonparking_multisegment_mode_cannot_complete_from_its_start():
+    route = [
+        point(0, 1, "APPROACH"), point(1, 1, "TERMINAL"),
+        point(2, 1, "TERMINAL"), point(3, 2, "NEXT"),
+        point(4, 2, "NEXT"),
+    ]
+    tracker = RouteModeCompletionTracker(route)
+    observe(tracker, 0)
+    assert observe(tracker, 3) == ("[MODE 2 START]",)
+    assert tracker.last_error == "WAYPOINT_PROGRESS_INCOMPLETE"
 
 
 def test_one_sample_boundary_crossing_proves_last_waypoint_was_passed():
@@ -127,12 +185,64 @@ def test_branch_route_rebind_preserves_history_and_maps_current_progress():
         "[MODE 2 COMPLETE] criterion=ROUTE_ONLY", "[MODE 3 START]")
 
 
-def test_rebind_to_a_different_mode_is_invalid_not_complete():
+def test_rebind_to_immediate_successor_waits_for_healthy_observation():
     tracker = RouteModeCompletionTracker(route_three_modes())
     observe(tracker, 0)
     tracker.bind_route(route_three_modes(), resume_index=2)
+    assert tracker.invalid_modes == set()
+    assert tracker.current_mode == 1
+    assert observe(tracker, 2) == (
+        "[MODE 1 COMPLETE] criterion=ROUTE_ONLY", "[MODE 2 START]")
+
+
+def test_rebind_jump_beyond_immediate_successor_is_invalid():
+    tracker = RouteModeCompletionTracker(route_three_modes())
+    observe(tracker, 0)
+    tracker.bind_route(route_three_modes(), resume_index=4)
     assert tracker.invalid_modes == {1}
     assert tracker.last_error == "BRANCH_REMAP_MODE_JUMP"
+
+
+def test_same_mode_branch_remap_without_exact_point_reanchors_behind_progress():
+    tracker = RouteModeCompletionTracker(route_three_modes())
+    observe(tracker, 0)
+    tracker.bind_route(route_three_modes())
+    assert tracker.invalid_modes == set()
+    assert tracker.last_route_index == 0
+    observe(tracker, 1)
+    assert observe(tracker, 2) == (
+        "[MODE 1 COMPLETE] criterion=ROUTE_ONLY", "[MODE 2 START]")
+
+
+def test_first_observation_after_same_mode_remap_establishes_new_cursor():
+    tracker = RouteModeCompletionTracker(route_three_modes())
+    observe(tracker, 0)
+    observe(tracker, 1)
+    tracker.bind_route(route_three_modes(), resume_index=1)
+    assert observe(tracker, 0) == ()
+    assert tracker.invalid_modes == set()
+    observe(tracker, 1)
+    assert observe(tracker, 2) == (
+        "[MODE 1 COMPLETE] criterion=ROUTE_ONLY", "[MODE 2 START]")
+
+
+def test_overlapping_branch_remap_can_settle_across_decreasing_indices():
+    route = [
+        point(0, 7, "T_B"), point(1, 7, "T_B"),
+        point(2, 7, "T_B"), point(3, 8, "COMMON_2"),
+        point(4, 8, "COMMON_2"),
+    ]
+    tracker = RouteModeCompletionTracker(route)
+    observe(tracker, 0)
+    observe(tracker, 2)
+    tracker.bind_route(route, resume_index=2)
+    observe(tracker, 1)
+    observe(tracker, 1)
+    observe(tracker, 0)
+    observe(tracker, 1)
+    assert tracker.invalid_modes == set()
+    assert observe(tracker, 3) == (
+        "[MODE 7 COMPLETE] criterion=ROUTE_ONLY", "[MODE 8 START]")
 
 
 @pytest.mark.parametrize("failure_reason", [
@@ -159,7 +269,8 @@ def test_route_modes_must_be_contiguous_and_consecutive():
         RouteModeCompletionTracker([point(0, 1), point(1, 3)])
 
 
-@pytest.mark.parametrize("route_case", ["AAAA", "BAAA"])
+@pytest.mark.parametrize("route_case", [
+    "".join(value) for value in itertools.product("AB", repeat=4)])
 def test_actual_candidate_route_emits_modes_1_through_11_once(route_case):
     root = Path(__file__).resolve().parents[3]
     route_path = (

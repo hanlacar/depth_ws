@@ -132,6 +132,8 @@ class CsvRoadValidatorNode(Node):
             Bool, prefix+"/lane_consistent", 10)
         self.pub_diagnostics = self.create_publisher(
             String, prefix+"/diagnostics", 10)
+        self.pub_camera_validation = self.create_publisher(
+            String, "/depth_slam/camera/csv_validation", 10)
         self.pub_overlay = self.create_publisher(
             Image, prefix+"/overlay", 10)
         frequency = float(p("publish_hz"))
@@ -290,6 +292,15 @@ class CsvRoadValidatorNode(Node):
             "camera_mount_configured": self.mount.is_usable()})
         self.pub_diagnostics.publish(String(
             data=json.dumps(diagnostics, sort_keys=True)))
+        camera_diagnostics = result.camera_diagnostics(
+            result.state not in (CAMERA_UNAVAILABLE, INVALID_GEOMETRY,
+                                 PATH_UNAVAILABLE, "STALE_INPUT"))
+        # JSON has no portable infinity; unavailable boundaries are null.
+        for key in ("nearest_left_boundary_m", "nearest_right_boundary_m"):
+            if not math.isfinite(camera_diagnostics[key]):
+                camera_diagnostics[key] = None
+        self.pub_camera_validation.publish(String(data=json.dumps(
+            camera_diagnostics, separators=(",", ":"), sort_keys=True)))
         self._publish_overlay(result)
 
 

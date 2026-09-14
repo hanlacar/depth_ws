@@ -11,7 +11,7 @@ Architecture (matches the production requirement, not re-derived here):
 
 Only pitch/roll are auto-corrected. x, y, z and yaw are never touched by this
 module; they come only from the user-configured base mount. This module owns
-no ROS I/O; ``camera_metric_path_node.py`` is the ROS adapter.
+no ROS I/O; the depth_hybrid_slam CSV validator is the ROS adapter.
 """
 from dataclasses import dataclass, field
 import math

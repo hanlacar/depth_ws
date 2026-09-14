@@ -1,0 +1,58 @@
+depth_lidar_perception:
+  ros__parameters:
+    scan_timeout_s: 0.5
+    publish_hz: 20.0
+    steering_timeout_s: 0.5
+    odom_timeout_s: 0.5
+    wheelbase_m: 0.73
+    emergency_distance_m: 0.50
+    clear_distance_m: 0.60
+    mode9_clear_distance_m: 1.0
+    mode9_clear_duration_s: 1.0
+    corridor_half_width_m: 0.30
+    minimum_cluster_points: 2
+    cluster_gap_m: 0.16
+    clear_confirm_scans: 3
+    parking_free_distance_m: 1.0
+    dynamic_velocity_threshold_mps: 0.25
+    dynamic_confirmation_count: 3
+    dynamic_timeout_s: 0.75
+    dynamic_association_distance_m: 0.50
+    mode5_range_m: 2.0
+    mode5_fov_deg: 80.0
+    mode5_lateral_m: 1.0
+    vehicle_width_m: 0.80
+    obstacle_margin_m: 0.15
+    # Commission as "mode:first_route_index:last_route_index" only after
+    # Camera object-evidence validity is available. Empty means no suppression.
+    speed_bump_zones: [""]
+
+depth_command_arbiter:
+  ros__parameters:
+    publish_hz: 30.0
+    candidate_timeout_s: 0.5
+
+depth_lidar_rejoin_validator:
+  ros__parameters:
+    # Still same-segment, same-direction, forward-only and <22 deg.  The
+    # parking endpoint needs the next steer-feasible point beyond the former
+    # 0.8 m radius; 2.5 m covers both audited T_A/T_B handoffs without
+    # weakening the curvature, heading, direction or progress gates.
+    forward_window: 120
+    max_distance_m: 2.5
+    max_heading_deg: 35.0
+
+depth_maneuver_manager:
+  ros__parameters:
+    publish_hz: 20.0
+    # Keep true in production.  The front-only A2M12 commissioning launch
+    # overrides this to false and uses the recorded CSV in Modes 7/10.
+    rear_lidar_enabled: true
+    wheelbase_m: 0.73
+    # Canonical generation constraint. Curvature and radius are derived.
+    planner_max_steering_deg: 21.0
+    vehicle_width_m: 0.80
+    obstacle_margin_m: 0.15
+    detour_length_m: 5.5
+    detour_lateral_m: 0.65
+    planner_maximum_replans: 24

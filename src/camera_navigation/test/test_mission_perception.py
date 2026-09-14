@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from camera_navigation.camera_mission_perception_node import (
     CameraMissionPerceptionNode)
@@ -167,12 +168,14 @@ def test_red_to_green_switch_requires_switch_frames():
     assert state.update(0, .8, 0, 0, .5) == "G"
 
 
-def test_red_green_conflict_is_immediately_unknown():
+def test_green_has_priority_when_red_and_green_are_both_valid():
     state = traffic()
     for now in (0.0, .1, .2):
         state.update(.8, 0, 0, 0, now)
-    assert state.update(.8, .7, 0, 0, .3) == "UNKNOWN"
-    assert state.conflict and state.reason == "RED_GREEN_CONFLICT"
+    assert state.update(.8, .7, 0, 0, .3) == "R"
+    assert state.update(.8, .7, 0, 0, .4) == "R"
+    assert state.update(.8, .7, 0, 0, .5) == "G"
+    assert not state.conflict
 
 
 def test_yellow_or_other_only_is_unknown_and_state_times_out():
@@ -184,17 +187,12 @@ def test_yellow_or_other_only_is_unknown_and_state_times_out():
     assert state.tick(.81) == "UNKNOWN"
 
 
-def test_red_plus_left_confirms_left_permission_but_left_alone_does_not():
+@pytest.mark.parametrize("red", (0.0, .8))
+def test_green_left_confirms_with_or_without_red(red):
     state = traffic()
     for now in (0.0, .1, .2):
-        result = state.update(.8, 0, .9, 0, now)
+        result = state.update(red, 0, .9, 0, now)
     assert result == "LEFT"
-
-    state = traffic()
-    for now in (0.0, .1, .2):
-        result = state.update(0, 0, .9, 0, now)
-    assert result == "UNKNOWN"
-    assert state.reason == "UNSUPPORTED_LIGHT"
 
 
 def test_pitch_quaternion_is_signed_and_invalid_quaternion_rejected():

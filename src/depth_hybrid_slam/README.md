@@ -13,7 +13,7 @@ D456을 직접 들고 교실 지도를 수동 생성하는 터미널별 절차�
 Isaac ROS cuVSLAM 4.6가 D456 IR stereo+IMU로 `odom→base_link`를 만들고,
 RTAB-Map 0.22.1이 RGB-D를 낮은 주기로 처리하여 loop closure와
 `map→odom`을 담당한다. `base_link→camera_link`는 고정 장착값
-`(0.015, 0, 0.970 m, REP-103 pitch=+5°)` 하나만 발행한다. RTAB-Map의 별도
+`(0.32, 0, 0.85 m, physical pitch=-5°)` 하나만 발행한다. RTAB-Map의 별도
 RGB-D odometry는 항상 꺼져 있다.
 
 ## 지원 경계와 요구사항
@@ -104,7 +104,9 @@ ros2 launch depth_hybrid_slam route_follower_dry_run.launch.py \
 ```
 
 dry-run 출력은 `/depth_slam/dry_run/drive`, `/depth_slam/dry_run/wheel`이다.
-기본 실행은 실제 `/slam_drive`, `/slam_wheel`을 발행하지 않는다. 실제 출력에는
+follower의 실제 제어 후보는 `/depth_slam/follower/candidate_drive`,
+`/depth_slam/follower/candidate_wheel`이며 최종 `/cmd_drive`, `/cmd_wheel`은 command
+arbiter 하나만 발행한다. 실제 출력에는
 `enable_control=true`, `dry_run=false`, localization/route/safety READY, 그리고
 별도의 `user_approved=true`가 모두 필요하다. 기본값은 계속 `false`이며 map/route
 실제 SHA256 검증 실패 시 승인값과 관계없이 주행하지 않는다.
@@ -116,8 +118,9 @@ T870 제원은 `config/vehicle_navigation.yaml`의 `wheelbase_m=0.73`,
 
 ## 미션과 화면
 
-`camera_ws`의 fused light, stop line, sign, uphill, section과 MCU steering만
-구독한다. detector를 복제하지 않는다. 실제 ramp/acceleration/finish section ID는
+`depth_ws`에 통합된 Camera package의 fused light, stop line, sign, uphill,
+section과 MCU steering만 구독한다. detector를 복제하지 않는다. 실제
+ramp/acceleration/finish section ID는
 `config/mission.yaml`이 비어 있으므로 코스 정보를 받은 뒤 입력해야 한다.
 
 ```bash
@@ -127,7 +130,8 @@ ros2 launch depth_hybrid_slam production_ready.launch.py \
   route_path:=$PWD/maps/case_1/route.csv
 ```
 
-GUI는 기본 비활성이다. 원본 영상은 `/camera/camera/color/image_raw`를 직접 보며
+GUI는 기본 비활성이다. 이 cuVSLAM host profile의 원본 영상은
+`/camera/camera/color/image_raw`를 직접 보며
 Python relay를 사용하지 않는다.
 
 ## 측정, rosbag, 백업
@@ -153,5 +157,8 @@ metadata/checksum을 다시 봉인하는 방식으로만 한다.
 - 카메라 장착 위치가 바뀜: 기존 map/route를 사용하지 말고 네 case를 다시 기록.
 - tracking loss/pose stale/mission UNKNOWN: fail-closed 정지 상태가 정상 동작이다.
 
-LiDAR 장애물 회피·S자 우회·주차는 extension point일 뿐 이번 패키지에 구현하지
-않았다. 가짜 LiDAR publisher도 production launch에 없다.
+대회용 CSV+Camera-advisory+LiDAR 구성과 단일 `/cmd_drive`, `/cmd_wheel`
+ownership은 [`docs/competition_camera_lidar.md`](docs/competition_camera_lidar.md)에
+정리했다. production 및 prehardware launch에는 가짜 LiDAR/Camera/IMU/vehicle
+publisher가 없다. 유일한 예외인 TEST ONLY ODOM도 실제 encoder와 steering 입력이
+fresh할 때만 적분하며 임의 motion을 생성하지 않는다.

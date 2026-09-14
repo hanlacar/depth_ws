@@ -8,6 +8,8 @@ from launch.substitutions import LaunchConfiguration
 
 COMMON_DEFAULTS = {
     "camera_serial": "338122302896",
+    "front_serial_port": "/dev/ttyUSB0",
+    "rear_serial_port": "/dev/ttyUSB1",
     "case_id": "",
     "map_path": "",
     "route_path": "",
@@ -20,12 +22,12 @@ COMMON_DEFAULTS = {
     "use_gpu_vslam": "true",
     "use_camera": "false",
     "use_lidar": "false",
+    "use_rear_lidar": "true",
     "use_vslam": "false",
     "start_rviz": "false",
     "start_image_view": "false",
     "start_monitor": "true",
     "enable_control": "false",
-    "enable_mcu_adapter": "false",
     "publish_camera_mount_tf": "false",
     "dry_run": "true",
     "user_approved": "false",
@@ -54,8 +56,9 @@ def rtabmap_include(localization, launch_prefix="", rtabmap_args=None,
                     database_path=None):
     launch_file = (get_package_share_directory("rtabmap_launch") +
                    "/launch/rtabmap.launch.py")
-    # RTAB-Map consumes the bridge odometry. Its own rgbd/stereo odometry nodes
-    # are explicitly disabled. The MCU bridge owns odom->base_link.
+    # RTAB-Map consumes the selected localization odometry. Its own rgbd/stereo
+    # odometry nodes are explicitly disabled; the external production ODOM
+    # source remains the sole odom->base_link owner.
     arguments = {
         "localization": "true" if localization else "false",
         "database_path": (database_path if database_path is not None else
@@ -78,9 +81,9 @@ def rtabmap_include(localization, launch_prefix="", rtabmap_args=None,
         "rgbd_sync": "false",
         "approx_sync": "true",
         "approx_sync_max_interval": "0.025",
-        "rgb_topic": "/camera/camera/color/image_raw",
+        "rgb_topic": "/camera/image_raw",
         "depth_topic": "/camera/camera/aligned_depth_to_color/image_raw",
-        "camera_info_topic": "/camera/camera/color/camera_info",
+        "camera_info_topic": "/camera/camera_info",
         # The D456 raw/united IMU has no orientation. cuVSLAM already consumes it;
         # feeding it to RTAB-Map would be ignored at 400 Hz and flood diagnostics.
         "imu_topic": "/depth_slam/unused_orientation_imu",

@@ -11,7 +11,7 @@ from depth_hybrid_slam.csv_only_branching import (
     csv_only_network_segments, load_csv_only_route_case,
     parking_branch_geometry)
 from depth_hybrid_slam.csv_only_recovery import (
-    lateral_offset_xy, simulate_lateral_recovery, virtual_vehicle)
+    kinematic_vehicle, lateral_offset_xy, simulate_lateral_recovery)
 from depth_hybrid_slam.models import Pose2D
 from depth_hybrid_slam.route_follower_core import RouteFollower
 from depth_hybrid_slam.route_io import load_segmented_route
@@ -19,7 +19,6 @@ from depth_hybrid_slam.stop_editor_network import route_case_segments
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "routes/network/route_network_segmented_stop_edited.csv"
 CANDIDATE = ROOT / "routes/network/route_network_segmented_stop_edited_vforward.csv"
 METADATA = CANDIDATE.with_suffix(".metadata.yaml")
 DISPLAY = ROOT / (
@@ -47,13 +46,8 @@ def _selector():
     return selector
 
 
-def test_vforward_candidate_preserves_every_non_mode10_source_row():
-    source, candidate = _rows(SOURCE), _rows(CANDIDATE)
-    source_other = [row for row in source
-                    if row["segment_id"] not in ("V_A", "V_B")]
-    candidate_other = [row for row in candidate if row["segment_id"] not in
-                       ("V_foword", "V_A", "V_B")]
-    assert source_other == candidate_other
+def test_vforward_canonical_route_has_locked_geometry_and_provenance():
+    candidate = _rows(CANDIDATE)
     counts = {name: sum(row["segment_id"] == name for row in candidate)
               for name in ("V_foword", "V_A", "V_B")}
     assert counts == {"V_foword": 108, "V_A": 132, "V_B": 154}
@@ -138,6 +132,20 @@ def test_vforward_pending_requested_commit_hold_reverse_and_late_command(
     assert selector.last_event == "LATE_BRANCH_COMMAND_IGNORED"
 
 
+def test_vforward_wait_state_proves_hold_despite_late_sampling():
+    selector = _selector()
+    selector.enter_segment("V_foword", 10.0)
+    selector.observe_point(
+        "V_foword", 105, 1, "V_foword:105",
+        "MINIMUM_3S_HOLD", 20.25)
+    assert selector.choices["V"] is None
+    selector.observe_point(
+        "V_foword", 105, 1, "V_foword:105",
+        "WAIT_TRAFFIC_RELEASE", 23.0)
+    assert selector.choices["V"] == "A"
+    assert selector.lifecycle_status()["V"] == "COMMITTED_A"
+
+
 def test_candidate_loader_retains_stop_and_physical_limits():
     a = load_segmented_route(CANDIDATE, METADATA, branch="A")
     b = load_segmented_route(CANDIDATE, METADATA, branch="B")
@@ -204,7 +212,7 @@ def test_t_b_to_common2_default_rate_has_no_deviation_or_cursor_jump():
     point = route[start]
     follower = RouteFollower(corridor_m=1.0, max_index_backtrack=0)
     follower.last_index = start
-    vehicle = virtual_vehicle()
+    vehicle = kinematic_vehicle()
     vehicle.x, vehicle.y, vehicle.yaw = point.x, point.y, point.yaw
     maximum_cte = 0.0
     last_index = start
@@ -242,10 +250,6 @@ def test_test_only_injection_uses_route_normal_and_is_not_production_code():
     assert lateral_offset_xy(3.0, 4.0, 0.0, 0.5) == (3.0, 4.5)
     assert lateral_offset_xy(3.0, 4.0, math.pi/2.0, -0.5) == pytest.approx(
         (3.5, 4.0))
-    source = (ROOT / "src/depth_hybrid_slam/depth_hybrid_slam/"
-              "csv_only_virtual_vehicle_node.py").read_text()
-    assert "/depth_slam/test/inject_lateral_offset_m" in source
-    assert "TEST ONLY lateral disturbance" in source
     production = (ROOT / "src/depth_hybrid_slam/depth_hybrid_slam/"
                   "route_follower_node.py").read_text()
     assert "inject_lateral_offset" not in production

@@ -20,7 +20,7 @@ class BranchDecision:
 class BranchSelector:
     """Default-A selector with a mode-11 decision hold and timeout."""
 
-    def __init__(self, command_timeout_s=3.0, mode_11_wait_s=3.0):
+    def __init__(self, command_timeout_s=3.0, mode_11_wait_s=5.0):
         self.command_timeout_s = float(command_timeout_s)
         self.mode_11_wait_s = float(mode_11_wait_s)
         if self.command_timeout_s <= 0.0 or self.mode_11_wait_s <= 0.0:
@@ -30,6 +30,7 @@ class BranchSelector:
         self.command_branch = None
         self.command_at = None
         self.selected_branch = "A"
+        self.mode_11_committed = False
 
     def set_mode(self, mode, now):
         try:
@@ -40,6 +41,7 @@ class BranchSelector:
             self.mode_11_entered_at = float(now)
             self.command_branch = None
             self.command_at = None
+            self.mode_11_committed = False
         elif value != 11:
             self.mode_11_entered_at = None
         self.mode = value
@@ -55,14 +57,19 @@ class BranchSelector:
                  self.command_at is not None and
                  0.0 <= now-self.command_at <= self.command_timeout_s)
         if self.mode == 11 and self.mode_11_entered_at is not None:
+            if self.mode_11_committed:
+                return BranchDecision(
+                    self.selected_branch, False, "MODE11_BRANCH_COMMITTED")
             if fresh and self.command_at >= self.mode_11_entered_at:
                 self.selected_branch = self.command_branch
+                self.mode_11_committed = True
                 return BranchDecision(
                     self.selected_branch, False, "MODE11_BRANCH_SELECTED")
             if now-self.mode_11_entered_at < self.mode_11_wait_s:
                 return BranchDecision(
                     self.selected_branch, True, "MODE11_WAIT_BRANCH")
             self.selected_branch = "A"
+            self.mode_11_committed = True
             return BranchDecision("A", False, "MODE11_TIMEOUT_DEFAULT_A")
         if fresh:
             self.selected_branch = self.command_branch

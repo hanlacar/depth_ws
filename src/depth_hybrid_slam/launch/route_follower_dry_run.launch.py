@@ -25,13 +25,9 @@ def generate_launch_description():
                         "enable_control": False, "dry_run": True,
                         "user_approved": False}])
     return LaunchDescription(common_arguments({
-        "route_path": root + "/routes/network/route_network_segmented.csv",
+        "route_path": root + "/routes/network/route_network_segmented_stop_edited_vforward.csv",
         "route_metadata_path": root +
-        "/routes/network/route_network_segmented.metadata.yaml",
-        "piecewise_preview_path": root +
-        "/routes/network/route_network_segmented_aligned.csv",
-        "piecewise_preview_metadata_path": root +
-        "/routes/network/route_network_segmented_aligned.metadata.yaml",
+        "/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml",
         "map_path": root +
         "/maps/merged_competition_level_aligned_v10/rtabmap.db",
     })+[follower])

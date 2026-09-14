@@ -60,7 +60,7 @@ def generate_launch_description():
         "mapping_mode": "false", "localization_mode": "true",
         "map_path": root +
         "/maps/merged_competition_level_aligned_v10/rtabmap.db",
-        "route_path": root + "/routes/network/route_network_segmented.csv",
+        "route_path": root + "/routes/network/route_network_segmented_stop_edited_vforward.csv",
         "route_metadata_path": root +
-        "/routes/network/route_network_segmented.metadata.yaml",
+        "/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml",
     })+[OpaqueFunction(function=_prepare)])

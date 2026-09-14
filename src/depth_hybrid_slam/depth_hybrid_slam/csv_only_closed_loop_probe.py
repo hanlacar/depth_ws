@@ -21,6 +21,8 @@ class CsvOnlyClosedLoopProbe(Node):
         self.declare_parameter("route_metadata_path", "")
         self.declare_parameter("expected_case", "AAAA")
         self.declare_parameter("timeout_s", 300.0)
+        self.declare_parameter("expected_stop_count_override", -1)
+        self.declare_parameter("observe_final_commands", False)
         self.expected_case = str(
             self.get_parameter("expected_case").value).strip().upper()
         if len(self.expected_case) != 4 or any(
@@ -30,8 +32,12 @@ class CsvOnlyClosedLoopProbe(Node):
             str(self.get_parameter("route_path").value),
             str(self.get_parameter("route_metadata_path").value),
             self.expected_case)
-        self.expected_stops = sum(
+        self.route_stop_count = sum(
             point.event == "STOP_LINE" for point in self.route)
+        stop_override = int(self.get_parameter(
+            "expected_stop_count_override").value)
+        self.expected_stops = (
+            stop_override if stop_override >= 0 else self.route_stop_count)
         self.expected_direction_changes = sum(
             self.route[index].direction != self.route[index+1].direction
             for index in range(len(self.route)-1))
@@ -68,6 +74,9 @@ class CsvOnlyClosedLoopProbe(Node):
         self.wheel_max = 0
         self.segments = set()
         self.controller_states = set()
+        self.route_complete = False
+        self.course_complete = False
+        self.mode_completion_state = {}
         self.has_moved = False
         self.stop_active = False
         self.stop_started = None
@@ -75,15 +84,21 @@ class CsvOnlyClosedLoopProbe(Node):
         self.stop_holds = []
         self.last_motion_sign = 0
         self.direction_holds = []
+        self.final_zero_started = None
+        self.final_zero_hold = 0.0
 
         self.command_publisher = self.create_publisher(
             String, "/depth_slam/route/branch_command", 10)
         self.create_subscription(Odometry, "/odom", self.on_odom, 10)
         self.create_subscription(Int32, "/mcu/encoder", self.on_encoder, 10)
-        self.create_subscription(
-            Float32, "/depth_slam/follower/candidate_drive", self.on_drive, 10)
-        self.create_subscription(
-            Int32, "/depth_slam/follower/candidate_wheel", self.on_wheel, 10)
+        self.observe_final_commands = bool(self.get_parameter(
+            "observe_final_commands").value)
+        drive_topic = "/cmd_drive" if self.observe_final_commands else \
+            "/depth_slam/follower/candidate_drive"
+        wheel_topic = "/cmd_wheel" if self.observe_final_commands else \
+            "/depth_slam/follower/candidate_wheel"
+        self.create_subscription(Float32, drive_topic, self.on_drive, 10)
+        self.create_subscription(Int32, wheel_topic, self.on_wheel, 10)
         self.create_subscription(
             Bool, "/depth_slam/follower/candidate_stop", self.on_stop, 10)
         self.create_subscription(
@@ -96,6 +111,9 @@ class CsvOnlyClosedLoopProbe(Node):
             String, "/depth_slam/route/case_state", self.on_case_state, 10)
         self.create_subscription(
             String, "/depth_slam/route/controller_state", self.on_state, 10)
+        self.create_subscription(
+            String, "/depth_slam/route/mode_status",
+            self.on_mode_completion, 10)
         self.create_timer(0.2, self.check)
 
     def on_odom(self, message):
@@ -117,12 +135,21 @@ class CsvOnlyClosedLoopProbe(Node):
         return time.monotonic()-self.stop_started
 
     def on_drive(self, message):
+        now = time.monotonic()
         drive = int(round(float(message.data)))
         self.drive_values.add(drive)
         sign = 1 if drive > 0 else -1 if drive < 0 else 0
+        if self.observe_final_commands:
+            if not sign:
+                if self.final_zero_started is None:
+                    self.final_zero_started = now
+            elif self.final_zero_started is not None:
+                self.final_zero_hold = now-self.final_zero_started
+                self.final_zero_started = None
         if sign:
             if self.last_motion_sign and sign != self.last_motion_sign:
-                hold = (self.current_stop_duration() if self.stop_active else
+                hold = (self.final_zero_hold if self.observe_final_commands else
+                        self.current_stop_duration() if self.stop_active else
                         (self.stop_holds[-1] if self.stop_holds else 0.0))
                 self.direction_holds.append(hold)
             self.last_motion_sign = sign
@@ -169,6 +196,20 @@ class CsvOnlyClosedLoopProbe(Node):
         state = str(message.data)
         self.controller_states.add(state)
         if state == "ROUTE_COMPLETE":
+            self.route_complete = True
+        if self.route_complete and self.course_complete:
+            self.grade()
+
+    def on_mode_completion(self, message):
+        try:
+            state = json.loads(message.data)
+            self.mode_completion_state = state
+            self.course_complete = bool(state.get("course_complete", False))
+        except (TypeError, ValueError):
+            self.failure = "invalid mode_completion JSON"
+            self.done = True
+            return
+        if self.route_complete and self.course_complete:
             self.grade()
 
     def publish_requests(self):
@@ -212,11 +253,17 @@ class CsvOnlyClosedLoopProbe(Node):
             "encoder_change": encoder_change,
             "stop_count": len(waypoint_holds),
             "expected_stop_count": self.expected_stops,
+            "route_stop_count": self.route_stop_count,
             "stop_holds_s": waypoint_holds,
             "minimum_stop_s": min(waypoint_holds) if waypoint_holds else 0.0,
             "separator_stop_count": len(self.stop_holds)-len(waypoint_holds),
             "direction_transition_holds_s": self.direction_holds,
+            "expected_direction_transitions": self.expected_direction_changes,
+            "observed_command_source": (
+                "FINAL" if self.observe_final_commands else "CSV_CANDIDATE"),
             "controller_state": "ROUTE_COMPLETE",
+            "course_complete": self.course_complete,
+            "mode_completion": self.mode_completion_state,
         }
         checks = (
             final_selected == self.expected_case,
@@ -232,6 +279,7 @@ class CsvOnlyClosedLoopProbe(Node):
             bool(waypoint_holds) and min(waypoint_holds) >= 2.90,
             len(self.direction_holds) == self.expected_direction_changes,
             all(value >= 2.90 for value in self.direction_holds),
+            self.course_complete,
         )
         if not all(checks):
             report["result"] = "FAIL"
@@ -245,7 +293,9 @@ class CsvOnlyClosedLoopProbe(Node):
         self.publish_requests()
         if time.monotonic()-self.started >= float(
                 self.get_parameter("timeout_s").value):
-            self.failure = "CSV-only closed-loop timed out before ROUTE_COMPLETE"
+            self.failure = (
+                "CSV-only closed-loop timed out before ROUTE_COMPLETE and "
+                "COURSE_COMPLETE")
             self.report = {
                 "result": "FAIL", "reason": self.failure,
                 "expected_case": self.expected_case,
@@ -255,6 +305,8 @@ class CsvOnlyClosedLoopProbe(Node):
                 "drive_values": sorted(self.drive_values),
                 "encoder": self.last_encoder,
                 "states": sorted(self.controller_states),
+                "course_complete": self.course_complete,
+                "mode_completion": self.mode_completion_state,
             }
             self.done = True
 

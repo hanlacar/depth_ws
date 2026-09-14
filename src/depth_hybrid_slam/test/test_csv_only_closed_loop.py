@@ -1,4 +1,5 @@
 from pathlib import Path
+import itertools
 
 from depth_hybrid_slam.csv_only_branching import (
     IndependentRouteCaseSelector, StartBranchClassifier,
@@ -13,28 +14,28 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]
-ROUTE = ROOT / "routes/network/route_network_segmented_stop_edited.csv"
+ROUTE = ROOT / "routes/network/route_network_segmented_stop_edited_vforward.csv"
 METADATA = ROUTE.with_suffix(".metadata.yaml")
 PACKAGE = ROOT / "src/depth_hybrid_slam"
-DISPLAY = ROOT / "routes/network/route_network_segmented_all_branches_display_aligned.csv"
+DISPLAY = ROOT / "routes/network/route_network_segmented_all_branches_display_aligned_vforward.csv"
 DISPLAY_METADATA = DISPLAY.with_suffix(".metadata.yaml")
 
 
 def test_csv_only_default_route_has_exact_a_case_and_stops():
     route = load_segmented_route(ROUTE, METADATA, branch="A")
     assert route.points[0].segment_id == "START_A"
-    assert route.segment_order == route_case_segments("AAAA")
-    assert len([point for point in route.points if point.event == "STOP_LINE"]) == 10
+    assert route.segment_order == route_case_segments("AAAA", {"V_foword"})
+    assert len([point for point in route.points if point.event == "STOP_LINE"]) == 11
     assert sum(route.points[index].direction != route.points[index+1].direction
                for index in range(len(route.points)-1)) == 4
 
 
 def test_csv_only_mixed_cases_contain_only_the_selected_exclusive_segments():
-    for case in ("AAAA", "BAAA", "ABAA", "AABA", "AAAB", "BBAA"):
+    for case in ("".join(value) for value in itertools.product("AB", repeat=4)):
         route = load_csv_only_route_case(ROUTE, METADATA, case)
         segments = {point.segment_id for point in route}
         assert tuple(dict.fromkeys(point.segment_id for point in route)) == \
-            route_case_segments(case)
+            route_case_segments(case, {"V_foword"})
         for choice, selected in zip(CHOICE_ORDER, case):
             other = "B" if selected == "A" else "A"
             assert CHOICE_SEGMENTS[choice][selected] in segments
@@ -69,7 +70,7 @@ def test_source_and_display_network_preserve_real_branch_separation_and_keys():
     expected_maximums = {
         "START": 5.326191979441313,
         "T": 2.6726740684898322,
-        "V": 4.89855519097754,
+        "V": 5.333877998391225,
         "END": 3.3963187242290753,
     }
     for choice, expected in expected_maximums.items():
@@ -80,7 +81,7 @@ def test_source_and_display_network_preserve_real_branch_separation_and_keys():
     correspondence = validate_display_correspondence(ROUTE, DISPLAY)
     assert correspondence == {
         "valid": True,
-        "source_rows": 7463, "display_rows": 7463,
+        "source_rows": 7419, "display_rows": 7419,
         "source_duplicate_keys": 0, "display_duplicate_keys": 0,
         "missing_keys": 0, "extra_keys": 0,
         "source_xy_max_error_m": 0.0,
@@ -101,7 +102,7 @@ def parking_selector():
     return selector
 
 
-def test_parking_geometry_allows_t_stop_commit_but_rejects_v_stop_commit():
+def test_parking_geometry_has_safe_t_and_vforward_commit_points():
     geometry = parking_branch_geometry(
         csv_only_network_segments(ROUTE, METADATA))
     t = geometry["T"]
@@ -121,26 +122,17 @@ def test_parking_geometry_allows_t_stop_commit_but_rejects_v_stop_commit():
     assert t["requested_commit_safe"]
 
     v = geometry["V"]
-    assert v["verdict"] == "BRANCH_COMMIT_TOO_LATE_FOR_GEOMETRY"
-    assert v["first_reverse"]["A"][0] == 91
-    assert v["first_reverse"]["B"][0] == 85
-    assert abs(v["forward_nearest_mean_m"]-0.7606387009368039) < 1e-9
-    assert abs(v["forward_nearest_max_m"]-1.663702698256212) < 1e-9
-    assert abs(v["requested_commit"]["branch_separation_m"]-
-               1.5862683167563403) < 1e-9
-    assert abs(v["requested_commit"]["branch_heading_delta_deg"]-
-               13.680626196306077) < 1e-9
-    assert abs(v["requested_commit"]["first_reverse_jump_m"]-
-               1.9378764915476436) < 1e-9
-    assert abs(v["requested_commit"]["required_steering_deg"]-
-               39.22630492764032) < 1e-9
-    assert not v["requested_commit_safe"]
+    assert v["verdict"] == "PASS"
+    assert v["common_forward"]["points"] == 108
+    assert v["common_forward"]["commit"][0] == 105
+    assert v["common_forward"]["commit_event"] == "STOP_LINE"
+    assert v["first_reverse"]["A"][0] == 12
+    assert v["first_reverse"]["B"][0] == 1
+    assert v["requested_commit_safe"]
+    assert all(value["continuous"] for value in v["transitions"].values())
     safe = v["latest_safe_commit"]
-    assert safe["a_point_index"] == 23
-    assert safe["nearest_point_index"] == 28
-    assert abs(safe["nearest_distance_m"]-0.10978814255191593) < 1e-9
-    assert abs(safe["heading_delta_deg"]-3.2532826783562356) < 1e-9
-    assert abs(safe["required_steering_deg"]-16.948617924166378) < 1e-9
+    assert safe["segment_id"] == "V_foword"
+    assert safe["point_index"] == 105
 
 
 def test_t_default_a_commits_at_transition_stop_and_holds_after_commit():
@@ -188,19 +180,68 @@ def test_t_b_request_during_stop_is_used_but_reverse_late_request_is_ignored():
     assert selector.last_event == "LATE_BRANCH_COMMAND_IGNORED"
 
 
-def test_v_default_and_b_commit_at_latest_safe_forward_point():
+def test_wait_traffic_state_proves_t_hold_despite_late_sampling():
+    choice, segment, key = "T", "T_A", "T_A:4"
     selector = parking_selector()
-    selector.enter_segment("V_A", 30.0)
-    selector.observe_point("V_A", 22, 1, "", "IDLE", 31.0)
+    selector.enter_segment("T_foword", 10.0)
+    selector.observe_point(
+        segment, 4, 1, key,
+        "MINIMUM_3S_HOLD", 20.25)
+    assert selector.choices[choice] is None
+    selector.observe_point(
+        segment, 4, 1, key,
+        "WAIT_TRAFFIC_RELEASE", 23.0)
+    assert selector.choices[choice] == "A"
+    assert selector.lifecycle_status()[choice] == "COMMITTED_A"
+
+
+def test_first_post_release_point_proves_commit_when_20hz_misses_key():
+    selector = parking_selector()
+    selector.enter_segment("T_foword", 10.0)
+    selector.observe_point("T_A", 5, -1, "", "IDLE", 23.1)
+    assert selector.choices["T"] == "A"
+
+    vforward = ROOT / "routes/network/route_network_segmented_stop_edited_vforward.csv"
+    metadata = vforward.with_suffix(".metadata.yaml")
+    segments = csv_only_network_segments(vforward, metadata)
+    selector = IndependentRouteCaseSelector(parking_branch_geometry(segments))
+    selector.set_start(start_a_result(segments))
+    selector.enter_segment("V_foword", 30.0)
+    selector.observe_point("V_foword", 106, 1, "", "IDLE", 33.1)
+    assert selector.choices["V"] == "A"
+
+
+def test_lost_release_edge_commits_from_durable_stop_timestamp():
+    selector = parking_selector()
+    selector.enter_segment("T_foword", 10.0)
+    selector.observe_point(
+        "T_A", 4, 1, "T_A:4", "MINIMUM_3S_HOLD", 20.0)
+    assert selector.stop and selector.choices["T"] is None
+    selector.advance(22.99)
+    assert selector.choices["T"] is None
+    selector.advance(23.0)
+    assert selector.choices["T"] == "A"
+    assert selector.stop
+    selector.advance(26.0)
+    assert not selector.stop
+
+
+def test_v_default_and_b_commit_at_vforward_stop_point():
+    selector = parking_selector()
+    selector.enter_segment("V_foword", 30.0)
+    selector.observe_point(
+        "V_foword", 105, 1, "V_foword:105", "MINIMUM_3S_HOLD", 31.0)
     assert selector.choices["V"] is None
-    selector.observe_point("V_A", 23, 1, "", "IDLE", 31.1)
+    selector.observe_point(
+        "V_foword", 105, 1, "V_foword:105", "WAIT_TRAFFIC_RELEASE", 34.0)
     assert selector.choices["V"] == "A"
     assert selector.lifecycle_status()["V"] == "COMMITTED_A"
 
     selector = parking_selector()
-    selector.enter_segment("V_A", 30.0)
+    selector.enter_segment("V_foword", 30.0)
     assert selector.request("V:B", 30.5)
-    selector.observe_point("V_A", 23, 1, "", "IDLE", 31.1)
+    selector.observe_point(
+        "V_foword", 105, 1, "V_foword:105", "WAIT_TRAFFIC_RELEASE", 34.0)
     assert selector.choices["V"] == "B"
     assert selector.route_case == "AABA"
     assert selector.lifecycle_status()["V"] == "COMMITTED_B"
@@ -208,8 +249,9 @@ def test_v_default_and_b_commit_at_latest_safe_forward_point():
 
 def test_v_stop_or_reverse_b_request_is_late_and_request_lifetime_is_bounded():
     selector = parking_selector()
-    selector.enter_segment("V_A", 30.0)
-    selector.observe_point("V_A", 23, 1, "", "IDLE", 31.1)
+    selector.enter_segment("V_foword", 30.0)
+    selector.observe_point(
+        "V_foword", 105, 1, "V_foword:105", "WAIT_TRAFFIC_RELEASE", 34.0)
     assert not selector.request("V:B", 40.0)
     assert selector.last_event == "LATE_BRANCH_COMMAND_IGNORED"
     selector.note_reverse_started("V", 50.0)
@@ -233,12 +275,12 @@ def test_live_case_remap_uses_only_existing_continuous_forward_waypoints():
         ("T_B", 5, 1)
 
     v_origin = next(point for point in route_a
-                    if point.segment_id == "V_A" and point.point_index == 23)
+                    if point.segment_id == "V_foword" and point.point_index == 105)
     v_index = remap_case_progress(v_origin, route_v_b, "AABA")
     v_target = route_v_b[v_index]
     assert (v_target.segment_id, v_target.point_index, v_target.direction) == \
-        ("V_B", 29, 1)
-    assert ((v_target.x-v_origin.x)**2+(v_target.y-v_origin.y)**2)**0.5 < 0.11
+        ("V_foword", 105, 1)
+    assert ((v_target.x-v_origin.x)**2+(v_target.y-v_origin.y)**2)**0.5 == 0.0
 
 
 def test_end_request_policy_remains_independent_and_defaults_a():
@@ -258,12 +300,14 @@ def test_csv_only_launch_contains_only_the_isolated_full_network_chain():
             'executable="csv_only_branch_selector"',
             'executable="csv_only_network_visualizer"',
             'executable="route_follower"',
-            'executable="csv_only_localization_source"',
-            'executable="csv_only_virtual_vehicle"', 'executable="rviz2"'):
+            'executable="test_odom_publisher"',
+            'executable="odom_localization"',
+            'executable="safety_monitor"'):
         assert executable in launch
     for forbidden in (
             "rtabmap", "cuvslam", "nav2", "camera", "lidar", "t870_mcu",
-            "mcu_manager", "serial", "behavior_selector", "mcu_source_adapter"):
+            "mcu_manager", "serial", "behavior_selector", "mcu_source_adapter",
+            "synthetic_scan", "virtual_vehicle", "virtual_mcu"):
         assert forbidden not in launch.lower()
     for token in (
             "route_network_segmented_stop_edited_vforward.csv", "spawn_branch",
@@ -272,63 +316,22 @@ def test_csv_only_launch_contains_only_the_isolated_full_network_chain():
             '"user_approved": True',
             '"prehardware_test_override_alignment": True',
             '"prehardware_csv_only_case_selection": True',
-            'DeclareLaunchArgument("simulation_speedup", default_value="1.0")'):
+            '"test_only_acknowledged": True',
+            '"--frame-id", "map", "--child-frame-id", "odom"'):
         assert token in launch
 
 
-def test_csv_only_vehicle_uses_direct_candidate_commands_and_measured_config():
-    source = (PACKAGE / "depth_hybrid_slam/csv_only_virtual_vehicle_node.py").read_text()
-    localization = (
-        PACKAGE / "depth_hybrid_slam/csv_only_localization_source_node.py").read_text()
-    config = yaml.safe_load((PACKAGE / "config/virtual_vehicle.yaml").read_text())[
-        "depth_virtual_mcu_bridge"]["ros__parameters"]
-    assert [config[f"stage_{stage}_speed_mps"] for stage in (1, 2, 3)] == [
-        0.527, 0.791, 1.055]
-    assert config["reverse_speed_mps"] == 0.527
-    assert config["wheelbase_m"] == 0.73
-    assert config["max_steering_deg"] == 22.0
-    assert config["direction_change_hold_s"] == 3.0
-    for topic in (
-            "/depth_slam/follower/candidate_drive",
-            "/depth_slam/follower/candidate_wheel",
-            "/depth_slam/follower/candidate_stop", "/mcu/encoder", "/odom"):
-        assert topic in source
-    assert 'odom.header.stamp, odom.header.frame_id = stamp, "map"' in source
-    assert '"spawn_branch": "A"' in source
-    assert 'message.header.frame_id != "map"' in localization
-    assert '"/depth_slam/csv_only/branch_stop"' in localization
-    assert '"/depth_slam/localization/pose"' in localization
-    assert 'String(data="TRACKING" if fresh else "STALE")' in localization
-
-
-def test_csv_only_rviz_has_full_network_and_active_route_in_map_frame():
-    config_path = PACKAGE / "config/prehardware_csv_only_closed_loop.rviz"
-    config_text = config_path.read_text()
-    config = yaml.safe_load(config_text)["Visualization Manager"]
-    assert config["Global Options"]["Fixed Frame"] == "map"
-    view = config["Views"]["Current"]
-    assert view["Scale"] <= 10
-    assert view["X"] == 28 and view["Y"] == 30
-    assert len(config["Displays"]) == 5
-    marker_displays = [display for display in config["Displays"]
-                       if display["Class"] == "rviz_default_plugins/MarkerArray"]
-    assert len(marker_displays) == 2
-    assert all("Topic" in display and "Marker Topic" not in display
-               for display in marker_displays)
-    for token in (
-            "CSV Active Route (Emphasized)", "/depth_slam/route/reference_path",
-            "Full A/B Network and STOP Markers",
-            "/depth_slam/csv_only/full_network", "STOP_MARKERS",
-            "ROUTE_CASE_STATUS", "START_A", "START_B", "T_A", "T_B",
-            "V_foword", "V_A", "V_B", "END_AA", "END_AB",
-            "injected_disturbance", "recovery_target", "recovery_status",
-            "Virtual Vehicle Pose",
-            "/depth_slam/csv_only/markers", "Virtual Trajectory",
-            "/depth_slam/csv_only/trajectory", "Follower Target",
-            "/depth_slam/route/target_point"):
-        assert token in config_text
-    for forbidden in ("/rtabmap", "/map", "PointCloud2", "Image"):
-        assert forbidden not in config_text
+def test_test_odom_requires_real_encoder_and_steering_and_isolated_ack():
+    source = (PACKAGE / "depth_hybrid_slam/test_odom_publisher.py").read_text()
+    assert '"test_only_acknowledged", False' in source
+    assert '"/mcu/encoder"' in source
+    assert '"/mcu/steer_a0"' in source
+    assert 'Odometry, "/odom"' in source
+    assert 'odom.header.frame_id = "odom"' in source
+    assert 'odom.child_frame_id = "base_link"' in source
+    assert "WAITING_FOR_REAL_ENCODER_STEERING" in source
+    for forbidden in ("stage_speeds_mps", "simulation_speedup"):
+        assert forbidden not in source
 
 
 def test_csv_only_network_markers_are_separate_solid_a_and_real_dashed_b():
@@ -357,7 +360,8 @@ def test_csv_only_live_probe_requires_case_and_opposite_exclusion_contract():
             "self.expected_segments <= self.segments", "not wrong_hits",
             "encoder_change > 100", "self.wheel_min < 0 < self.wheel_max",
             "len(waypoint_holds) == self.expected_stops",
-            "min(waypoint_holds) >= 2.90"):
+            "min(waypoint_holds) >= 2.90", '"course_complete"',
+            '"/depth_slam/route/mode_status"'):
         assert token in probe
 
 

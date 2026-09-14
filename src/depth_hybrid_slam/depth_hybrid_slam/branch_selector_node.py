@@ -14,7 +14,7 @@ class BranchSelectorNode(Node):
     def __init__(self):
         super().__init__("depth_route_branch_selector")
         self.declare_parameter("command_timeout_s", 3.0)
-        self.declare_parameter("mode_11_wait_s", 3.0)
+        self.declare_parameter("mode_11_wait_s", 5.0)
         self.declare_parameter("publish_hz", 20.0)
         self.core = BranchSelector(
             self.get_parameter("command_timeout_s").value,

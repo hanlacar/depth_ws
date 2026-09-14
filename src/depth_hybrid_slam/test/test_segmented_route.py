@@ -15,8 +15,8 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CSV = ROOT / "routes/network/route_network_segmented.csv"
-METADATA = ROOT / "routes/network/route_network_segmented.metadata.yaml"
+CSV = ROOT / "routes/network/route_network_segmented_stop_edited_vforward.csv"
+METADATA = CSV.with_suffix(".metadata.yaml")
 MAP = ROOT / "maps/merged_competition_level_aligned_v10/rtabmap.db"
 
 
@@ -30,8 +30,8 @@ def test_full_csv_schema_and_parser_preserve_future_fields():
         "segment_id", "segment_type", "point_index", "latitude", "longitude",
         "x_m", "y_m", "direction", "mode", "drive_level", "event",
         "from_node", "to_node")
-    assert route.raw_row_count == 7463
-    assert route.active_row_count == 3202
+    assert route.raw_row_count == 7419
+    assert route.active_row_count == 3242
     assert any(point.direction < 0 for point in route.points)
     assert any(point.event == "STOP_LINE" for point in route.points)
     assert {point.mode for point in route.points} == set(range(1, 12))
@@ -46,16 +46,16 @@ def test_default_a_excludes_all_explicit_b_segments():
     assert set(A_EXCLUSIVE_SEGMENTS) <= names
     assert not names.intersection(B_EXCLUSIVE_SEGMENTS)
     assert route.excluded_b_segments == B_EXCLUSIVE_SEGMENTS
-    assert route.excluded_b_row_count == 1116
+    assert route.excluded_b_row_count == 1032
 
 
 def test_common_segments_and_order_are_complete():
     route = loaded()
     assert route.segment_order == (
         "START_A", "COMMON_1", "T_foword", "T_A", "COMMON_2",
-        "V_A", "END_common", "END_AA")
+        "V_foword", "V_A", "END_common", "END_AA")
     assert route.common_segments == (
-        "COMMON_1", "T_foword", "COMMON_2", "END_common")
+        "COMMON_1", "T_foword", "COMMON_2", "V_foword", "END_common")
 
 
 def test_active_route_indexes_yaw_and_connections_are_continuous():

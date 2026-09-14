@@ -1,0 +1,28 @@
+front_rplidar_node:
+  ros__parameters:
+    channel_type: serial
+    serial_port: /dev/ttyUSB0
+    serial_baudrate: 256000
+    frame_id: front_laser
+    # Upright sensor: keep the driver's ROS right-handed scan ordering.
+    inverted: false
+    angle_compensate: true
+    # A2 hardware +X follows the interface lead, which is mounted rearward.
+    # Rotate scan samples by pi so logical front_laser +X is vehicle forward.
+    flip_x_axis: true
+    scan_mode: Sensitivity
+    # Keep the driver-native name here; dual_rplidar.launch.py owns the sole
+    # production remap from scan to /front/scan.
+    topic_name: scan
+
+rear_rplidar_node:
+  ros__parameters:
+    channel_type: serial
+    serial_port: /dev/ttyUSB1
+    serial_baudrate: 256000
+    frame_id: rear_laser
+    inverted: false
+    angle_compensate: true
+    flip_x_axis: false
+    scan_mode: Sensitivity
+    topic_name: scan

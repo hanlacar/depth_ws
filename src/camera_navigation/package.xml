@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>camera_navigation</name><version>0.1.0</version>
-  <description>Inactive navigation utilities retained for future camera planning</description>
+  <description>D456 semantic perception and advisory-only mission signals</description>
   <maintainer email="ww@todo.todo">ww</maintainer><license>Apache-2.0</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>ament_index_python</exec_depend>

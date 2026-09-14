@@ -45,6 +45,7 @@ def test_a_lane_free_broad_road_is_valid_road_only():
     assert result.center_inside_ratio == 1.0
     assert result.vehicle_corridor_inside_ratio == 1.0
     assert not result.lane_visible
+    assert result.advisory_state == "VALID_ROAD_ONLY"
 
 
 def test_b_vehicle_corridor_at_road_edge_is_invalid():
@@ -53,6 +54,7 @@ def test_b_vehicle_corridor_at_road_edge_is_invalid():
     assert not result.valid and result.state == INVALID_OUTSIDE_ROAD
     assert result.center_inside_ratio == 1.0
     assert result.vehicle_corridor_inside_ratio < 0.75
+    assert result.advisory_state == "OUTSIDE_ROAD"
 
 
 def test_c_two_lanes_centered_is_valid_road_and_lane():
@@ -62,6 +64,9 @@ def test_c_two_lanes_centered_is_valid_road_and_lane():
     result = validate_metric_bev(road, lane, visible, path(), CFG)
     assert result.valid and result.state == VALID_ROAD_AND_LANE
     assert result.lane_visible and result.lane_consistent
+    assert result.advisory_state == "VALID_LANE"
+    assert result.nearest_left_boundary_m < math.inf
+    assert result.nearest_right_boundary_m < math.inf
 
 
 def test_d_one_lane_does_not_fail_valid_road():
@@ -122,6 +127,7 @@ def test_lane_crossing_path_is_degraded_but_road_remains_valid():
     result = validate_metric_bev(road, lane, visible, path(), CFG)
     assert result.valid and result.state == DEGRADED_LANE_UNCERTAIN
     assert result.lane_visible and not result.lane_consistent
+    assert result.advisory_state == "NEAR_BOUNDARY"
 
 
 def test_invalid_calibration_and_input_timeouts_fail_closed():
@@ -130,6 +136,7 @@ def test_invalid_calibration_and_input_timeouts_fail_closed():
     stale_semantic = classify_input_state(
         True, True, True, True, 0.0, 0.51, 0.0)
     assert stale_semantic.state == STALE_INPUT
+    assert stale_semantic.advisory_state == "UNKNOWN"
     stale_path = classify_input_state(
         True, True, True, True, 0.0, 0.0, 0.51)
     assert stale_path.state == STALE_INPUT

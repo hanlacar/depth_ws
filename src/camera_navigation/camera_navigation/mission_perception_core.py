@@ -215,18 +215,13 @@ class MissionTrafficFilter:
                  green_score >= self.config.minimum_confidence)
         left = (math.isfinite(left_score) and
                 left_score >= self.config.minimum_confidence)
-        self.conflict = bool(red and green)
-        if self.conflict:
-            self.state = UNKNOWN
-            self.pending = None; self.pending_count = 0
-            self.last_reliable_at = None
-            self.reason = "RED_GREEN_CONFLICT"
-            return self.state
-        # The course contract defines a left arrow as permissive only when it
-        # is detected together with red. A lone arrow remains unsupported.
-        candidate = "LEFT" if red and left else "R" if red else "G" if green else None
+        # A valid permissive indication wins over a co-active stop lamp.  Keep
+        # this advisory output consistent with the production YOLO/RGB fusion
+        # instead of collapsing a physically valid R+G or R+LEFT frame.
+        self.conflict = False
+        candidate = "LEFT" if left else "G" if green else "R" if red else None
         if candidate is None:
-            unsupported = (left or other_score >= self.config.minimum_confidence)
+            unsupported = other_score >= self.config.minimum_confidence
             self.reason = "UNSUPPORTED_LIGHT" if unsupported else "NO_LIGHT"
             return self.tick(now)
         self.last_candidate_at = float(now)

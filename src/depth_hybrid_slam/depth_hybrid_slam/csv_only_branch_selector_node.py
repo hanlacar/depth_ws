@@ -22,6 +22,8 @@ class CsvOnlyBranchSelectorNode(Node):
         self.declare_parameter("route_path", "")
         self.declare_parameter("route_metadata_path", "")
         self.declare_parameter("prehardware_test_only", True)
+        self.declare_parameter("start_mode", 1)
+        self.declare_parameter("spawn_branch", "A")
         self.declare_parameter("start_path_length_m", 12.0)
         self.declare_parameter("start_heading_weight_m", 1.0)
         self.declare_parameter("start_ambiguity_margin", 0.35)
@@ -45,6 +47,19 @@ class CsvOnlyBranchSelectorNode(Node):
             self.geometry,
             float(self.get_parameter("parking_decision_window_s").value),
             float(self.get_parameter("parking_post_commit_hold_s").value))
+        self.start_mode = int(self.get_parameter("start_mode").value)
+        self.spawn_branch = str(
+            self.get_parameter("spawn_branch").value).strip().upper()
+        if not 1 <= self.start_mode <= 11:
+            raise ValueError("start_mode must be in [1, 11]")
+        if self.spawn_branch not in ("A", "B"):
+            raise ValueError("spawn_branch must be A or B")
+        if self.start_mode > 1:
+            # A direct mode start has no START-segment pose to classify.
+            # Seed only that required route choice; prior mode lifecycles stay
+            # untouched instead of being reported as traversed.
+            self.selector.choices["START"] = self.spawn_branch
+            self.selector.state = f"DIRECT_START_MODE_{self.start_mode}"
         self.last_result = None
         self.active_segment = ""
         self.active_index = None
@@ -109,9 +124,16 @@ class CsvOnlyBranchSelectorNode(Node):
             return None
         case = self.selector.route_case
         if case not in self.route_cache:
-            self.route_cache[case] = load_csv_only_route_case(
+            route = load_csv_only_route_case(
                 str(self.get_parameter("route_path").value),
                 str(self.get_parameter("route_metadata_path").value), case)
+            first = next((index for index, point in enumerate(route)
+                          if int(point.mode) == self.start_mode), None)
+            if first is None:
+                raise ValueError(
+                    f"CSV-only route contains no waypoint for mode "
+                    f"{self.start_mode}")
+            self.route_cache[case] = route[first:]
         route = self.route_cache[case]
         if not 0 <= self.active_index < len(route):
             return None

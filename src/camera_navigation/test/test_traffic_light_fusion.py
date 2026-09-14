@@ -58,6 +58,28 @@ def test_actual_yolo_classes_normalize_without_class_indices():
         normalize_yolo_document(document, 1., 4)[0].aspect}
 
 
+def test_yolo_red_plus_green_left_preserves_green_left_priority():
+    document = {"timestamp": {"sec": 1, "nanosec": 0}, "detections": [
+        {"class_name": "R_light", "confidence": .95,
+         "xyxy": [10, 10, 30, 30]},
+        {"class_name": "Left", "confidence": .75,
+         "xyxy": [40, 10, 60, 30]},
+    ]}
+    result, reason = normalize_yolo_document(document, 1.0, 1)
+    assert (result.state, result.aspect) == ("G", "GREEN_LEFT")
+    assert reason == "YOLO_GREEN_PRIORITY_OVER_RED"
+    assert result.red_present and result.green_present
+
+    machine = TrafficLightFusion(config(
+        fusion_single_source_confirm_frames=1))
+    assert machine.ingest(result)
+    fused = machine.evaluate(1.06, route_mode="8")
+    assert (fused.state, fused.aspect) == ("G", "GREEN_LEFT")
+    assert fused.diagnostics["valid_red_present"]
+    assert fused.diagnostics["valid_green_present"]
+    assert fused.diagnostics["green_priority_over_red"]
+
+
 @pytest.mark.parametrize("yolo_state,rgb_aspect,expected_state", [
     ("R", "RED", "R"), ("R", "YELLOW", "R"),
     ("G", "GREEN_CIRCLE", "G"), ("G", "GREEN_LEFT", "G"),
@@ -132,10 +154,14 @@ def test_single_source_needs_wait_window_and_consecutive_samples():
 @pytest.mark.parametrize("yolo_state,rgb_aspect", [
     ("R", "GREEN_CIRCLE"), ("G", "RED"),
 ])
-def test_opposite_rg_is_unknown(yolo_state, rgb_aspect):
+def test_opposite_rg_uses_green_priority(yolo_state, rgb_aspect):
     machine = TrafficLightFusion(config(fusion_confirm_frames=1))
     result = paired_frame(machine, 1, yolo_state, rgb_aspect)
-    assert result.state == "UNKNOWN" and result.reason == "CONFLICT"
+    assert result.state == "G"
+    assert result.reason == "GREEN_PRIORITY_OVER_RED"
+    assert result.diagnostics["valid_red_present"]
+    assert result.diagnostics["valid_green_present"]
+    assert result.diagnostics["green_priority_over_red"]
 
 
 def test_detailed_green_conflict_and_post_conflict_frame_do_not_release():

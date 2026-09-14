@@ -5,6 +5,8 @@ import json
 
 
 ROUTE_ONLY = "ROUTE_ONLY"
+TRANSIENT_READINESS_FAILURES = frozenset((
+    "STALE_POSE", "LOCALIZATION_NOT_STABLE", "SAFETY_NOT_READY"))
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,10 @@ class RouteModeCompletionTracker:
         self.last_point_index = -1
         self._route = ()
         self._boundaries = {}
+        self._transition_thresholds = {}
         self._mode_order = ()
+        self._rebind_pending = False
+        self._rebind_settle_index = None
         self.bind_route(route)
 
     @staticmethod
@@ -81,19 +86,64 @@ class RouteModeCompletionTracker:
                 raise ValueError("mode completion resume index is outside route")
             if (self.current_mode in self.started_modes and
                     int(route[mapped_index].mode) != self.current_mode):
-                self.invalid_modes.add(self.current_mode)
-                self.last_error = "BRANCH_REMAP_MODE_JUMP"
+                # A branch decision and the route-controller timer are
+                # asynchronous.  The remap can therefore land on the first
+                # point of the immediate successor after the controller has
+                # already crossed the selected parking exit.  Preserve the
+                # old mode until the next healthy observation so ``observe``
+                # can validate and emit the normal transition.  Any jump
+                # beyond the immediate successor remains invalid.
+                try:
+                    position = order.index(self.current_mode)
+                    successor = (order[position+1]
+                                 if position+1 < len(order) else None)
+                except ValueError:
+                    successor = None
+                if int(route[mapped_index].mode) != successor:
+                    self.invalid_modes.add(self.current_mode)
+                    self.last_error = "BRANCH_REMAP_MODE_JUMP"
         elif self.current_mode in self.started_modes:
-            self.invalid_modes.add(self.current_mode)
-            self.last_error = "BRANCH_REMAP_PROGRESS_LOST"
+            # The parking branches intentionally overlap.  A valid late A/B
+            # commit can have no exact point/direction equivalent even though
+            # it stays inside the same contiguous mode.  Re-anchor at that
+            # mode's first point (never ahead of observed progress), then let
+            # the next controller observation prove healthy forward motion.
+            # Missing the current mode entirely is still a hard remap error.
+            boundary = boundaries.get(self.current_mode)
+            if boundary is None:
+                self.invalid_modes.add(self.current_mode)
+                self.last_error = "BRANCH_REMAP_PROGRESS_LOST"
+            else:
+                mapped_index = boundary.first_index
         self._route = route
         self._boundaries = boundaries
         self._mode_order = order
+        self._transition_thresholds = {}
+        for mode, boundary in boundaries.items():
+            terminal_segment = route[boundary.last_index].segment_id
+            terminal_first = boundary.last_index
+            while (terminal_first > boundary.first_index and
+                   route[terminal_first-1].segment_id == terminal_segment):
+                terminal_first -= 1
+            # Parking modes 7/10 span a common approach and a terminal branch.
+            # Their overlapping Ackermann geometry may move the accepted
+            # cursor directly into the consecutive successor. The healthy,
+            # non-backtracking successor crossing is route-only evidence; all
+            # other modes retain the strict final-point threshold so an
+            # arbitrary cursor jump can never complete them.
+            self._transition_thresholds[mode] = (
+                boundary.first_index if mode in (7, 10) and
+                terminal_first > boundary.first_index else
+                max(boundary.first_index, boundary.last_index-1))
         for mode in order:
             self.route_complete.setdefault(mode, False)
             self.mission_complete.setdefault(mode, False)
             self.mode_complete.setdefault(mode, False)
         self.last_route_index = mapped_index
+        self._rebind_pending = bool(
+            self.current_mode in self.started_modes and
+            self.current_mode not in self.invalid_modes)
+        self._rebind_settle_index = None
 
     def mark_mission_complete(self, mode):
         """Record future mission evidence without changing ROUTE_ONLY policy."""
@@ -144,6 +194,12 @@ class RouteModeCompletionTracker:
         one waypoint between controller samples.  The final mode additionally
         requires the follower's existing ``ROUTE_COMPLETE`` result.
         """
+        # Completion is terminal.  The controller keeps publishing its final
+        # stopped observation, and recovery state may subsequently change;
+        # neither can invalidate route evidence already accepted for all
+        # modes.
+        if self.course_complete:
+            return ()
         events = []
         index = int(route_index)
         if not 0 <= index < len(self._route):
@@ -155,11 +211,17 @@ class RouteModeCompletionTracker:
         self.last_segment_id = str(point.segment_id)
         self.last_point_index = int(point.point_index)
 
-        backtrack = (self.last_route_index is not None and
+        rebind_observation = self._rebind_pending
+        backtrack = (not rebind_observation and
+                     self.last_route_index is not None and
                      index < self.last_route_index)
         if backtrack:
             self._invalidate(self.current_mode, "CURSOR_BACKTRACK")
-        if failure_reason:
+        # Readiness loss pauses evidence collection for this observation.  It
+        # is not proof that route progress itself failed, and a later fresh,
+        # healthy observation may continue from the unchanged high-water
+        # cursor. Geometry/controller failures remain terminal for the mode.
+        if failure_reason and failure_reason not in TRANSIENT_READINESS_FAILURES:
             self._invalidate(self.current_mode, failure_reason)
 
         eligible = bool(healthy) and not stopped and not failure_reason
@@ -178,8 +240,7 @@ class RouteModeCompletionTracker:
                 not backtrack and eligible and
                 expected_mode == observed_mode and boundary is not None and
                 old_last_index is not None and
-                old_last_index >= max(boundary.first_index,
-                                      boundary.last_index-1) and
+                old_last_index >= self._transition_thresholds[old_mode] and
                 index >= self._boundaries[observed_mode].first_index and
                 old_mode not in self.invalid_modes)
             self.previous_mode = old_mode
@@ -195,10 +256,20 @@ class RouteModeCompletionTracker:
             if eligible:
                 self._start(observed_mode, events)
             self.last_route_index = index
+            self._rebind_pending = False
+            self._rebind_settle_index = None
         else:
             if eligible:
                 self._start(observed_mode, events)
-            if self.last_route_index is None or index > self.last_route_index:
+            if rebind_observation:
+                self.last_route_index = index
+                if (self._rebind_settle_index is None or
+                        index < self._rebind_settle_index):
+                    self._rebind_settle_index = index
+                elif index > self._rebind_settle_index:
+                    self._rebind_pending = False
+                    self._rebind_settle_index = None
+            elif self.last_route_index is None or index > self.last_route_index:
                 self.last_route_index = index
 
         final_mode = self._mode_order[-1]

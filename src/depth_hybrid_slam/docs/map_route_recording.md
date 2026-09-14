@@ -12,7 +12,7 @@
   (`geometry_msgs/msg/PoseWithCovarianceStamped`)
 - state: `/depth_slam/localization/state` (`std_msgs/msg/String`)
 - confidence: `/depth_slam/localization/confidence` (`std_msgs/msg/Float32`)
-- 선택적 direction 입력: `/slam_drive` (`std_msgs/msg/Float32`).
+- 선택적 direction 입력: `/cmd_drive` (`std_msgs/msg/Float32`).
   `use_drive_command_direction:=false`가 기본이며, 켤 때도 구독만 한다.
 - visualization: `/depth_slam/recorded_route/raw_path`,
   `/depth_slam/recorded_route/resampled_path` (`nav_msgs/msg/Path`, `map`)
@@ -110,12 +110,9 @@ ros2 topic hz /depth_slam/localization/pose
 ros2 topic echo /depth_slam/localization/state
 ros2 topic info /depth_slam/localization/pose -v
 ros2 node info /map_route_recorder
-ros2 topic info /slam_drive -v
+ros2 topic info /cmd_drive -v
 ros2 topic info /slam_wheel -v
-ros2 topic info /camera_drive -v
-ros2 topic info /camera_wheel -v
-ros2 topic info /gps_drive -v
-ros2 topic info /gps_wheel -v
+ros2 topic info /cmd_wheel -v
 ```
 
 `ros2 node info`의 recorder publisher에는 visualization/status와 ROS 기본

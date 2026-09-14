@@ -462,15 +462,9 @@ class ColorTrafficLightDetector:
                  default=None)
         selected, conflict = None, False
         if red is not None and go is not None:
-            if self._same_housing(red, go):
-                selected = red
-            elif abs(red.confidence-go.confidence) <= self.config.conflict_margin:
-                conflict = True
-            elif (red.confidence >= self.config.red_priority_confidence or
-                  red.confidence > go.confidence):
-                selected = red
-            else:
-                selected = go
+            # The competition contract treats any valid permitted green as
+            # GO even when a red/yellow lamp is co-active in the housing.
+            selected = go
         elif red is not None:
             selected = red
         elif go is not None:

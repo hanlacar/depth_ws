@@ -23,7 +23,9 @@ class YellowLineDepthNode(Node):
         self.valid_pub = self.create_publisher(Bool, "/perception/yellow_line_distance_valid", 10)
         self.side_pub = self.create_publisher(Int8, "/perception/yellow_line_side", 10)
         self.create_subscription(Image, "/camera/yellow_line_mask", self.on_mask, qos_profile_sensor_data)
-        self.create_subscription(Image, "/camera/depth/image_raw", self.on_depth, qos_profile_sensor_data)
+        self.create_subscription(
+            Image, "/camera/aligned_depth_to_color/image_raw", self.on_depth,
+            qos_profile_sensor_data)
 
     def on_mask(self, msg):
         try:

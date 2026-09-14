@@ -66,6 +66,32 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def forward_tangent_yaw(points, maximum_points=5, minimum_baseline_m=0.30):
+    """Estimate an initial forward tangent from 2-5 consecutive points."""
+    route = tuple(points)
+    if not route:
+        raise ValueError("initial tangent requires route points")
+    first = route[0]
+    if int(first.direction) <= 0:
+        raise ValueError("initial tangent requires a forward route point")
+    endpoint = None
+    used = 1
+    for point in route[1:]:
+        if used >= int(maximum_points) or int(point.direction) <= 0 or \
+                int(point.mode) != int(first.mode):
+            break
+        if math.hypot(point.x-first.x, point.y-first.y) <= 1.0e-9:
+            continue
+        endpoint = point
+        used += 1
+        if math.hypot(point.x-first.x, point.y-first.y) >= float(
+                minimum_baseline_m):
+            break
+    if endpoint is None:
+        raise ValueError("initial tangent requires two distinct forward points")
+    return math.atan2(endpoint.y-first.y, endpoint.x-first.x)
+
+
 def verify_route_binding(route_path, map_path, metadata_path=""):
     """Verify hashes, output frame, and independently approved alignment."""
     route, database = Path(route_path), Path(map_path)

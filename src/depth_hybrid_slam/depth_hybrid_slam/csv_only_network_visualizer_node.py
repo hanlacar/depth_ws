@@ -37,7 +37,7 @@ class CsvOnlyNetworkVisualizerNode(Node):
         if not display_metadata and display_path:
             display_metadata = str(Path(display_path).with_suffix(".metadata.yaml"))
 
-        # These coordinates intentionally match the follower/virtual vehicle.
+        # These coordinates intentionally match the follower route.
         # The piecewise VSLAM overlay is audited below but is not substituted
         # into this CSV-only loop, which would detach the network from /odom.
         self.segments = csv_only_network_segments(route_path, metadata_path)

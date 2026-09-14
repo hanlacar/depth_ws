@@ -63,6 +63,8 @@ class SourceObservation:
     sequence: int
     class_name: str = ""
     bbox: tuple | None = None
+    red_present: bool = False
+    green_present: bool = False
 
 
 @dataclass(frozen=True)
@@ -129,12 +131,15 @@ def normalize_yolo_document(document, received_at, sequence):
         return SourceObservation("YOLO", "UNKNOWN", "UNKNOWN", 0.0, stamp,
                                  float(received_at), int(sequence)), "NO_YOLO_LIGHT"
     families = {item[2][0] for item in candidates}
+    red_present = "R" in families
+    green_present = "G" in families
+    result_reason = "OK"
     if len(families) > 1:
-        confidence = max(item[0] for item in candidates)
-        names = "+".join(sorted({item[1] for item in candidates}))
-        return SourceObservation("YOLO", "UNKNOWN", "UNKNOWN", confidence,
-                                 stamp, float(received_at), int(sequence), names), \
-            "YOLO_INTERNAL_RG_CONFLICT"
+        # Competition permission policy is intentionally green-first. Keep
+        # detailed green evidence instead of collapsing co-active R/G to R or
+        # UNKNOWN before the mode-aware mission gate can consume it.
+        candidates = [item for item in candidates if item[2][0] == "G"]
+        result_reason = "YOLO_GREEN_PRIORITY_OVER_RED"
     candidates.sort(reverse=True, key=lambda item: item[0])
     confidence, name, (state, aspect), bbox = candidates[0]
     detailed = {item[2][1] for item in candidates if item[2][1] != "UNKNOWN"}
@@ -148,7 +153,9 @@ def normalize_yolo_document(document, received_at, sequence):
                              if item[2][1] == aspect), key=lambda item: item[0])
         confidence, name, bbox = detailed_item[0], detailed_item[1], detailed_item[3]
     return SourceObservation("YOLO", state, aspect, confidence, stamp,
-                             float(received_at), int(sequence), name, bbox), "OK"
+                             float(received_at), int(sequence), name, bbox,
+                             red_present, green_present), \
+        result_reason
 
 
 def normalize_rgb_diagnostics(document, received_at, sequence):
@@ -166,9 +173,13 @@ def normalize_rgb_diagnostics(document, received_at, sequence):
     aspect_state = state_for_aspect(aspect)
     if aspect != "UNKNOWN" and aspect_state != state:
         return None, "RGB_STATE_ASPECT_MISMATCH"
+    red_present = bool(document.get("red_candidates", 0) or
+                       document.get("yellow_candidates", 0))
+    green_present = bool(document.get("green_candidates", 0))
     return SourceObservation(
         "RGB", state, aspect, confidence, stamp, float(received_at),
-        int(sequence), bbox=_finite_bbox(document.get("selected_bbox"))), "OK"
+        int(sequence), bbox=_finite_bbox(document.get("selected_bbox")),
+        red_present=red_present, green_present=green_present), "OK"
 
 
 def _bbox_iou(first, second):
@@ -253,12 +264,28 @@ class TrafficLightFusion:
                 "agree": False, "conflict": False, "single": False,
                 "confidence_gap": (None if self.yolo is None or self.rgb is None
                     else abs(self.yolo.confidence-self.rgb.confidence)),
-                "position_match": None}
+                "position_match": None,
+                "valid_red_present": bool(
+                    (yr and (self.yolo.state == "R" or
+                             self.yolo.red_present)) or
+                    (rr and (self.rgb.state == "R" or
+                             self.rgb.red_present))),
+                "valid_green_present": bool(
+                    (yr and (self.yolo.state == "G" or
+                             self.yolo.green_present)) or
+                    (rr and (self.rgb.state == "G" or
+                             self.rgb.green_present))),
+                "green_priority": False}
+        meta["green_priority"] = bool(
+            meta["valid_red_present"] and meta["valid_green_present"])
         if paired:
             yolo, rgb = self.yolo, self.rgb
             if yolo.state != rgb.state:
-                meta["conflict"] = True
-                return None, "CONFLICT", ("PAIR", yolo.sequence, rgb.sequence), meta
+                green = yolo if yolo.state == "G" else rgb
+                meta["green_priority"] = True
+                return ("G", green.aspect, green.confidence, "PAIR"), \
+                    "GREEN_PRIORITY_OVER_RED", \
+                    ("PAIR", yolo.sequence, rgb.sequence), meta
             position = positions_match(yolo.bbox, rgb.bbox, self.config)
             meta["position_match"] = position
             if position is False:
@@ -373,14 +400,16 @@ class TrafficLightFusion:
             "sources_agree": meta["agree"],
             "sources_conflict": meta["conflict"],
             "single_source_used": meta["single"],
+            "valid_red_present": meta["valid_red_present"],
+            "valid_green_present": meta["valid_green_present"],
+            "green_priority_over_red": meta["green_priority"],
             "confirmation_count": self.pending_count,
             "rejection_reasons": dict(self.rejections),
             "route_mode": route_mode,
             "rgb_green_down_verified": bool(
                 state == "G" and aspect == "GREEN_DOWN" and rgb is not None and
                 meta["rgb_fresh"] and meta["rgb_reliable"] and
-                rgb.aspect == "GREEN_DOWN" and
-                not (meta["yolo_reliable"] and yolo.state == "R")),
+                rgb.aspect == "GREEN_DOWN"),
         }
         return FusionDecision(state, aspect, float(confidence), reason,
                               diagnostics)

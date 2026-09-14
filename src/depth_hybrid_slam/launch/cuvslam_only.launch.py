@@ -55,11 +55,9 @@ def generate_launch_description():
         package="tf2_ros", executable="static_transform_publisher",
         name="base_to_d456_mount",
         condition=IfCondition(LaunchConfiguration("publish_camera_mount_tf")),
-        # Latest MCU CURRENT_VALUES: base_link is at axle height and camera_link
-        # is 0.835 m above it. The ground-plane projection's 0.970 m optical
-        # height is 0.835 + the 0.135 m base_link-to-ground offset.
-        arguments=["--x", "0.015", "--y", "0", "--z", "0.835",
-                   "--roll", "0", "--pitch", "0.0872665",
+        # Canonical commissioned rear-axle base_link mount.
+        arguments=["--x", "0.32", "--y", "0", "--z", "0.85",
+                   "--roll", "0", "--pitch", "-0.08726646259971647",
                    "--yaw", "0", "--frame-id", "base_link",
                    "--child-frame-id", "camera_link"],
     )

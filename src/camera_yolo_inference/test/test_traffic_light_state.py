@@ -60,13 +60,13 @@ class TrafficLightStateTest(unittest.TestCase):
         self.assertEqual(brief_loss.state, "R")
         self.assertEqual(timed_out.state, UNKNOWN)
 
-    def test_equal_red_green_conflict_is_unknown(self):
+    def test_equal_red_green_uses_green_priority(self):
         state_filter = TrafficLightFilter()
         conflict = [detection(1, 0.9), detection(3, 0.9)]
         for now in (1.0, 1.1, 1.2):
             decision = state_filter.update(conflict, ROLE_IDS, now)
-        self.assertEqual(decision.state, UNKNOWN)
-        self.assertEqual(decision.reason, "detection_timeout")
+        self.assertEqual(decision.state, "G")
+        self.assertEqual(decision.reason, "state_confirmed")
 
     def test_conflict_keeps_recent_confirmed_state_when_scores_are_close(self):
         state_filter = TrafficLightFilter()
@@ -76,16 +76,16 @@ class TrafficLightStateTest(unittest.TestCase):
             [detection(1, 0.91), detection(3, 0.90)], ROLE_IDS, 1.3)
         self.assertEqual(conflict.state, "G")
         self.assertEqual(conflict.candidate, "G")
-        self.assertEqual(conflict.reason, "conflict_keep_confirmed")
+        self.assertEqual(conflict.reason, "green_priority_over_red")
 
-    def test_clear_confidence_winner_still_requires_confirmation(self):
+    def test_green_priority_still_requires_confirmation(self):
         state_filter = TrafficLightFilter()
         conflict = [detection(1, 0.95), detection(3, 0.55)]
         for now in (1.0, 1.1):
             decision = state_filter.update(conflict, ROLE_IDS, now)
             self.assertEqual(decision.state, UNKNOWN)
         decision = state_filter.update(conflict, ROLE_IDS, 1.2)
-        self.assertEqual(decision.state, "R")
+        self.assertEqual(decision.state, "G")
 
     def test_nan_inf_and_low_confidence_are_ignored_without_crash(self):
         instances = [
@@ -99,7 +99,7 @@ class TrafficLightStateTest(unittest.TestCase):
         self.assertEqual(evidences, ())
         self.assertEqual(decision.state, UNKNOWN)
 
-    def test_mask_area_breaks_close_confidence_conflict(self):
+    def test_green_priority_is_independent_of_mask_area_score(self):
         config = TrafficLightConfig(
             traffic_light_confirmation_frames=1,
             traffic_light_conflict_score_margin=0.05,
@@ -108,7 +108,7 @@ class TrafficLightStateTest(unittest.TestCase):
         decision = state_filter.update(
             [detection(1, 0.80, area=25), detection(3, 0.82, area=2)],
             ROLE_IDS, 1.0)
-        self.assertEqual(decision.state, "R")
+        self.assertEqual(decision.state, "G")
 
     def test_output_contract_and_invalid_parameters(self):
         self.assertEqual(PUBLISHED_STATES, frozenset(("R", "G", UNKNOWN)))

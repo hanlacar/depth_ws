@@ -41,7 +41,7 @@ camera_mission_perception_node:
     imu_reference_pitch_deg: 0.0
     # Stop-line points are transformed at their source timestamp into the
     # MCU-owned base_link, then front_axle_x=wheelbase/2 is subtracted.  No
-    # front_axle TF is published or required by camera_ws.
+    # front_axle TF is published or required by the integrated camera stack.
     publish_stop_line_tf: true
     debug_overlay_enabled: false
     publish_rate_hz: 20.0

@@ -31,7 +31,7 @@ class Capture(Node):
         reliable = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         best = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(Image, "/camera/image_raw", self.raw, best)
-        self.create_subscription(Image, "/perception/detections_image",
+        self.create_subscription(Image, "/camera/debug/annotated",
                                  lambda m: self.color(m, "detections_image"), reliable)
         self.create_subscription(Image, "/camera/perception_overlay_image",
                                  lambda m: self.color(m, "overlay"), reliable)

@@ -18,9 +18,18 @@ class SafetyNode(Node):
         super().__init__("depth_safety_monitor")
         for name, default in (("enable_control", False), ("dry_run", True),
                               ("user_approved", False), ("map_route_match", False),
-                              ("within_map", False)):
+                              ("within_map", False),
+                              ("require_tracking", True),
+                              ("require_map_route_match", True),
+                              ("require_within_map", True)):
             self.declare_parameter(name, default)
-        self.core = SafetyGate()
+        self.core = SafetyGate(
+            require_tracking=bool(
+                self.get_parameter("require_tracking").value),
+            require_map_route_match=bool(
+                self.get_parameter("require_map_route_match").value),
+            require_within_map=bool(
+                self.get_parameter("require_within_map").value))
         self.value = SafetyInputs(now=time.monotonic())
         self.value.enable_control = bool(self.get_parameter("enable_control").value)
         self.value.dry_run = bool(self.get_parameter("dry_run").value)
@@ -28,7 +37,7 @@ class SafetyNode(Node):
         self.value.map_route_match = bool(self.get_parameter("map_route_match").value)
         self.value.within_map = bool(self.get_parameter("within_map").value)
         self.mission_reason = ""
-        self.create_subscription(Bool, "/depth_slam/cuvslam/tracking_valid",
+        self.create_subscription(Bool, "/depth_slam/localization/tracking_valid",
                                  lambda m: setattr(self.value, "tracking_valid", bool(m.data)), 10)
         self.create_subscription(String, "/depth_slam/localization/state",
                                  lambda m: setattr(self.value, "localization_state", m.data), 10)

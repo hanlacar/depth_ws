@@ -1,0 +1,360 @@
+"""Mode 5/7/9/10/11 state machines without ROS dependencies."""
+
+from dataclasses import dataclass
+import math
+import time
+
+
+FAILURES = frozenset(("PLANNER_GIVE_UP", "NO_VALID_DETOUR",
+                      "NO_FEASIBLE_DETOUR", "PATH_ABORT"))
+
+
+@dataclass(frozen=True)
+class ManeuverDecision:
+    state: str
+    owner: str
+    stop: bool
+    drive: float = 0.0
+    wheel: int = 0
+    branch: str = ""
+
+
+class Mode5Avoidance:
+    def __init__(self):
+        self.state = "CSV_TRACKING"
+
+    def reset(self):
+        self.state = "CSV_TRACKING"
+
+    def update(self, avoidance_required=False, hard_obstacle=False,
+               planner_state="IDLE", path_valid=False,
+               path_complete=False, rejoin_valid=False, local_wheel=0):
+        failure = str(planner_state) in FAILURES
+        if failure:
+            if hard_obstacle:
+                self.state = "PLANNER_FAILED_HARD_STOP"
+                return ManeuverDecision(self.state, "SAFETY", True)
+            self.state = "CSV_TRACKING"
+            return ManeuverDecision("PLANNER_FAILED_CSV_FALLBACK", "CSV", False)
+        # Keep a failed hard stop fail-safe while a current hazard remains,
+        # but do not latch a historical planner failure after the ROI clears.
+        if self.state == "PLANNER_FAILED_HARD_STOP" and not hard_obstacle:
+            self.state = ("STOP_FOR_PLANNING" if avoidance_required else
+                          "CSV_TRACKING")
+        if self.state == "CSV_TRACKING" and avoidance_required:
+            self.state = "STOP_FOR_PLANNING"
+        elif (self.state == "STOP_FOR_PLANNING" and
+              not avoidance_required and not hard_obstacle):
+            self.state = "CSV_TRACKING"
+        elif self.state == "STOP_FOR_PLANNING" and path_valid:
+            self.state = "LIDAR_PATH_TRACKING"
+        elif self.state == "LIDAR_PATH_TRACKING" and path_complete:
+            self.state = "CSV_REJOIN"
+        elif self.state == "CSV_REJOIN" and rejoin_valid:
+            self.state = "CSV_TRACKING"
+        if self.state == "CSV_TRACKING":
+            return ManeuverDecision(self.state, "CSV", False)
+        if self.state == "STOP_FOR_PLANNING":
+            return ManeuverDecision(self.state, "LIDAR", True)
+        if self.state == "LIDAR_PATH_TRACKING":
+            wheel = int(local_wheel)
+            if abs(wheel) > 22:
+                self.state = "PLANNER_FAILED_HARD_STOP"
+                return ManeuverDecision(self.state, "SAFETY", True)
+            return ManeuverDecision(self.state, "LIDAR", False, 1.0, wheel)
+        return ManeuverDecision(self.state, "LIDAR", True)
+
+
+def select_parking_branch(a_free, b_free):
+    if bool(a_free):
+        return "A"
+    if bool(b_free):
+        return "B"
+    return "A"
+
+
+def parking_decision(mode, a_free, b_free, path_valid,
+                     planner_state="IDLE", hard_obstacle=False):
+    branch = select_parking_branch(a_free, b_free)
+    prefix = "T" if int(mode) == 7 else "V"
+    if hard_obstacle:
+        return ManeuverDecision("PARKING_HARD_STOP", "SAFETY", True,
+                                branch=branch)
+    if str(planner_state) in FAILURES:
+        return ManeuverDecision(prefix+"_CSV_FALLBACK", "CSV", False,
+                                branch=branch)
+    if path_valid:
+        return ManeuverDecision(prefix+"_LIDAR_PATH", "LIDAR", False,
+                                -1.0, 0, branch)
+    return ManeuverDecision(prefix+"_SELECT_"+branch, "CSV", False,
+                            branch=branch)
+
+
+class Mode9Emergency:
+    def __init__(self, steering_tolerance_deg=2.0,
+                 high_speed_steering_deg=5.0):
+        self.tolerance = float(steering_tolerance_deg)
+        self.high_speed_steering_deg = float(high_speed_steering_deg)
+        self.state = "ACCEL_TRACKING"
+
+    def reset(self):
+        self.state = "ACCEL_TRACKING"
+
+    def update(self, hard_obstacle, steering_deg=0.0,
+               rejoin_valid=False, acceleration_allowed=True):
+        if hard_obstacle:
+            self.state = "EMERGENCY_STOP"
+        elif self.state == "EMERGENCY_STOP":
+            self.state = "STEERING_CENTERING"
+        elif self.state == "STEERING_CENTERING" and \
+                abs(float(steering_deg)) <= self.tolerance:
+            self.state = "CSV_REJOIN"
+        elif self.state == "CSV_REJOIN" and rejoin_valid:
+            self.state = "ACCEL_TRACKING"
+        if self.state in ("EMERGENCY_STOP", "STEERING_CENTERING"):
+            return ManeuverDecision(self.state, "SAFETY", True)
+        if self.state == "CSV_REJOIN":
+            return ManeuverDecision(self.state, "CSV", False, 1.0, 0)
+        high_speed = (bool(acceleration_allowed) and
+                      abs(float(steering_deg)) <= self.high_speed_steering_deg)
+        return ManeuverDecision(
+            self.state, "CSV", False, 3.0 if high_speed else 1.0)
+
+
+class Mode9EmergencyLatch:
+    """Release a confirmed Mode 9 stop only after continuously clear scans."""
+
+    def __init__(self, clear_distance_m=1.0, clear_duration_s=1.0):
+        self.clear_distance_m = float(clear_distance_m)
+        self.clear_duration_s = float(clear_duration_s)
+        if self.clear_distance_m < 1.0 or self.clear_duration_s <= 0.0:
+            raise ValueError("invalid Mode 9 emergency clear policy")
+        self.latched = False
+        self.clear_since = None
+
+    def reset(self):
+        self.latched = False
+        self.clear_since = None
+
+    def update(self, confirmed_hard, nearest_m, scan_fresh, new_scan,
+               now=None):
+        timestamp = time.monotonic() if now is None else float(now)
+        if bool(confirmed_hard) and bool(scan_fresh):
+            self.latched = True
+            self.clear_since = None
+            return True
+        if not self.latched:
+            return False
+        # A stale stream or a timer tick without a new scan is never evidence
+        # that the obstacle was removed.
+        if not bool(scan_fresh):
+            self.clear_since = None
+            return True
+        if not bool(new_scan):
+            return True
+        distance = math.inf if nearest_m is None else float(nearest_m)
+        clear = (not math.isfinite(distance) or
+                 distance > self.clear_distance_m)
+        if not clear:
+            self.clear_since = None
+            return True
+        if self.clear_since is None:
+            self.clear_since = timestamp
+            return True
+        if timestamp-self.clear_since >= self.clear_duration_s:
+            self.reset()
+        return self.latched
+
+
+class ParkingManeuver:
+    """Mode 7/10 selection, temporary tracking and CSV fallback."""
+
+    def __init__(self, mode, direction_hold_s=3.0, rejoin_hold_s=3.0):
+        self.mode = int(mode)
+        self.direction_hold_s = max(3.0, float(direction_hold_s))
+        self.rejoin_hold_s = max(3.0, float(rejoin_hold_s))
+        self.state = "CSV_APPROACH"
+        self.direction_hold_started_at = None
+        self.rejoin_started_at = None
+
+    def reset(self):
+        self.state = "CSV_APPROACH"
+        self.direction_hold_started_at = None
+        self.rejoin_started_at = None
+
+    def update(self, branch, path_valid=False, path_complete=False,
+               planner_state="IDLE", hard_obstacle=False,
+               drive=-1.0, wheel=0, rejoin_valid=False, now=None):
+        timestamp = time.monotonic() if now is None else float(now)
+        prefix = "T" if self.mode == 7 else "V"
+        if hard_obstacle:
+            return ManeuverDecision(prefix+"_HARD_STOP", "SAFETY", True,
+                                    branch=branch)
+        if str(planner_state) in FAILURES:
+            self.state = "CSV_FALLBACK"
+            return ManeuverDecision(prefix+"_CSV_FALLBACK", "CSV", False,
+                                    branch=branch)
+        if self.state == "CSV_APPROACH" and path_valid:
+            # Acquire exclusive zero-speed ownership before fixing the local
+            # path origin. This preserves the forward-to-reverse contract and
+            # prevents one last CSV command from moving the vehicle after the
+            # reverse plan has been anchored.
+            self.state = "DIRECTION_CHANGE_HOLD"
+            self.direction_hold_started_at = timestamp
+        elif (self.state == "DIRECTION_CHANGE_HOLD" and path_valid and
+              self.direction_hold_started_at is not None and
+              timestamp-self.direction_hold_started_at >=
+              self.direction_hold_s):
+            self.state = "LIDAR_PATH_TRACKING"
+        if self.state == "LIDAR_PATH_TRACKING" and path_complete:
+            # Keep exclusive LiDAR ownership at zero speed until the strict
+            # same-segment, forward-window validator confirms the CSV handoff.
+            self.state = "CSV_REJOIN"
+            self.rejoin_started_at = timestamp
+        elif (self.state == "CSV_REJOIN" and rejoin_valid and
+              self.rejoin_started_at is not None and
+              timestamp-self.rejoin_started_at >= self.rejoin_hold_s):
+            self.state = "COMPLETE"
+        if self.state == "LIDAR_PATH_TRACKING":
+            wheel = int(wheel)
+            if abs(wheel) > 22:
+                self.state = "CSV_FALLBACK"
+                return ManeuverDecision(prefix+"_CSV_FALLBACK", "CSV", False,
+                                        branch=branch)
+            return ManeuverDecision(prefix+"_LIDAR_PATH", "LIDAR", False,
+                                    drive, wheel, branch)
+        if self.state == "DIRECTION_CHANGE_HOLD":
+            return ManeuverDecision(prefix+"_DIRECTION_CHANGE_HOLD",
+                                    "LIDAR", True, branch=branch)
+        if self.state == "CSV_REJOIN":
+            return ManeuverDecision(prefix+"_CSV_REJOIN", "LIDAR", True,
+                                    branch=branch)
+        return ManeuverDecision(prefix+"_"+self.state, "CSV", False,
+                                branch=branch)
+
+
+@dataclass(frozen=True)
+class RejoinCandidate:
+    segment: str
+    index: int
+    distance_m: float
+    heading_error_deg: float
+    required_steering_deg: float
+    direction: int
+    road_valid: bool = True
+
+
+def bounded_rejoin(candidates, active_segment, current_index,
+                   direction, forward_window=120, max_distance_m=0.8,
+                   max_heading_deg=35.0):
+    """Select only forward, same-segment/direction candidates."""
+    valid = []
+    for value in candidates:
+        if value.segment != active_segment:
+            continue
+        if value.index < int(current_index):
+            continue
+        if value.index > int(current_index)+int(forward_window):
+            continue
+        if int(value.direction) != int(direction):
+            continue
+        if value.distance_m > max_distance_m:
+            continue
+        if abs(value.heading_error_deg) > max_heading_deg:
+            continue
+        if abs(value.required_steering_deg) > 22.0 or not value.road_valid:
+            continue
+        valid.append(value)
+    return min(valid, key=lambda item: (item.distance_m, item.index),
+               default=None)
+
+
+def route_rejoin_candidates(route, active_segment, current_index, pose,
+                            forward_window=120, wheelbase_m=0.73,
+                            road_valid=True):
+    """Build steering-aware candidates only from the current forward segment."""
+    if float(wheelbase_m) != 0.73:
+        raise ValueError("rejoin must use wheelbase 0.73 m")
+    x, y, yaw = (float(value) for value in pose)
+    start = max(0, int(current_index))
+    stop = min(len(route), start+int(forward_window)+1)
+    output = []
+    for index in range(start, stop):
+        point = route[index]
+        if str(point.segment_id) != str(active_segment):
+            continue
+        # CSV yaw is the vehicle/body yaw for both longitudinal directions;
+        # direction is validated independently below.  Adding pi here would
+        # reject every legitimate reverse-to-reverse handoff.
+        travel_yaw = float(point.yaw)
+        heading = math.atan2(
+            math.sin(travel_yaw-yaw), math.cos(travel_yaw-yaw))
+        dx, dy = float(point.x)-x, float(point.y)-y
+        distance = math.hypot(dx, dy)
+        lateral = -math.sin(yaw)*dx+math.cos(yaw)*dy
+        steering = math.degrees(math.atan2(
+            2.0*wheelbase_m*lateral, max(distance*distance, 1.0e-6)))
+        output.append(RejoinCandidate(
+            str(point.segment_id), index, distance, math.degrees(heading),
+            steering, int(point.direction), bool(road_valid)))
+    return tuple(output)
+
+
+class Mode11ExitGate:
+    """Five-second A/B vote; default A and ignore late opposite signals."""
+
+    def __init__(self, hold_s=5.0, stale_s=0.5, confirmations=60,
+                 decision_ratio=0.75):
+        self.hold_s = max(5.0, float(hold_s))
+        self.stale_s = float(stale_s)
+        self.confirmations = max(1, int(confirmations))
+        self.decision_ratio = float(decision_ratio)
+        self.started_at = None
+        self.committed = None
+        self.commit_source = ""
+        self.last_signal = None
+        self.signal_at = None
+        self.count = 0
+        self.votes = {"A": 0, "B": 0, "UNKNOWN": 0}
+
+    def reset(self):
+        self.__init__(self.hold_s, self.stale_s, self.confirmations,
+                      self.decision_ratio)
+
+    def enter(self, now):
+        if self.started_at is None:
+            self.started_at = float(now)
+
+    def observe(self, signal, now):
+        if self.committed is not None:
+            return
+        value = str(signal).strip().upper()
+        value = value if value in ("1", "2", "A", "B") else "UNKNOWN"
+        if value == self.last_signal:
+            self.count += 1
+        else:
+            self.last_signal, self.count = value, 1
+        route = "A" if value in ("1", "A") else \
+            "B" if value in ("2", "B") else "UNKNOWN"
+        self.votes[route] += 1
+        self.signal_at = float(now)
+
+    def evaluate(self, now):
+        self.enter(now)
+        elapsed = float(now)-self.started_at
+        if self.committed is not None:
+            return ManeuverDecision("MODE11_COMMITTED", "CSV", False,
+                                    branch=self.committed)
+        if elapsed < self.hold_s:
+            return ManeuverDecision("MODE11_5S_HOLD", "MISSION", True)
+        fresh = (self.signal_at is not None and
+                 float(now)-self.signal_at <= self.stale_s)
+        valid = self.votes["A"]+self.votes["B"]
+        winner = "B" if self.votes["B"] > self.votes["A"] else "A"
+        confidence = self.votes[winner]/valid if valid else 0.0
+        confirmed = (fresh and valid >= self.confirmations and
+                     confidence >= self.decision_ratio)
+        self.committed = winner if confirmed else "A"
+        self.commit_source = "CAMERA" if confirmed else "DEFAULT"
+        return ManeuverDecision("MODE11_COMMIT_"+self.committed,
+                                "CSV", False, branch=self.committed)

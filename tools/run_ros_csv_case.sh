@@ -4,10 +4,8 @@ set -eo pipefail
 case_name="${1:-AAAA}"
 spawn_branch="${case_name:0:1}"
 domain_id="${2:-181}"
-speedup="${3:-10.0}"
-controller_hz="${4:-250.0}"
-vehicle_hz="${5:-250.0}"
-timeout_s="${6:-900.0}"
+controller_hz="${3:-100.0}"
+timeout_s="${4:-900.0}"
 if [[ ! "${case_name}" =~ ^[AB]{4}$ ]]; then
   echo "case must be exactly four A/B letters" >&2
   exit 2
@@ -23,8 +21,7 @@ export ROS_LOG_DIR="${log_dir}"
 
 ros2 launch depth_hybrid_slam prehardware_csv_only_closed_loop.launch.py \
   start_rviz:=false spawn_branch:="${spawn_branch}" \
-  simulation_speedup:="${speedup}" \
-  controller_hz:="${controller_hz}" vehicle_publish_hz:="${vehicle_hz}" \
+  controller_hz:="${controller_hz}" \
   >"${log_dir}/launch.stdout.log" 2>&1 &
 launch_pid=$!
 cleanup() {

@@ -1,6 +1,8 @@
-"""Self-contained depth_ws camera perception, mission, and command stack."""
+"""Self-contained D456 perception/advisory stack; never owns vehicle motion."""
 
+import math
 from pathlib import Path
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
@@ -8,6 +10,25 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+import yaml
+
+
+def _mount_tf(bringup):
+    """Build the sole base mount TF from the canonical calibration file."""
+    source = yaml.safe_load(
+        (bringup/"config"/"camera_mount.yaml").read_text(encoding="utf-8"))
+    mount = source["/**"]["ros__parameters"]["camera_mount"]
+    return Node(package="tf2_ros", executable="static_transform_publisher",
+                name="d456_base_mount_tf", arguments=[
+                    "--x", str(mount["position_x_m"]),
+                    "--y", str(mount["position_y_m"]),
+                    "--z", str(mount["height_z_m"]),
+                    "--roll", str(math.radians(mount["reference_roll_deg"])),
+                    "--pitch", str(math.radians(
+                        mount["reference_pitch_deg"])),
+                    "--yaw", str(math.radians(mount["reference_yaw_deg"])),
+                    "--frame-id", "base_link",
+                    "--child-frame-id", "camera_link"])
 
 
 def generate_launch_description():
@@ -31,15 +52,7 @@ def generate_launch_description():
             yolo/"launch"/"yolo_inference.launch.py")), launch_arguments={
                 "device": LaunchConfiguration("device"),
                 "require_cuda": LaunchConfiguration("require_cuda")}.items()),
-        Node(package="camera_navigation", executable="camera_image_path_node",
-             name="camera_image_path_node", parameters=[str(
-                 nav/"config"/"image_path.yaml")]),
-        Node(package="camera_navigation", executable="camera_metric_path_node",
-             name="camera_metric_path_node", parameters=[str(
-                 bringup/"config"/"camera_mount.yaml")]),
-        Node(package="camera_navigation", executable="camera_path_controller_node",
-             name="camera_path_controller_node", parameters=[str(
-                 nav/"config"/"camera_path_controller.yaml")]),
+        _mount_tf(bringup),
         Node(package="camera_navigation", executable="camera_mission_perception_node",
              name="camera_mission_perception_node", parameters=[str(
                  nav/"config"/"mission_perception.yaml")]),
@@ -49,10 +62,4 @@ def generate_launch_description():
         Node(package="camera_navigation", executable="traffic_light_fusion_node",
              name="traffic_light_fusion_node", parameters=[str(
                  nav/"config"/"traffic_light_fusion.yaml")]),
-        Node(package="camera_navigation", executable="camera_mission_decision_node",
-             name="camera_mission_decision_node", parameters=[str(
-                 nav/"config"/"mission_decision.yaml")]),
-        Node(package="camera_navigation", executable="camera_command_selector_node",
-             name="camera_command_selector_node", parameters=[str(
-                 nav/"config"/"camera_command_selector.yaml")]),
     ])

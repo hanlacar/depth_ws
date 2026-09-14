@@ -201,19 +201,19 @@ def test_low_confidence_candidate_is_unknown():
     assert result.rejection_reasons.get("low_confidence", 0) >= 1
 
 
-def test_red_green_similar_confidence_is_conflict_unknown(detector):
+def test_red_green_similar_confidence_is_green_priority(detector):
     image = circle((0, 0, 255), center=(280, 90))
     cv2.circle(image, (360, 90), 14, (0, 255, 0), -1, cv2.LINE_AA)
     result = detector.detect(image)
-    assert result.raw_state == "UNKNOWN" and result.conflict
+    assert result.raw_state == "G" and not result.conflict
 
 
-def test_same_housing_red_green_conflict_is_red_priority(detector):
+def test_same_housing_red_green_is_green_priority(detector):
     image = circle((0, 0, 255), center=(300, 90))
     cv2.circle(image, (340, 90), 14, (0, 255, 0), -1, cv2.LINE_AA)
     result = detector.detect(image)
-    assert result.raw_state == "R"
-    assert result.selected.color == "red"
+    assert result.raw_state == "G"
+    assert result.selected.color == "green"
 
 
 def candidate(state, confidence, bbox=(100, 40, 20, 20), color=None):
@@ -223,10 +223,10 @@ def candidate(state, confidence, bbox=(100, 40, 20, 20), color=None):
                      "LEFT_ARROW" if state == "G" else "CIRCLE", 0.1, 0.8)
 
 
-def test_high_confidence_red_has_priority_when_not_ambiguous(detector):
+def test_valid_green_has_priority_over_higher_confidence_red(detector):
     red, green = candidate("R", .94), candidate("G", .62, (200, 40, 20, 20))
     result = detector._resolve((red, green), {}, (0, 0, 640, 264))
-    assert result.raw_state == "R"
+    assert result.raw_state == "G"
 
 
 def test_confirmation_and_switch_require_multiple_frames():
