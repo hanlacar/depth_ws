@@ -23,13 +23,16 @@ class SafetyNode(Node):
                               ("require_map_route_match", True),
                               ("require_within_map", True)):
             self.declare_parameter(name, default)
+        self.declare_parameter("localization_mode", "VSLAM")
         self.core = SafetyGate(
             require_tracking=bool(
                 self.get_parameter("require_tracking").value),
             require_map_route_match=bool(
                 self.get_parameter("require_map_route_match").value),
             require_within_map=bool(
-                self.get_parameter("require_within_map").value))
+                self.get_parameter("require_within_map").value),
+            localization_mode=str(
+                self.get_parameter("localization_mode").value))
         self.value = SafetyInputs(now=time.monotonic())
         self.value.enable_control = bool(self.get_parameter("enable_control").value)
         self.value.dry_run = bool(self.get_parameter("dry_run").value)
@@ -86,6 +89,7 @@ class SafetyNode(Node):
             DiagnosticStatus.OK if decision.ready else DiagnosticStatus.ERROR,
             "READY" if decision.ready else "STOP_REQUIRED",
             (("reasons", ",".join(decision.reasons)),
+             ("localization_mode", self.core.localization_mode),
              ("control_enabled", self.value.enable_control),
              ("dry_run", self.value.dry_run)))]
         self.pub_diag.publish(diag)

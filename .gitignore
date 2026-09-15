@@ -4,6 +4,7 @@
 /maps/*
 !/maps/.gitkeep
 /bags/
+/rosbags/
 /isaac_ros_ws/
 *.db
 *.db-shm

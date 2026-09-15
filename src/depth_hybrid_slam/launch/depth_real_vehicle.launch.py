@@ -155,6 +155,8 @@ def _runtime(context):
                 "user_approved": approved, "require_tracking": True,
                 "require_map_route_match": False,
                 "require_within_map": False,
+                "localization_mode": (
+                    "VSLAM" if vslam_enabled else "ODOM_ONLY"),
             }]),
         Node(
             package="depth_hybrid_slam", executable="runtime_monitor",

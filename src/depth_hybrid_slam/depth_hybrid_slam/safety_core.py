@@ -9,7 +9,8 @@ class SafetyGate:
     def __init__(self, pose_timeout_s=0.15, controller_timeout_s=0.10,
                  min_confidence=0.7, max_cross_track_m=1.0,
                  max_heading_deg=80.0, require_tracking=True,
-                 require_map_route_match=True, require_within_map=True):
+                 require_map_route_match=True, require_within_map=True,
+                 localization_mode="VSLAM"):
         self.pose_timeout = float(pose_timeout_s)
         self.controller_timeout = float(controller_timeout_s)
         self.min_confidence = float(min_confidence)
@@ -18,6 +19,9 @@ class SafetyGate:
         self.require_tracking = bool(require_tracking)
         self.require_map_route_match = bool(require_map_route_match)
         self.require_within_map = bool(require_within_map)
+        self.localization_mode = str(localization_mode).strip().upper()
+        if self.localization_mode not in ("VSLAM", "ODOM_ONLY"):
+            raise ValueError("localization_mode must be VSLAM or ODOM_ONLY")
 
     def evaluate(self, value):
         reasons = []
@@ -25,7 +29,8 @@ class SafetyGate:
             reasons.append("LOCALIZATION_TRACKING_LOSS")
         if value.localization_state not in ("TRACKING", "RELOCALIZED"):
             reasons.append("LOCALIZATION_NOT_READY")
-        if value.localization_confidence < self.min_confidence:
+        if (self.localization_mode == "VSLAM" and
+                value.localization_confidence < self.min_confidence):
             reasons.append("LOW_LOCALIZATION_CONFIDENCE")
         if value.now-value.pose_stamp > self.pose_timeout:
             reasons.append("STALE_POSE")

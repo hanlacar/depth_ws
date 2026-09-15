@@ -141,6 +141,8 @@ class OdomLocalizationNode(Node):
         now = time.monotonic()
         self.pub_watchdog.publish(String(data=json.dumps({
             "runtime_state": "FAIL" if not valid else self.last_gate_state,
+            "localization_mode": (
+                "VSLAM" if self.vslam_enabled else "ODOM_ONLY"),
             "odom": "OK" if valid else "STALE",
             "odom_age_s": None if self.last_received is None else
             max(0.0, now-self.last_received),

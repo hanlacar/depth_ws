@@ -65,6 +65,7 @@ def test_production_launch_exposes_vslam_and_mode_range_controls():
     assert '"enable_vslam": vslam_enabled' in real
     assert '"start_mode": start_mode' in real
     assert '"end_mode": end_mode' in real
+    assert '"VSLAM" if vslam_enabled else "ODOM_ONLY"' in real
 
 
 def test_odom_only_disables_vslam_gate_subscription_and_runtime_watchdog():
@@ -77,6 +78,7 @@ def test_odom_only_disables_vslam_gate_subscription_and_runtime_watchdog():
     assert 'if self.vslam_enabled:' in localization
     assert '[LOCALIZATION] ODOM_ONLY - VSLAM DISABLED' in localization
     assert '[LOCALIZATION] ODOM+VSLAM' in localization
+    assert 'decision.use_vslam else 0.6' in localization
     assert '"vslam": ("DISABLED" if not self.vslam_enabled else' in localization
     assert 'if key == "vslam" and not self.vslam_enabled:' in monitor
     assert 'return "DISABLED"' in monitor
