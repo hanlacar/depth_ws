@@ -68,6 +68,11 @@ ros2 topic echo /cmd_wheel
 
 - 5번만: `start_mode:=5 end_mode:=5`
 - 3~7번: `start_mode:=3 end_mode:=7`
+- 1~2번 A/VSLAM 미사용:
+
+```bash
+ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=A start_mode:=1 end_mode:=2 enable_vslam:=false front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
+```
 
 ## rosbag
 

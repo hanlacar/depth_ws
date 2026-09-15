@@ -1,5 +1,5 @@
 from depth_hybrid_slam.command_arbiter_core import (
-    CommandCandidate, arbitrate)
+    CommandCandidate, arbitrate, safety_stop_reasons)
 from depth_hybrid_slam.models import SafetyInputs
 from depth_hybrid_slam.safety_core import SafetyGate
 
@@ -58,13 +58,42 @@ def test_vslam_mode_retains_confidence_threshold():
     assert gate.evaluate(ready(localization_confidence=0.7)).ready
 
 
-def test_camera_stale_falls_back_to_csv_when_safety_is_ready():
+def test_real_seg1_odom_only_camera_stale_falls_back_to_csv_drive_two():
+    segment = 1
+    mission_stop = False
+    branch_stop = False
+    lidar_hold = False
     safety = SafetyGate(localization_mode="ODOM_ONLY").evaluate(ready(
         localization_confidence=0.6))
+    reasons = safety_stop_reasons(
+        hard_emergency=False, odom_fresh=True, lidar_safety_fresh=True,
+        steering_fresh=True)
+    assert not reasons
     command = arbitrate(
         CommandCandidate(2.0, 0, True, True), CommandCandidate(),
-        hard_emergency=not safety.ready, mission_hold=False,
-        camera=CommandCandidate(0.0, 0, False, False))
+        hard_emergency=not safety.ready or bool(reasons),
+        mission_hold=mission_stop or branch_stop or lidar_hold,
+        mode=segment, camera=CommandCandidate(0.0, 0, False, False))
     assert command.owner == "CSV"
     assert command.state == "CSV_TRACKING"
     assert command.drive == 2.0
+
+
+def test_required_arbiter_freshness_and_emergency_still_stop():
+    cases = (
+        ({"odom_fresh": False}, "ODOM_STALE"),
+        ({"lidar_safety_fresh": False}, "LIDAR_STALE"),
+        ({"steering_fresh": False}, "STEERING_STALE"),
+        ({"hard_emergency": True}, "HARD_EMERGENCY"),
+    )
+    csv = CommandCandidate(2.0, 0, True, True)
+    for changes, expected in cases:
+        values = {"hard_emergency": False, "odom_fresh": True,
+                  "lidar_safety_fresh": True, "steering_fresh": True}
+        values.update(changes)
+        reasons = safety_stop_reasons(**values)
+        decision = arbitrate(csv, CommandCandidate(),
+                             hard_emergency=bool(reasons))
+        assert expected in reasons
+        assert decision.owner == "SAFETY"
+        assert decision.drive == 0.0

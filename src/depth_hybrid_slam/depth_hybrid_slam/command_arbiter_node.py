@@ -9,7 +9,7 @@ from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, Int32, String
 
 from .command_arbiter_core import (
-    arbitrate, CommandCandidate, OwnershipHandshake)
+    arbitrate, CommandCandidate, OwnershipHandshake, safety_stop_reasons)
 
 
 class CommandArbiterNode(Node):
@@ -30,6 +30,8 @@ class CommandArbiterNode(Node):
             "distance_slowdown": False, "steering_slowdown": False,
             "mode": -1, "steering": 0.0,
             "speed": 0.0,
+            "route_safety_state": "STOP_REQUIRED",
+            "route_safety_reason": "SAFETY_NOT_READY",
         }
         self.received = {}
         for kind, topic, key, cast in (
@@ -54,6 +56,9 @@ class CommandArbiterNode(Node):
             (Bool, "/depth_slam/mission/stop_required", "mission", bool),
             (Bool, "/depth_slam/route/branch_stop", "branch", bool),
             (Bool, "/depth_slam/lidar/hold", "lidar_hold", bool),
+            (String, "/depth_slam/safety/state", "route_safety_state", str),
+            (String, "/depth_slam/safety/stop_reason",
+             "route_safety_reason", str),
             (String, "/drive_mode", "mode", lambda value: int(str(value))),
             (Float32, "/mcu/steer_deg", "steering", float),
         ):
@@ -65,6 +70,7 @@ class CommandArbiterNode(Node):
             standstill_speed_mps=self.get_parameter(
                 "owner_standstill_speed_mps").value)
         self.last_transition = None
+        self.last_stop_reason = None
         self.drive_pub = self.create_publisher(Float32, "/cmd_drive", 10)
         self.wheel_pub = self.create_publisher(Int32, "/cmd_wheel", 10)
         self.state_pub = self.create_publisher(
@@ -128,10 +134,15 @@ class CommandArbiterNode(Node):
         # LiDAR, mission, and branch gates must each be fresh.
         odom_fresh = self._fresh(
             ("odom",), now, self.get_parameter("odom_timeout_s").value)
-        safety_stop = (self.values["hard"] or bool(self.conflicts) or
-                       not odom_fresh or
-                       not self._fresh(("hard", "distance_slowdown",
-                                        "steering_slowdown", "steering"), now))
+        lidar_safety_fresh = self._fresh(
+            ("hard", "distance_slowdown", "steering_slowdown"), now)
+        steering_fresh = self._fresh(("steering",), now)
+        safety_reasons = safety_stop_reasons(
+            hard_emergency=self.values["hard"], odom_fresh=odom_fresh,
+            lidar_safety_fresh=lidar_safety_fresh,
+            steering_fresh=steering_fresh,
+            publisher_conflict=bool(self.conflicts))
+        safety_stop = bool(safety_reasons)
         gated_stop = (
             self.values["mission"] or self.values["branch"] or
             self.values["lidar_hold"] or
@@ -167,12 +178,29 @@ class CommandArbiterNode(Node):
         self.drive_pub.publish(Float32(data=decision.drive))
         self.wheel_pub.publish(Int32(data=decision.wheel))
         self.state_pub.publish(String(data=decision.state))
-        self.owner_pub.publish(String(data=(
+        published_owner = (
             "STOP" if decision.drive == 0.0 and decision.owner not in
-            ("CSV", "CAMERA", "LIDAR", "PARKING") else decision.owner)))
+            ("CSV", "CAMERA", "LIDAR", "PARKING") else decision.owner)
+        self.owner_pub.publish(String(data=published_owner))
+        stop_reason = ""
+        if published_owner == "STOP":
+            stop_reason = ",".join(safety_reasons)
+            if (not stop_reason and
+                    self._fresh(("route_safety_state",
+                                 "route_safety_reason"), now) and
+                    self.values["route_safety_state"] != "READY"):
+                stop_reason = self.values["route_safety_reason"]
+            stop_reason = stop_reason or decision.state
+        if stop_reason != self.last_stop_reason:
+            if stop_reason:
+                self.get_logger().warning("[STOP] "+stop_reason)
+            elif self.last_stop_reason:
+                self.get_logger().info("[STOP] CLEARED")
+            self.last_stop_reason = stop_reason
         self.diag_pub.publish(String(data=json.dumps({
             "owner": decision.owner, "state": decision.state,
             "drive": decision.drive, "wheel": decision.wheel,
+            "stop_reason": stop_reason,
             "publisher_conflicts": self.conflicts,
             "active_owner": self.handshake.owner,
             "pending_owner": self.handshake.pending_owner,

@@ -79,6 +79,7 @@ def test_odom_only_disables_vslam_gate_subscription_and_runtime_watchdog():
     assert '[LOCALIZATION] ODOM_ONLY - VSLAM DISABLED' in localization
     assert '[LOCALIZATION] ODOM+VSLAM' in localization
     assert 'decision.use_vslam else 0.6' in localization
+    assert 'if not source or child != expected_child:' in localization
     assert '"vslam": ("DISABLED" if not self.vslam_enabled else' in localization
     assert 'if key == "vslam" and not self.vslam_enabled:' in monitor
     assert 'return "DISABLED"' in monitor
@@ -122,6 +123,22 @@ def test_only_arbiter_publishes_final_drive_and_wheel():
     assert 'create_subscription(Int32, "/cmd_wheel"' in bridge
     assert 'create_publisher(Float32, "/cmd_drive"' not in bridge
     assert 'create_publisher(Int32, "/cmd_wheel"' not in bridge
+
+
+def test_stop_reason_topics_and_transition_only_terminal_logs_remain_visible():
+    arbiter = (PACKAGE/"depth_hybrid_slam"/
+               "command_arbiter_node.py").read_text(encoding="utf-8")
+    safety = (PACKAGE/"depth_hybrid_slam"/
+              "safety_node.py").read_text(encoding="utf-8")
+    assert '"/depth_slam/safety/state"' in arbiter
+    assert '"/depth_slam/safety/stop_reason"' in arbiter
+    assert '"stop_reason": stop_reason' in arbiter
+    assert '"/depth_slam/path_owner"' in arbiter
+    assert 'self.last_stop_reason' in arbiter
+    assert 'self.get_logger().warning("[STOP] "+stop_reason)' in arbiter
+    assert '"/depth_slam/safety/state"' in safety
+    assert '"/depth_slam/safety/stop_reason"' in safety
+    assert 'self.last_stop_reason' in safety
 
 
 def test_mcu_bridge_is_the_odom_and_odom_base_tf_owner():

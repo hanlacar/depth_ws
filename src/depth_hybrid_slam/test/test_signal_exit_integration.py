@@ -242,7 +242,10 @@ def test_arbiter_all_priority_combinations_and_stale_source_guard_exists():
         .read_text(encoding="utf-8")
     for key in ("mission", "branch", "lidar_hold"):
         assert f'not self._fresh(("{key}",), now)' in source
-    assert 'not self._fresh(("hard", "distance_slowdown",' in source
+    assert "lidar_safety_fresh = self._fresh(" in source
+    assert '("hard", "distance_slowdown", "steering_slowdown"), now' in source
+    assert 'steering_fresh = self._fresh(("steering",), now)' in source
+    assert "safety_stop_reasons(" in source
 
 
 @pytest.mark.parametrize("stop_s,pitch,route_complete,expected", (

@@ -67,6 +67,7 @@ class SafetyNode(Node):
         self.pub_reason = self.create_publisher(String, "/depth_slam/safety/stop_reason", 10)
         self.pub_diag = self.create_publisher(
             DiagnosticArray, "/depth_slam/safety/diagnostics", 10)
+        self.last_stop_reason = None
         self.create_timer(1.0/30.0, self.tick)
 
     def ros_now(self):
@@ -79,16 +80,23 @@ class SafetyNode(Node):
     def tick(self):
         self.value.now = self.ros_now()
         decision = self.core.evaluate(self.value)
+        reason = ",".join(decision.reasons)
+        if reason != self.last_stop_reason:
+            if reason:
+                self.get_logger().warning("[STOP] "+reason)
+            elif self.last_stop_reason:
+                self.get_logger().info("[STOP] CLEARED")
+            self.last_stop_reason = reason
         self.pub_state.publish(String(data="READY" if decision.ready else "STOP_REQUIRED"))
         self.pub_stop.publish(Bool(data=decision.stop_required))
-        self.pub_reason.publish(String(data=",".join(decision.reasons)))
+        self.pub_reason.publish(String(data=reason))
         diag = DiagnosticArray()
         diag.header.stamp = self.get_clock().now().to_msg()
         diag.status = [status(
             "depth_slam/safety",
             DiagnosticStatus.OK if decision.ready else DiagnosticStatus.ERROR,
             "READY" if decision.ready else "STOP_REQUIRED",
-            (("reasons", ",".join(decision.reasons)),
+            (("reasons", reason),
              ("localization_mode", self.core.localization_mode),
              ("control_enabled", self.value.enable_control),
              ("dry_run", self.value.dry_run)))]

@@ -7,6 +7,23 @@ import time
 DRIVE_STAGES = frozenset((-1.0, 0.0, 1.0, 2.0, 3.0))
 
 
+def safety_stop_reasons(*, hard_emergency=False, odom_fresh=True,
+                        lidar_safety_fresh=True, steering_fresh=True,
+                        publisher_conflict=False):
+    reasons = []
+    if hard_emergency:
+        reasons.append("HARD_EMERGENCY")
+    if publisher_conflict:
+        reasons.append("COMMAND_PUBLISHER_CONFLICT")
+    if not odom_fresh:
+        reasons.append("ODOM_STALE")
+    if not lidar_safety_fresh:
+        reasons.append("LIDAR_STALE")
+    if not steering_fresh:
+        reasons.append("STEERING_STALE")
+    return tuple(reasons)
+
+
 @dataclass(frozen=True)
 class CommandCandidate:
     drive: float = 0.0
