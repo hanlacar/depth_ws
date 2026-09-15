@@ -52,41 +52,6 @@ def _project_optical_points(optical, camera, matrix, distortion):
     raise ValueError(f"unsupported distortion model: {model}")
 
 
-def ground_points_to_pixels(points, camera, rotation, position):
-    """Project base_link ground points into the source camera image.
-
-    Returns ``(pixels, indices)``.  ``indices`` contains each pixel's original
-    path-point index so callers can avoid joining across rejected/off-screen
-    spans.
-    """
-    rotation, position, matrix, distortion = _validate_projection_inputs(
-        camera, rotation, position)
-    points = np.asarray(points, dtype=float)
-    if points.ndim != 2 or points.shape[1] not in (2, 3):
-        raise ValueError("ground points must have shape Nx2 or Nx3")
-    if points.shape[1] == 2:
-        points = np.column_stack((points, np.zeros(len(points), dtype=float)))
-    finite = np.all(np.isfinite(points), axis=1)
-    source_indices = np.flatnonzero(finite)
-    if not len(source_indices):
-        return np.empty((0, 2), float), np.empty(0, np.int64)
-
-    base = points[source_indices]
-    mechanical = (rotation.T @ (base-position).T).T
-    optical = (OPTICAL_TO_MECHANICAL.T @ mechanical.T).T
-    in_front = optical[:, 2] > 1.0e-6
-    source_indices = source_indices[in_front]
-    optical = optical[in_front]
-    if not len(source_indices):
-        return np.empty((0, 2), float), np.empty(0, np.int64)
-
-    pixels = _project_optical_points(optical, camera, matrix, distortion)
-    valid = (np.all(np.isfinite(pixels), axis=1) &
-             (pixels[:, 0] >= 0.0) & (pixels[:, 0] < camera.width) &
-             (pixels[:, 1] >= 0.0) & (pixels[:, 1] < camera.height))
-    return pixels[valid], source_indices[valid]
-
-
 def build_ground_remap(config, camera, rotation, position):
     """Return image sampling maps for each metric BEV raster cell."""
     rotation, position, matrix, distortion = _validate_projection_inputs(
@@ -121,13 +86,3 @@ def project_mask_to_bev(mask, map_x, map_y):
         (np.asarray(mask) > 0).astype(np.uint8), map_x, map_y,
         interpolation=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT,
         borderValue=0) > 0).astype(np.uint8)
-
-
-def warp_rgb_to_bev(image, map_x, map_y):
-    """Warp RGB/BGR pixels with the exact semantic ground sampling map."""
-    image = np.asarray(image)
-    if image.ndim != 3 or image.shape[2] != 3:
-        raise ValueError("BEV RGB source must have three channels")
-    return cv2.remap(
-        image, map_x, map_y, interpolation=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))

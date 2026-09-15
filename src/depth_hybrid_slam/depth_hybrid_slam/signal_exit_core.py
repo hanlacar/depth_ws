@@ -1,4 +1,4 @@
-"""A-panel signal detector and five-second vote for Mode 11 exit."""
+"""Three-lamp signal detector and five-second vote for Mode 11 exit."""
 
 from dataclasses import dataclass
 from enum import Enum
@@ -72,7 +72,7 @@ class DetectorConfig:
     local_context_scale: float = 0.60
     local_context_min_padding: int = 8
     morphology_kernel_size: int = 3
-    candidate_bounds: tuple = (0.33, 0.40, 0.15, 0.26)
+    candidate_bounds: tuple = (0.05, 0.95, 0.02, 0.40)
 
 
 @dataclass(frozen=True)
@@ -80,10 +80,40 @@ class SignalDetection:
     state: SignalState
     red_pixel_count: int
     green_pixel_count: int
+    lamp_states: tuple = ()
+
+
+def classify_exit_triplet(candidates, merge_distance_ratio=0.04):
+    """Sort three lamp housings left-to-right; only G/R/R selects A."""
+    def normalized(value):
+        text = str(getattr(value, "value", value)).strip().upper()
+        return {"G": SignalState.GREEN, "GREEN": SignalState.GREEN,
+                "R": SignalState.RED, "RED": SignalState.RED}.get(
+                    text, SignalState.UNKNOWN)
+
+    groups = []
+    for x, state, pixels in sorted(candidates, key=lambda item: item[0]):
+        if groups and abs(float(x)-groups[-1][0]) <= merge_distance_ratio:
+            groups[-1][1].append((normalized(state), int(pixels)))
+            continue
+        groups.append([float(x), [(normalized(state), int(pixels))]])
+    if len(groups) != 3:
+        return SignalState.UNKNOWN, ()
+    lamps = []
+    for _x, values in groups:
+        states = {state for state, _pixels in values}
+        lamps.append(next(iter(states)) if len(states) == 1 else
+                     SignalState.UNKNOWN)
+    ordered = tuple(lamps)
+    if SignalState.UNKNOWN in ordered:
+        return SignalState.UNKNOWN, ordered
+    return (SignalState.GREEN if ordered == (
+        SignalState.GREEN, SignalState.RED, SignalState.RED)
+        else SignalState.RED), ordered
 
 
 class SignalExitDetector:
-    """Two-stage HSV detector restricted to the leftmost A panel."""
+    """Detect and x-sort the three Mode 11 lamps in one image ROI."""
 
     def __init__(self, config, roi):
         self.config = config
@@ -102,10 +132,10 @@ class SignalExitDetector:
         return mask
 
     def _components(self, mask, hsv, offset, frame_size, maximum_area,
-                    minimum_dark_ratio):
+                    minimum_dark_ratio, state):
         contours, _ = cv2.findContours(
             mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        pixels = 0
+        candidates = []
         frame_width, frame_height = frame_size
         min_x, max_x, min_y, max_y = self.config.candidate_bounds
         for contour in contours:
@@ -132,36 +162,42 @@ class SignalExitDetector:
                 continue
             component = np.zeros(mask.shape, dtype=np.uint8)
             cv2.drawContours(component, [contour], -1, 255, -1)
-            pixels += int(np.count_nonzero((component > 0) & (mask > 0)))
-        return pixels
+            pixels = int(np.count_nonzero((component > 0) & (mask > 0)))
+            candidates.append((center_x, state, pixels))
+        return tuple(candidates)
 
     def detect(self, frame):
         x1, y1, x2, y2 = self.roi.pixel_bounds(frame)
         crop = frame[y1:y2, x1:x2]
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         size = (frame.shape[1], frame.shape[0])
-        red = self._components(
+        red_candidates = self._components(
             self._mask(hsv, self.config.red_ranges), hsv, (x1, y1), size,
-            self.config.maximum_contour_area, self.config.red_dark_ratio)
+            self.config.maximum_contour_area, self.config.red_dark_ratio,
+            SignalState.RED)
         core_mask = self._mask(hsv, (self.config.core_green,))
-        core = self._components(
+        core_candidates = self._components(
             core_mask, hsv, (x1, y1), size,
             self.config.maximum_contour_area,
-            self.config.core_green_dark_ratio)
+            self.config.core_green_dark_ratio, SignalState.GREEN)
         extended_mask = cv2.bitwise_and(
             self._mask(hsv, (self.config.extended_green,)),
             cv2.bitwise_not(core_mask))
-        extended = self._components(
+        extended_candidates = self._components(
             extended_mask, hsv, (x1, y1), size,
             self.config.extended_maximum_contour_area,
-            self.config.extended_green_dark_ratio)
-        area = float(crop.shape[0]*crop.shape[1])
-        red_valid = red/area >= self.config.minimum_color_pixel_ratio
-        green_valid = (core+extended)/area >= \
-            self.config.minimum_color_pixel_ratio
-        state = (SignalState.UNKNOWN if red_valid == green_valid else
-                 SignalState.RED if red_valid else SignalState.GREEN)
-        return SignalDetection(state, red, core+extended)
+            self.config.extended_green_dark_ratio, SignalState.GREEN)
+        candidates = red_candidates+core_candidates+extended_candidates
+        minimum_pixels = (float(crop.shape[0]*crop.shape[1]) *
+                          self.config.minimum_color_pixel_ratio)
+        candidates = tuple(value for value in candidates
+                           if value[2] >= minimum_pixels)
+        state, lamps = classify_exit_triplet(candidates)
+        red = sum(value[2] for value in candidates
+                  if value[1] == SignalState.RED)
+        green = sum(value[2] for value in candidates
+                    if value[1] == SignalState.GREEN)
+        return SignalDetection(state, red, green, lamps)
 
 
 @dataclass(frozen=True)

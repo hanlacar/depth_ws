@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 import math
 
+from .vehicle_kinematics import steering_from_curvature
+
 
 @dataclass(frozen=True)
 class TrackCommand:
@@ -84,8 +86,8 @@ class LocalPathTracker:
         dx, dy = tx-x, ty-y
         lateral = -math.sin(yaw)*dx+math.cos(yaw)*dy
         distance_sq = max(dx*dx+dy*dy, 1.0e-6)
-        steering = math.degrees(math.atan(
-            2.0*self.wheelbase*lateral/distance_sq))
+        steering = steering_from_curvature(
+            2.0*lateral/distance_sq, self.wheelbase)
         # A generated path is never made drivable by clamping an infeasible
         # tracking command. Deviation requiring >22 deg aborts the path.
         if abs(steering) > self.limit:

@@ -20,6 +20,15 @@ route_follower:
     rejoin_verify_duration_s: 1.0
     occupancy_grid_timeout_s: 1.0
     reverse_rejoin_allowed: false
+    stop_reference_frame: front_laser
     enable_control: false
     dry_run: true
     user_approved: false
+
+depth_camera_correction:
+  ros__parameters:
+    publish_hz: 20.0
+    input_timeout_s: 0.5
+    validation_stop_s: 3.0
+    planner_max_steering_deg: 20.0
+    vehicle_width_m: 0.80

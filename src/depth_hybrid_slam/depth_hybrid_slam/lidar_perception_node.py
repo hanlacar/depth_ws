@@ -18,7 +18,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from .lidar_roi_core import (
     assess_curved_roi, assess_mode5_broad, cluster_points,
     clusters_in_centerline_corridor, DYNAMIC, DynamicClusterTracker, mode_gates,
-    speed_bump_suppressed)
+    mode5_avoidance_requested, speed_bump_suppressed)
 from .lidar_scan_core import ScanSafety
 from .lidar_mission_core import Mode9EmergencyLatch, SteeringSlowdownLatch
 
@@ -52,7 +52,7 @@ class LidarPerceptionNode(Node):
             ("mode9_clear_distance_m", 1.5),
             ("mode9_clear_duration_s", 1.0),
             ("steering_slowdown_threshold_deg", 10.0),
-            ("steering_slowdown_enter_s", 0.5),
+            ("steering_slowdown_enter_s", 1.0),
             ("steering_slowdown_exit_s", 1.0),
             ("corridor_half_width_m", 0.30),
             ("minimum_cluster_points", 2), ("cluster_gap_m", 0.16),
@@ -414,7 +414,7 @@ class LidarPerceptionNode(Node):
         distance_slowdown_evidence = assessment.slowdown
         steering_slowdown = self.steering_slowdown.update(
             steering if steering_source != "STALE" else None,
-            self.mode, now)
+            now)
         slowdown = distance_slowdown_evidence or steering_slowdown
         if self.mode == 9:
             hard_stop = self.mode9_emergency.update(
@@ -468,8 +468,8 @@ class LidarPerceptionNode(Node):
         # The 1.5 m ROI is a sensing/visualization boundary. Mode 5 stops only
         # when the fresh CSV local path's swept vehicle footprint intersects
         # an obstacle inside that front_laser-origin boundary.
-        avoidance = (self.mode == 5 and front_fresh and csv_path_fresh and
-                     broad.path_blocked)
+        avoidance = mode5_avoidance_requested(
+            self.mode, front_fresh, csv_path_fresh, broad.path_blocked)
         rear_result = (self.rear_safety.assess(self.rear, rear_fresh)
                        if rear_active else None)
         rear_hard = bool(rear_result and rear_result.hard_obstacle)

@@ -12,14 +12,6 @@ def restore_masks_to_raw_shape(mask,raw_shape):
     cropped=remove_letterbox_padding(mask,raw_shape)
     if cropped.shape==tuple(raw_shape):return cropped
     return cv2.resize(cropped,(raw_shape[1],raw_shape[0]),interpolation=cv2.INTER_LINEAR)
-def prepare_instance_masks(instances,raw_shape,threshold):
-    prepared=[]
-    for instance in instances:
-        item=dict(instance)
-        item["restored_mask"]=threshold_probability_mask(
-            restore_masks_to_raw_shape(instance["mask"],raw_shape),threshold)
-        prepared.append(item)
-    return prepared
 def threshold_probability_mask(mask,threshold):
     array=np.asarray(mask,dtype=np.float32)
     if not np.isfinite(array).all():raise ValueError("mask contains NaN/Inf")
@@ -69,12 +61,6 @@ def build_semantic_masks(instances, role_class_ids, raw_shape, threshold):
             masks[role] = convert_to_mono8(merge_instances_by_class(
                 selected, class_ids, raw_shape, threshold))
     return masks
-def validate_output_mask(mask,shape=(480,640),allow_empty=True):
-    array=np.asarray(mask)
-    if array.shape!=shape or array.dtype!=np.uint8:return False
-    if not np.isin(np.unique(array),[0,255]).all():return False
-    return allow_empty or np.count_nonzero(array)>0
-
 def has_navigation_mask(masks):
     """Accept a road area or either lane boundary as path evidence."""
     return any(np.count_nonzero(masks.get(role, ()))>0 for role in ("road","white_line","yellow_line"))

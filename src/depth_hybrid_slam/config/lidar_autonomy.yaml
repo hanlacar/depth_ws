@@ -10,7 +10,7 @@ depth_lidar_perception:
     mode9_clear_distance_m: 1.5
     mode9_clear_duration_s: 1.0
     steering_slowdown_threshold_deg: 10.0
-    steering_slowdown_enter_s: 0.5
+    steering_slowdown_enter_s: 1.0
     steering_slowdown_exit_s: 1.0
     corridor_half_width_m: 0.30
     minimum_cluster_points: 2
@@ -56,12 +56,12 @@ depth_maneuver_manager:
     # Canonical generation constraint. Curvature and radius are derived.
     planner_max_steering_deg: 20.0
     vehicle_width_m: 0.80
+    vehicle_length_m: 1.40
     obstacle_margin_m: 0.15
     # After the 2 s observation and measured stop, search the shortest
     # feasible Frenet-style lateral shift and exact CSV rejoin.
     detour_length_m: 1.5
     detour_maximum_ahead_m: 10.0
-    detour_lateral_m: 0.65
     planner_maximum_replans: 160
     obstacle_confirmation_s: 2.0
     # Generate only while the last confirmed front_lidar obstacle range is

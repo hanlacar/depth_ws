@@ -26,10 +26,6 @@ class CsvOnlyNetworkVisualizerNode(Node):
         self.declare_parameter("route_metadata_path", "")
         self.declare_parameter("display_route_path", "")
         self.declare_parameter("display_metadata_path", "")
-        # Retained for compatibility with the isolated prehardware launch.
-        # This node publishes visualization markers only and is also safe in
-        # the production graph: it owns no pose, sensor, or command topic.
-        self.declare_parameter("prehardware_test_only", False)
         route_path = str(self.get_parameter("route_path").value)
         metadata_path = str(self.get_parameter("route_metadata_path").value)
         display_path = str(self.get_parameter("display_route_path").value)

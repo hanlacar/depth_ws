@@ -1,4 +1,4 @@
-"""ROS adapter for the self-contained Mode 11 A-panel detector."""
+"""ROS adapter for the self-contained Mode 11 three-lamp detector."""
 
 import json
 import time
@@ -16,13 +16,13 @@ from .signal_exit_core import (
 
 
 class SignalExitNode(Node):
-    """Detect only signal A and publish branch evidence, never commands."""
+    """Publish A only for a stable left-to-right G/R/R observation."""
 
     def __init__(self):
         super().__init__("depth_signal_exit")
         defaults = {
             "image_topic": "/camera/image_raw",
-            "a_roi": [0.15, 0.00, 0.43, 0.38],
+            "exit_roi": [0.05, 0.00, 0.95, 0.40],
             "red_1_low": [0, 90, 90], "red_1_high": [12, 255, 255],
             "red_2_low": [168, 90, 90], "red_2_high": [179, 255, 255],
             "green_core_low": [40, 90, 90],
@@ -38,7 +38,7 @@ class SignalExitNode(Node):
         def value(name):
             return self.get_parameter(name).value
 
-        roi = NormalizedROI(*(float(item) for item in value("a_roi")))
+        roi = NormalizedROI(*(float(item) for item in value("exit_roi")))
         config = DetectorConfig(
             (HSVRange(tuple(value("red_1_low")), tuple(value("red_1_high"))),
              HSVRange(tuple(value("red_2_low")), tuple(value("red_2_high")))),

@@ -21,6 +21,8 @@ class BranchSelectorNode(Node):
             self.get_parameter("command_timeout_s").value,
             self.get_parameter("mode_11_wait_s").value,
             self.get_parameter("initial_branch").value)
+        self.get_logger().info(
+            f"[SEGMENT 1] COMPLETE - USER START_{self.core.initial_branch} selected")
         self.create_subscription(
             String, "/depth_slam/route/branch_command", self._command, 10)
         self.create_subscription(String, "/drive_mode", self._mode, 10)

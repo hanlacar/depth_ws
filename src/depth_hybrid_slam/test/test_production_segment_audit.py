@@ -77,14 +77,14 @@ def test_mode9_hard_stop_clear_requires_over_1_5m_for_full_second():
     assert not latch.update(False, 1.51, True, True, 3.0)
 
 
-def test_steering_exact_ten_half_second_and_clear_one_second():
-    latch = SteeringSlowdownLatch(10.0, 0.5, 1.0)
-    assert not latch.update(10.0, 9, 0.0)
-    assert not latch.update(10.0, 9, 0.49)
-    assert latch.update(10.0, 9, 0.5)
-    assert latch.update(9.99, 9, 1.49)
-    assert latch.update(9.99, 9, 2.48)
-    assert not latch.update(9.99, 9, 2.49)
+def test_steering_exact_ten_one_second_and_clear_one_second():
+    latch = SteeringSlowdownLatch(10.0, 1.0, 1.0)
+    assert not latch.update(10.0, 0.0)
+    assert not latch.update(10.0, 0.99)
+    assert latch.update(10.0, 1.0)
+    assert latch.update(9.99, 1.01)
+    assert latch.update(9.99, 2.0)
+    assert not latch.update(9.99, 2.02)
 
 
 def test_command_priority_stop_distance_steering_then_mode9_speed():
@@ -108,7 +108,8 @@ def test_production_launch_has_real_vslam_odom_and_no_fake_source():
     assert '"hybrid_localization.launch.py"' in launch
     assert '"use_vehicle_odom": "true"' in launch
     assert '"cuvslam_only.launch.py"' not in launch
-    assert 'executable="start_validation"' in launch
+    assert 'executable="start_validation"' not in launch
+    assert '"initial_branch": branch' in launch
     for forbidden in ("test_odom_publisher", "synthetic_odom", "fake_odom",
                       "gazebo"):
         assert forbidden not in launch.lower()

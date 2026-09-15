@@ -3,6 +3,10 @@
 from dataclasses import dataclass
 import math
 
+from .vehicle_kinematics import (
+    curvature_from_steering, planner_steering_feasible,
+    steering_from_curvature)
+
 HARD_STEERING_LIMIT_DEG = 22.0
 
 
@@ -40,7 +44,7 @@ def steering_geometry(wheelbase_m=0.73, planner_max_steering_deg=20.0):
     if (abs(wheelbase-0.73) > 1.0e-9 or not math.isfinite(steering) or
             not 0.0 < steering < HARD_STEERING_LIMIT_DEG):
         raise ValueError("invalid commissioned LiDAR planner geometry")
-    curvature = math.tan(math.radians(steering))/wheelbase
+    curvature = curvature_from_steering(steering, wheelbase)
     return curvature, 1.0/curvature
 
 
@@ -69,7 +73,8 @@ def audit_path(points, wheelbase_m=0.73,
             valid = False
             continue
         maximum_curvature = max(maximum_curvature, curvature)
-    required = math.degrees(math.atan(float(wheelbase_m)*maximum_curvature))
+    required = abs(steering_from_curvature(
+        maximum_curvature, wheelbase_m))
     radius = (math.inf if maximum_curvature <= 1.0e-12 else
               1.0/maximum_curvature)
     valid = valid and math.isfinite(required) and \
@@ -99,6 +104,28 @@ def path_collision_free(points, obstacles, clearance_m=0.35):
                 centers[0][0]-obstacle[0],
                 centers[0][1]-obstacle[1]) < clearance:
             return False
+    return True
+
+
+def swept_footprint_clear(points, objects, *, vehicle_length_m=1.40,
+                          vehicle_width_m=0.80, margin_m=0.05):
+    """Reject a point intersecting any oriented vehicle footprint pose."""
+    poses = tuple(points or ())
+    if not poses:
+        return False
+    half_length = float(vehicle_length_m)*0.5+float(margin_m)
+    half_width = float(vehicle_width_m)*0.5+float(margin_m)
+    if half_length <= 0.0 or half_width <= 0.0:
+        return False
+    for x, y, yaw in poses:
+        cosine, sine = math.cos(float(yaw)), math.sin(float(yaw))
+        for ox, oy in (objects or ()):
+            dx, dy = float(ox)-float(x), float(oy)-float(y)
+            longitudinal = cosine*dx+sine*dy
+            lateral = -sine*dx+cosine*dy
+            if (abs(longitudinal) <= half_length and
+                    abs(lateral) <= half_width):
+                return False
     return True
 
 
@@ -298,12 +325,13 @@ def _offset_path(samples, outbound_end, hold_end, transition_end, target_d,
 
 def plan_route_detour(current_pose, route, current_index, obstacle_y,
                       minimum_ahead_m=1.5, maximum_ahead_m=10.0,
-                      lateral_m=0.65, spacing_m=0.10,
+                      spacing_m=0.10,
                       wheelbase_m=0.73, planner_max_steering_deg=20.0,
                       obstacles=(), vehicle_width_m=0.80,
                       vehicle_length_m=1.30, obstacle_margin_m=0.15,
                       maximum_replans=48,
-                      left_boundary_m=None, right_boundary_m=None):
+                      left_boundary_m=None, right_boundary_m=None,
+                      curbs=()):
     """Generate the shortest feasible CSV-relative lateral-offset detour."""
     empty = PathAudit(0, math.inf, math.inf, 0.0, False)
     try:
@@ -315,7 +343,7 @@ def plan_route_detour(current_pose, route, current_index, obstacle_y,
     except (ValueError, TypeError, IndexError):
         return _plan(False, "ROUTE_CONTEXT_INVALID", (), empty)
     if (minimum_ahead_m <= 0.5 or maximum_ahead_m < minimum_ahead_m or
-            lateral_m <= 0.0 or spacing_m <= 0.0 or
+            spacing_m <= 0.0 or
             vehicle_width_m <= 0.0 or vehicle_length_m <= 0.0 or
             int(current.direction) <= 0):
         return _plan(False, "ROUTE_CONTEXT_INVALID", (), empty)
@@ -397,12 +425,16 @@ def plan_route_detour(current_pose, route, current_index, obstacle_y,
             steering_ok = (
                 audit.feasible and
                 audit.max_curvature <= planner_curvature+1.0e-9 and
-                audit.max_required_steering_deg <=
-                float(planner_max_steering_deg)+1.0e-7)
+                planner_steering_feasible(
+                    audit.max_required_steering_deg,
+                    planner_max_steering_deg))
             collision_free = path_collision_free(points, obstacles, clearance)
             boundary_clear = path_within_boundaries(
                 points, left_center, right_center)
-            if steering_ok and collision_free and boundary_clear:
+            curb_clear = swept_footprint_clear(
+                points, curbs, vehicle_length_m=vehicle_length_m,
+                vehicle_width_m=vehicle_width_m, margin_m=0.05)
+            if steering_ok and collision_free and boundary_clear and curb_clear:
                 return _plan(
                     True, "ROUTE_REJOIN_READY", points, audit,
                     attempts-1, "FRENET_OFFSET_SHORTEST",
@@ -413,6 +445,8 @@ def plan_route_detour(current_pose, route, current_index, obstacle_y,
                 reasons.append("COLLISION")
             if not boundary_clear:
                 reasons.append("CURB_BOUNDARY")
+            if not curb_clear:
+                reasons.append("CURB_FOOTPRINT")
         if attempts >= int(maximum_replans):
             break
     reason = "+".join(sorted(set(reasons))) or "NO_FEASIBLE_ROUTE_DETOUR"
@@ -425,7 +459,7 @@ def plan_detour(obstacle_y, length_m=5.5, lateral_m=0.65,
                 spacing_m=0.10, obstacles=(), clearance_m=None,
                 vehicle_width_m=0.80, obstacle_margin_m=0.15,
                 maximum_replans=24, left_boundary_m=None,
-                right_boundary_m=None):
+                right_boundary_m=None, curbs=(), vehicle_length_m=1.40):
     """Search wider/longer quintic detours under the Ackermann limit."""
     try:
         planner_curvature, _ = steering_geometry(
@@ -462,13 +496,17 @@ def plan_detour(obstacle_y, length_m=5.5, lateral_m=0.65,
             steering_ok = (
                 audit.feasible and
                 audit.max_curvature <= planner_curvature+1.0e-9 and
-                audit.max_required_steering_deg <=
-                float(planner_max_steering_deg)+1.0e-7)
+                planner_steering_feasible(
+                    audit.max_required_steering_deg,
+                    planner_max_steering_deg))
             collision_free = path_collision_free(
                 points, obstacles, clearance)
             boundary_clear = path_within_boundaries(
                 points, left_boundary_m, right_boundary_m)
-            if steering_ok and collision_free and boundary_clear:
+            curb_clear = swept_footprint_clear(
+                points, curbs, vehicle_length_m=vehicle_length_m,
+                vehicle_width_m=vehicle_width_m, margin_m=0.05)
+            if steering_ok and collision_free and boundary_clear and curb_clear:
                 replans = attempts-1
                 state = "READY_REPLANNED" if replans else "READY"
                 reason = "+".join(sorted(set(reasons))) if replans else ""
@@ -483,9 +521,12 @@ def plan_detour(obstacle_y, length_m=5.5, lateral_m=0.65,
                 reasons.append("COLLISION")
             if not boundary_clear:
                 reasons.append("CURB_BOUNDARY")
+            if not curb_clear:
+                reasons.append("CURB_FOOTPRINT")
         if attempts > int(maximum_replans):
             break
-    reason = ("STEERING_LIMIT" if "STEERING_LIMIT" in reasons else
+    reason = ("CURB_FOOTPRINT" if "CURB_FOOTPRINT" in reasons else
+              "STEERING_LIMIT" if "STEERING_LIMIT" in reasons else
               "CURB_BOUNDARY" if "CURB_BOUNDARY" in reasons else "COLLISION")
     return _plan(False, "NO_FEASIBLE_DETOUR", last_points, last_audit,
                  max(0, attempts-1), reason, initial_steering)
@@ -549,7 +590,7 @@ def plan_parking(mode, branch, wheelbase_m=0.73,
     for distance, steering in schedule:
         steps = max(1, int(math.ceil(distance/step_m)))
         delta = -distance/steps
-        curvature = math.tan(math.radians(steering))/float(wheelbase_m)
+        curvature = curvature_from_steering(steering, wheelbase_m)
         for _ in range(steps):
             next_yaw = yaw+delta*curvature
             midpoint_yaw = 0.5*(yaw+next_yaw)
@@ -561,8 +602,8 @@ def plan_parking(mode, branch, wheelbase_m=0.73,
     feasible = (
         audit.feasible and
         audit.max_curvature <= planner_curvature+1.0e-9 and
-        audit.max_required_steering_deg <=
-        float(planner_max_steering_deg)+1.0e-7)
+        planner_steering_feasible(
+            audit.max_required_steering_deg, planner_max_steering_deg))
     if not feasible:
         return _plan(False, "PLANNER_GIVE_UP", points, audit,
                      int(regenerated), "STEERING_LIMIT", initial_steering)

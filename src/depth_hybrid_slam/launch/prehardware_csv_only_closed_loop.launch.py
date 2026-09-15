@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
 from depth_hybrid_slam.csv_only_branching import (
     csv_only_network_segments, load_csv_only_route_case)
 from launch import LaunchDescription
@@ -86,7 +85,6 @@ def _prepare(context):
                  "route_metadata_path": str(metadata),
                  "display_route_path": str(display),
                  "display_metadata_path": str(display_metadata),
-                 "prehardware_test_only": True,
              }]),
         Node(package="depth_hybrid_slam", executable="route_follower",
              name="route_follower", output="screen", parameters=[common]),

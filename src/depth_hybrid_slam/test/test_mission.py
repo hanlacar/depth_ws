@@ -21,7 +21,7 @@ def test_mode4_red_green_and_no_csv_line_policy():
     red = core.update(value(traffic_state="R", traffic_confidence=.9,
                             traffic_age=.1, csv_stop_line_active=True,
                             intersection_progress=progress()))
-    green = core.update(value(traffic_state="G", traffic_confidence=.9,
+    green = core.update(value(3.0, traffic_state="G", traffic_confidence=.9,
                               traffic_age=.1, csv_stop_line_active=True,
                               intersection_progress=progress()))
     other = MissionMachine()
@@ -76,7 +76,7 @@ def test_acceleration_latches_slow_after_steering():
 
 
 def test_mode11_stop_is_not_mixed_with_intersection_gate():
-    core = MissionMachine(finish_sections=("finish",))
+    core = MissionMachine()
     mode11 = progress(mode=11)
     decision = core.update(value(
         section_id="finish", csv_stop_line_active=True,
@@ -124,6 +124,6 @@ def test_direct_red_topic_holds_regardless_of_fusion_confidence():
     assert red.stop_required
     assert core.last_traffic_decision.aspect == "R"
     green = core.update(value(
-        now=0.1, traffic_green_override=True, **common))
+        now=3.0, traffic_green_override=True, **common))
     assert not green.stop_required
     assert core.last_traffic_decision.aspect == "G"

@@ -32,16 +32,20 @@ def _valid(candidate):
 
 
 def arbitrate(csv, lidar, hard_emergency=False, mission_hold=False,
-              lidar_slowdown=False, mode=-1, steering_deg=None,
-              steering_slowdown=False):
-    """Priority: stop, mission hold, distance slow, steering slow, speed."""
+              lidar_slowdown=False, mode=-1, steering_slowdown=False,
+              camera=None):
+    """Choose exactly one owner: STOP > LiDAR/parking > camera > CSV."""
     if hard_emergency:
         return ArbiterDecision(0.0, 0, "SAFETY", "HARD_EMERGENCY_STOP")
     if mission_hold:
         return ArbiterDecision(0.0, 0, "MISSION", "MISSION_STOP_HOLD")
     if _valid(lidar):
+        owner = "PARKING" if int(mode) in (7, 10) else "LIDAR"
         decision = ArbiterDecision(float(lidar.drive), int(lidar.wheel),
-                                   "LIDAR", "LIDAR_ACTIVE")
+                                   owner, owner+"_ACTIVE")
+    elif int(mode) not in (7, 10) and camera is not None and _valid(camera):
+        decision = ArbiterDecision(float(camera.drive), int(camera.wheel),
+                                   "CAMERA", "CAMERA_CORRECTION_ACTIVE")
     elif _valid(csv):
         decision = ArbiterDecision(float(csv.drive), int(csv.wheel),
                                    "CSV", "CSV_TRACKING")

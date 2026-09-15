@@ -32,7 +32,8 @@ def test_real_launch_contains_only_measured_odom_and_one_front_lidar():
     assert '"hybrid_localization.launch.py"' in source
     assert '"use_vehicle_odom": "true"' in source
     assert '"cuvslam_only.launch.py"' not in source
-    assert 'executable="start_validation"' in source
+    assert 'executable="start_validation"' not in source
+    assert '"initial_branch": branch' in source
 
 
 def test_split_sensor_route_launch_waits_for_separate_real_mcu_odom():

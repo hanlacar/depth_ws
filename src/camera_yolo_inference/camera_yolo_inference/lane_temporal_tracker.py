@@ -14,7 +14,7 @@ import numpy as np
 @dataclass(frozen=True)
 class LaneTemporalConfig:
     mode: str = "none"  # none | hold | flow
-    max_hold_sec: float = 0.4
+    max_hold_sec: float = 0.20
     max_hold_frames: int = 12
     confidence_decay: float = 0.88
     min_flow_points: int = 18
@@ -46,6 +46,10 @@ class _LaneState:
     stamp: float | None = None
     age_frames: int = 0
     confidence: float = 0.0
+    track_id: int = -1
+    created_at: float | None = None
+    last_seen: float | None = None
+    observations: int = 0
 
 
 @dataclass
@@ -88,12 +92,49 @@ class LaneMaskTemporalTracker:
                         "yellow_line": _LaneState()}
         self._previous_gray = None
         self._previous_stamp = None
+        self._next_track_id = 1
 
     def reset(self):
         self._states = {"white_line": _LaneState(),
                         "yellow_line": _LaneState()}
         self._previous_gray = None
         self._previous_stamp = None
+        self._next_track_id = 1
+
+    @staticmethod
+    def _geometry(mask):
+        rows, cols = np.nonzero(mask)
+        if len(rows) < 2:
+            return {"bbox": None, "curve": 0.0, "heading_deg": 0.0}
+        centered = np.column_stack((cols, rows)).astype(float)
+        centered -= np.mean(centered, axis=0)
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        heading = float(np.degrees(np.arctan2(vh[0, 0], -vh[0, 1])))
+        curve = 0.0
+        if len(rows) >= 6 and float(np.ptp(rows)) >= 3.0:
+            curve = float(np.polyfit(rows.astype(float), cols.astype(float), 2)[0])
+        return {
+            "bbox": [int(cols.min()), int(rows.min()), int(cols.max()+1),
+                     int(rows.max()+1)],
+            "curve": curve,
+            "heading_deg": heading,
+        }
+
+    def _metadata(self, name, state, stamp, mask):
+        geometry = self._geometry(mask) if np.any(mask) else {
+            "bbox": None, "curve": 0.0, "heading_deg": 0.0}
+        return {
+            "track_id": int(state.track_id),
+            "color": name,
+            "geometry": {"bbox": geometry["bbox"]},
+            "curve": geometry["curve"],
+            "heading": geometry["heading_deg"],
+            "confidence": float(state.confidence),
+            "age": int(state.observations),
+            "last_seen": state.last_seen,
+            "missing_duration": (0.0 if state.last_seen is None else
+                                 max(0.0, float(stamp)-state.last_seen)),
+        }
 
     @staticmethod
     def _gray(image):
@@ -159,13 +200,19 @@ class LaneMaskTemporalTracker:
         return matrix, diagnostics
 
     def _track_one(self, name, raw, road, previous_gray, current_gray,
-                   stamp, dt, global_reset):
+                   stamp, global_reset):
         state = self._states[name]
         zero = np.zeros_like(raw)
         diagnostics = {"source": "NONE", "track_age_frames": 0,
                        "confidence": 0.0, "road_overlap": 0.0,
                        "discard_reason": ""}
+        diagnostics.update(self._metadata(name, state, stamp, zero))
         if np.any(raw):
+            if state.mask is None or state.track_id < 0:
+                state.track_id = self._next_track_id
+                self._next_track_id += 1
+                state.created_at = stamp
+                state.observations = 0
             if state.mask is not None and self.config.mode == "flow":
                 matrix, flow = self._estimate_motion(
                     previous_gray, current_gray, state.mask)
@@ -179,7 +226,10 @@ class LaneMaskTemporalTracker:
                         float(np.count_nonzero((predicted > 0) & (raw > 0))/union))
             state.mask, state.stamp = raw.copy(), stamp
             state.age_frames, state.confidence = 0, 1.0
+            state.last_seen = stamp
+            state.observations += 1
             diagnostics.update({"source": "RAW", "confidence": 1.0})
+            diagnostics.update(self._metadata(name, state, stamp, raw))
             return zero, diagnostics
         if self.config.mode == "none":
             state.mask = None
@@ -217,6 +267,7 @@ class LaneMaskTemporalTracker:
             diagnostics.update({"source": "TRACKED",
                                 "track_age_frames": age_frames,
                                 "confidence": float(state.confidence)})
+            diagnostics.update(self._metadata(name, state, stamp, tracked))
             return tracked, diagnostics
         support = cv2.dilate(
             road, np.ones((2*self.config.road_boundary_margin_px+1,
@@ -235,6 +286,7 @@ class LaneMaskTemporalTracker:
         diagnostics.update({"source": "TRACKED",
                             "track_age_frames": age_frames,
                             "confidence": float(state.confidence)})
+        diagnostics.update(self._metadata(name, state, stamp, tracked))
         return tracked, diagnostics
 
     def update(self, image, raw_white_line, raw_yellow_line, raw_road,
@@ -268,9 +320,9 @@ class LaneMaskTemporalTracker:
         class_reset = (reset_reason if self.config.mode == "flow" else
                        reset_reason if reset_reason.startswith("TIMESTAMP_") else "")
         tracked_white, white_diag = self._track_one(
-            "white_line", white, road, previous, gray, stamp, dt, class_reset)
+            "white_line", white, road, previous, gray, stamp, class_reset)
         tracked_yellow, yellow_diag = self._track_one(
-            "yellow_line", yellow, road, previous, gray, stamp, dt, class_reset)
+            "yellow_line", yellow, road, previous, gray, stamp, class_reset)
         # A newly observed opposite class always outranks a propagated mask.
         # Discard the whole propagated track instead of carving/re-labelling it;
         # that makes cross-class identity fail closed and diagnosable.

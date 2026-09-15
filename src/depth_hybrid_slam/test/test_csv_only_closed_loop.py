@@ -10,7 +10,6 @@ from depth_hybrid_slam.models import Pose2D
 from depth_hybrid_slam.route_io import load_segmented_route
 from depth_hybrid_slam.stop_editor_network import (
     CHOICE_ORDER, CHOICE_SEGMENTS, route_case_segments)
-import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]

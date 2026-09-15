@@ -47,7 +47,10 @@ def main():
             rclpy.spin_once(node, timeout_sec=0.2)
     except KeyboardInterrupt:
         pass
-    report = {"topics": node.counts, "total_real_control_commands": sum(node.counts.values())}
+    report = {
+        "topics": node.counts,
+        "total_real_control_commands": sum(node.counts.values()),
+    }
     node.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()

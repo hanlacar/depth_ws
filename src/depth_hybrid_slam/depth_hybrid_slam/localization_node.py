@@ -38,7 +38,6 @@ class LocalizationNode(Node):
             self.declare_parameter(name, default)
         self.core = LocalizationFusion()
         self.tracking = False
-        self.last_odom_message = None
         self.last_info_receipt = None
         self.match_receipt = None
         self.match_confidence = 0.0

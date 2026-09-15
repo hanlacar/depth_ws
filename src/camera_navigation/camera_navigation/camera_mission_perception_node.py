@@ -130,7 +130,6 @@ class CameraMissionPerceptionNode(Node):
         self.latest_imu_valid_wall = None
         self.latest_imu_wall = None
         self.latest_input_stamp = None
-        self.latest_detection_wall = None
         self.stop_mask = None
         self.stop_samples = ()
         self.stop_distances = []
@@ -246,7 +245,7 @@ class CameraMissionPerceptionNode(Node):
             self.stop = self._empty_stop("CAMERA_INFO_STALE", True, stamp)
             return
         estimates = self._component_distances(
-            mask, depth, depth_message, message.header, stamp)
+            mask, depth, depth_message, message.header)
         if not estimates:
             whole = robust_stop_line_point(
                 mask, depth, depth_message.encoding, self.camera_info.k,
@@ -275,7 +274,7 @@ class CameraMissionPerceptionNode(Node):
             self._publish_stop_tf(message.header.stamp, distance)
         self._publish_overlay(stamp)
 
-    def _component_distances(self, mask, depth, depth_message, header, stamp):
+    def _component_distances(self, mask, depth, depth_message, header):
         merge = max(1, int(self.p("stop_line_component_merge_px")))
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2*merge+1, 3))
         joined = cv2.morphologyEx((mask > 0).astype(np.uint8),
@@ -351,7 +350,6 @@ class CameraMissionPerceptionNode(Node):
 
     def on_detections(self, message):
         now = time.monotonic()
-        self.latest_detection_wall = now
         try:
             document = json.loads(message.data)
             detections = document.get("detections", [])

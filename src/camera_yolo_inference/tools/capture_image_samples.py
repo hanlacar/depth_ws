@@ -19,7 +19,6 @@ from sensor_msgs.msg import Image
 class Capture(Node):
     def __init__(self, topic, output, count, interval):
         super().__init__("image_sample_capture")
-        self.topic = topic
         self.output = output
         self.target = count
         self.interval = interval

@@ -3,6 +3,8 @@
 from dataclasses import dataclass, replace
 import math
 
+from .vehicle_kinematics import clamp_steering, curvature_from_steering
+
 
 STATIC = "STATIC"
 DYNAMIC = "DYNAMIC"
@@ -41,9 +43,9 @@ class BroadAssessment:
 
 def ackermann_centerline(steering_deg, wheelbase_m=0.73,
                          length_m=1.5, spacing_m=0.05):
-    """Return (arc-length, x, y) samples; positive steer bends left."""
-    steering = max(-22.0, min(22.0, float(steering_deg)))
-    curvature = math.tan(math.radians(steering))/float(wheelbase_m)
+    """Return arc samples for the LEFT-positive /wheel convention."""
+    steering = clamp_steering(steering_deg)
+    curvature = curvature_from_steering(steering, wheelbase_m)
     count = max(2, int(math.ceil(float(length_m)/float(spacing_m)))+1)
     output = []
     for index in range(count):
@@ -159,6 +161,13 @@ def mode_gates(mode):
     return 1 <= value <= 11, value in (7, 10)
 
 
+def mode5_avoidance_requested(mode, front_fresh, csv_path_fresh,
+                              path_blocked):
+    """Gate local avoidance to Mode 5 and fresh corridor evidence only."""
+    return (int(mode) == 5 and bool(front_fresh) and
+            bool(csv_path_fresh) and bool(path_blocked))
+
+
 def transform_point(point, pose):
     x, y, yaw = (float(value) for value in pose)
     cosine, sine = math.cos(yaw), math.sin(yaw)
@@ -268,26 +277,6 @@ def assess_mode5_broad(clusters, route_samples, *, range_m=2.0,
     collisions = tuple(value for value in obstacles
                        if path_collision(value, route_samples, clearance_m))
     return BroadAssessment(obstacles, curbs, collisions, bool(collisions))
-
-
-def forward_route_samples(path, active_index, pose, window_m=2.0):
-    """Transform a monotonic, forward-only Path slice from map to base_link."""
-    if pose is None or not path:
-        return ()
-    px, py, yaw = (float(value) for value in pose)
-    cosine, sine = math.cos(yaw), math.sin(yaw)
-    output, traveled = [], 0.0
-    previous = None
-    for point in tuple(path)[max(0, int(active_index)):]:
-        mx, my = float(point[0]), float(point[1])
-        if previous is not None:
-            traveled += math.hypot(mx-previous[0], my-previous[1])
-        if traveled > float(window_m):
-            break
-        dx, dy = mx-px, my-py
-        output.append((cosine*dx+sine*dy, -sine*dx+cosine*dy))
-        previous = (mx, my)
-    return tuple(output)
 
 
 def speed_bump_suppressed(mode, route_index, zones, *, camera_fresh,

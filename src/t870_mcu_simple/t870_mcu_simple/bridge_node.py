@@ -15,7 +15,7 @@ import serial
 from std_msgs.msg import Bool, Float32, Int32, String
 from tf2_ros import TransformBroadcaster
 
-from .odom_core import MeasuredEncoderOdom
+from .odom_core import MeasuredEncoderOdom, steering_from_adc
 
 
 def find_serial_port(preferred="/dev/t870_mcu"):
@@ -118,7 +118,6 @@ class SimpleMcuBridge(Node):
         self.commanded_drive = 0
         self.last_drive_received = None
         self.stop_active = False
-        self.last_wheel_command = 0
         self.last_encoder = None
         self.last_encoder_at = None
         self.last_status_at = None
@@ -314,7 +313,6 @@ class SimpleMcuBridge(Node):
 
     def on_wheel(self, message):
         degree = max(-22, min(22, int(message.data)))
-        self.last_wheel_command = degree
         if self.ready and not self.stop_active:
             self.send(f"W,{degree}")
             self.applied_wheel_pub.publish(Int32(data=degree))
@@ -356,8 +354,8 @@ class SimpleMcuBridge(Node):
         except ValueError:
             return
         now = time.monotonic()
-        steering = max(-22.0, min(
-            22.0, (adc-self.center_adc)/self.counts_per_degree))
+        steering = steering_from_adc(
+            adc, self.center_adc, self.counts_per_degree, 22.0)
         self.odom_model.set_steering_deg(steering)
         distance, delta_yaw = self.odom_model.update_encoder(encoder)
         elapsed = (None if self.last_encoder_at is None else

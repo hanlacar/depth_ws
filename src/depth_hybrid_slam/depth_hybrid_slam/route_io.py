@@ -3,12 +3,12 @@
 from collections import OrderedDict
 import csv
 from dataclasses import dataclass, replace
-import hashlib
 import math
 from pathlib import Path
 
 import yaml
 
+from .bag_common import sha256
 from .models import RoutePoint
 
 
@@ -56,14 +56,6 @@ class SegmentedRoute:
     selected_branch: str
     excluded_branch_row_count: int
     excluded_branch_segments: tuple
-
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def forward_tangent_yaw(points, maximum_points=5, minimum_baseline_m=0.30):

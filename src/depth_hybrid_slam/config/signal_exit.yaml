@@ -1,7 +1,8 @@
 depth_signal_exit:
   ros__parameters:
     image_topic: /camera/image_raw
-    a_roi: [0.15, 0.00, 0.43, 0.38]
+    # All three exit lamps; detections are sorted by image x coordinate.
+    exit_roi: [0.05, 0.00, 0.95, 0.40]
     red_1_low: [0, 90, 90]
     red_1_high: [12, 255, 255]
     red_2_low: [168, 90, 90]

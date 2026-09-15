@@ -23,8 +23,7 @@ from .image_contract import LatestFrameBuffer, validate_image_contract
 from .inference_backend import CudaValidationError, create_inference_backend
 from .inference_diagnostics import (EventRateTracker, LatencyTracker,
                                     ScalarLatencyTracker, UniqueFrameRateTracker)
-from .mask_postprocessor import (build_semantic_masks, has_navigation_mask,
-                                 validate_output_mask)
+from .mask_postprocessor import build_semantic_masks, has_navigation_mask
 from .lane_temporal_tracker import (LaneMaskTemporalTracker,
                                     LaneTemporalConfig)
 from .model_manifest import load_manifest
@@ -75,7 +74,7 @@ DEFAULTS = {
     "traffic_light_mask_area_weight": 0.2,
     "traffic_light_mask_threshold": 0.5,
     "line_track_mode": "none",
-    "line_track_max_hold_sec": 0.4,
+    "line_track_max_hold_sec": 0.20,
     "line_track_max_hold_frames": 12,
     "line_track_confidence_decay": 0.88,
     "line_track_min_flow_points": 18,

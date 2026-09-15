@@ -177,8 +177,9 @@ def test_required_production_topic_owners_are_explicit():
     assert '"EXTERNAL_MANEUVER_ACTIVE"' in follower
     assert 'Float32, "/cmd_drive"' in arbiter
     assert 'Int32, "/cmd_wheel"' in arbiter
-    assert '"/depth_slam/camera/csv_validation"' in arbiter
-    assert 'value.get("state") in ("OUTSIDE_ROAD", "NEAR_BOUNDARY")' in arbiter
+    assert '"/depth_slam/camera/candidate_valid"' in arbiter
+    assert '"/depth_slam/camera/hold"' in arbiter
+    assert '"/depth_slam/path_owner"' in arbiter
     assert 'create_publisher(Float32, "/cmd_drive"' not in lidar
     assert 'create_publisher(Int32, "/cmd_wheel"' not in lidar
     assert '"prehardware_test_only"' not in lidar

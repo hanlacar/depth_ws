@@ -21,13 +21,13 @@ class MissionNode(Node):
     def __init__(self):
         super().__init__("depth_mission_manager")
         for name, default in (("ramp_sections", [""]),
-                              ("acceleration_sections", [""]),
-                              ("finish_sections", [""])):
+                              ("acceleration_sections", [""])):
             self.declare_parameter(name, default)
         for name, default in (("traffic_timeout_s", 0.3),
                               ("min_traffic_confidence", 0.65),
                               ("direct_signal_timeout_s", 0.5),
                               ("unknown_hold_s", 3.0),
+                              ("minimum_intersection_stop_s", 3.0),
                               ("intersection_commit_margin_m", 0.35)):
             self.declare_parameter(name, default)
         self.declare_parameter("intersection_modes", [4, 6, 8])
@@ -36,7 +36,6 @@ class MissionNode(Node):
             return [str(v) for v in self.get_parameter(name).value if str(v)]
         self.core = MissionMachine(values("ramp_sections"),
                                    values("acceleration_sections"),
-                                   values("finish_sections"),
                                    traffic_timeout_s=float(self.get_parameter(
                                        "traffic_timeout_s").value),
                                    min_traffic_confidence=float(
@@ -44,6 +43,9 @@ class MissionNode(Node):
                                            "min_traffic_confidence").value),
                                    unknown_hold_s=float(self.get_parameter(
                                        "unknown_hold_s").value),
+                                   minimum_intersection_stop_s=float(
+                                       self.get_parameter(
+                                           "minimum_intersection_stop_s").value),
                                    intersection_commit_margin_m=float(
                                        self.get_parameter(
                                            "intersection_commit_margin_m").value),
@@ -190,12 +192,12 @@ class MissionNode(Node):
             return
         if not bool(value.get("fresh", False)):
             return
-        crossing = float(value.get("lane_crossing_ratio", 1.0))
-        valid = (bool(value.get("road_valid", False)) and
-                 bool(value.get("lane_valid", False)) and crossing <= 0.0)
+        state = str(value.get("state", "UNKNOWN")).upper()
+        valid = (state == "TRUE" and bool(value.get("road_valid", False)))
         self.segment3["camera_valid"] |= valid
-        if value.get("state") in ("OUTSIDE_ROAD", "NEAR_BOUNDARY") or \
-                (bool(value.get("road_valid", False)) and not valid):
+        # UNKNOWN is explicitly advisory and keeps CSV. Only the temporally
+        # confirmed wheel/footprint collision state is a segment violation.
+        if state == "FAIL":
             self.segment3["camera_violation"] = True
             self._report_segment(3, False, "CSV road/lane validation violated")
 
@@ -356,7 +358,8 @@ class MissionNode(Node):
             elif event_name == "MISSION_MODE_COMPLETE":
                 if event_mode == 2:
                     self._report_segment(
-                        2, True, "CSV STOP and |IMU pitch|>=5deg")
+                        2, True,
+                        "CSV STOP and |relative IMU pitch|>=4.5deg for 0.5s")
                 elif event_mode in (4, 6, 8):
                     self._report_segment(
                         event_mode, True,

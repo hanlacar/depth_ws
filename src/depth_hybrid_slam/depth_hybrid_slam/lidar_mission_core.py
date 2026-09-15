@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 import math
+
+from .vehicle_kinematics import steering_from_curvature
 import time
 
 
@@ -164,17 +166,13 @@ def parking_decision(mode, a_free, b_free, path_valid,
 
 
 class Mode9Emergency:
-    def __init__(self, steering_tolerance_deg=2.0,
-                 high_speed_steering_deg=5.0):
-        self.tolerance = float(steering_tolerance_deg)
-        self.high_speed_steering_deg = float(high_speed_steering_deg)
+    def __init__(self):
         self.state = "ACCEL_TRACKING"
 
     def reset(self):
         self.state = "ACCEL_TRACKING"
 
-    def update(self, hard_obstacle, steering_deg=0.0,
-               rejoin_valid=False, acceleration_allowed=True):
+    def update(self, hard_obstacle):
         if hard_obstacle:
             self.state = "EMERGENCY_STOP"
             return ManeuverDecision(self.state, "SAFETY", True)
@@ -235,7 +233,7 @@ class Mode9EmergencyLatch:
 class SteeringSlowdownLatch:
     """Debounce measured steering before applying or clearing slowdown."""
 
-    def __init__(self, threshold_deg=10.0, enter_duration_s=0.5,
+    def __init__(self, threshold_deg=10.0, enter_duration_s=1.0,
                  exit_duration_s=1.0):
         self.threshold_deg = float(threshold_deg)
         self.enter_duration_s = float(enter_duration_s)
@@ -252,7 +250,7 @@ class SteeringSlowdownLatch:
         self.above_since = None
         self.below_since = None
 
-    def update(self, steering_deg, mode, now=None):
+    def update(self, steering_deg, now=None):
         timestamp = time.monotonic() if now is None else float(now)
         # Missing/stale measured steering cannot establish either continuous
         # one-second interval.  Preserve an already active slowdown fail-safe.
@@ -411,8 +409,8 @@ def route_rejoin_candidates(route, active_segment, current_index, pose,
         dx, dy = float(point.x)-x, float(point.y)-y
         distance = math.hypot(dx, dy)
         lateral = -math.sin(yaw)*dx+math.cos(yaw)*dy
-        steering = math.degrees(math.atan2(
-            2.0*wheelbase_m*lateral, max(distance*distance, 1.0e-6)))
+        steering = steering_from_curvature(
+            2.0*lateral/max(distance*distance, 1.0e-6), wheelbase_m)
         output.append(RejoinCandidate(
             str(point.segment_id), index, distance, math.degrees(heading),
             steering, int(point.direction), bool(road_valid)))
@@ -420,7 +418,7 @@ def route_rejoin_candidates(route, active_segment, current_index, pose,
 
 
 class Mode11ExitGate:
-    """Five-second A/B vote; default A and ignore late opposite signals."""
+    """Five-second A/B vote; default B and ignore late opposite signals."""
 
     def __init__(self, hold_s=5.0, stale_s=0.5, confirmations=60,
                  decision_ratio=0.75):
@@ -431,9 +429,7 @@ class Mode11ExitGate:
         self.started_at = None
         self.committed = None
         self.commit_source = ""
-        self.last_signal = None
         self.signal_at = None
-        self.count = 0
         self.votes = {"A": 0, "B": 0, "UNKNOWN": 0}
 
     def reset(self):
@@ -449,10 +445,6 @@ class Mode11ExitGate:
             return
         value = str(signal).strip().upper()
         value = value if value in ("1", "2", "A", "B") else "UNKNOWN"
-        if value == self.last_signal:
-            self.count += 1
-        else:
-            self.last_signal, self.count = value, 1
         route = "A" if value in ("1", "A") else \
             "B" if value in ("2", "B") else "UNKNOWN"
         self.votes[route] += 1

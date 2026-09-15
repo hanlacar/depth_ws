@@ -45,6 +45,8 @@ def generate_launch_description():
                 "device": LaunchConfiguration("device"),
                 "require_cuda": LaunchConfiguration("require_cuda"),
                 "enable_depth_assist": "false",
+                "line_track_mode": "flow",
+                "line_track_max_hold_sec": "0.20",
             }.items()),
         Node(
             package="tf2_ros", executable="static_transform_publisher",

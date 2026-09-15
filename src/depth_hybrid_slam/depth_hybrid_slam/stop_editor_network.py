@@ -1,8 +1,5 @@
 """STOP-editor-only topology for the complete segmented route network."""
 
-from itertools import product
-
-
 CHOICE_ORDER = ("START", "T", "V", "END")
 CHOICE_SEGMENTS = {
     "START": {"A": "START_A", "B": "START_B"},
@@ -34,34 +31,6 @@ def route_case_segments(case, available_segments=()):
     return tuple(output)
 
 
-def generate_route_cases(available_segments):
-    """Generate and validate all 2^4 cases against actual segment names."""
-    available = set(available_segments)
-    cases = {}
-    for values in product("AB", repeat=len(CHOICE_ORDER)):
-        name = "".join(values)
-        segments = route_case_segments(name, available)
-        missing = set(segments) - available
-        if missing:
-            raise ValueError(
-                f"route case {name} is missing actual segments: " +
-                ", ".join(sorted(missing)))
-        exclusive = {
-            CHOICE_SEGMENTS[choice][other]
-            for choice, selected in zip(CHOICE_ORDER, values)
-            for other in "AB" if other != selected
-        }
-        wrong = exclusive.intersection(segments)
-        if wrong:
-            raise ValueError(
-                f"route case {name} contains wrong-exclusive segments: " +
-                ", ".join(sorted(wrong)))
-        cases[name] = segments
-    if len(cases) != 16:
-        raise ValueError("segmented route must generate exactly 16 cases")
-    return cases
-
-
 def segment_branch(segment_id):
     """Classify a segment for rendering and ambiguity protection."""
     segment = str(segment_id)
@@ -72,13 +41,3 @@ def segment_branch(segment_id):
             if segment == name:
                 return branch
     return "COMMON"
-
-
-def segment_label(segment_id):
-    if segment_id == "END_AA":
-        return "END A: END_AA"
-    if segment_id == "END_AB":
-        return "END B: END_AB"
-    if segment_id == "AAA_BASE":
-        return "AAA_BASE (REFERENCE; NOT IN 16 CASES)"
-    return str(segment_id)

@@ -34,10 +34,10 @@ class ManeuverManagerNode(Node):
                 ("wheelbase_m", 0.73),
                 ("planner_max_steering_deg", 20.0),
                 ("vehicle_width_m", 0.80),
+                ("vehicle_length_m", 1.40),
                 ("obstacle_margin_m", 0.15),
                 ("detour_length_m", 1.5),
                 ("detour_maximum_ahead_m", 8.0),
-                ("detour_lateral_m", 0.65),
                 ("planner_maximum_replans", 48),
                 ("obstacle_confirmation_s", 2.0),
                 ("minimum_planning_lidar_distance_m", 1.0),
@@ -52,12 +52,10 @@ class ManeuverManagerNode(Node):
         self.slots_fresh = False
         self.planner_state = "IDLE"
         self.path_valid = self.path_complete = self.rejoin_valid = False
-        self.steering = 0.0
         self.obstacle_y = 0.0
         self.obstacles = ()
         self.obstacle_lidar_distance = None
         self.curbs = ()
-        self.left_curb = self.right_curb = None
         self.pose = None
         self.odom_linear = self.odom_angular = None
         self.odom_at = None
@@ -135,8 +133,6 @@ class ManeuverManagerNode(Node):
             lambda m: setattr(self, "csv_drive", float(m.data)), 10)
         self.create_subscription(
             String, "/depth_slam/route/case_state", self._case_state, 10)
-        self.create_subscription(Float32, "/mcu/steer_deg",
-                                 lambda m: setattr(self, "steering", float(m.data)), 10)
         self.create_subscription(String, "/camera/exit_branch_signal",
                                  self._exit_signal, 10)
         self.drive_pub = self.create_publisher(
@@ -193,16 +189,11 @@ class ManeuverManagerNode(Node):
                 (float(point[0]), float(point[1]))
                 for point in value.get("curbs", ())
                 if isinstance(point, (list, tuple)) and len(point) >= 2)
-            self.left_curb = min((y for _, y in self.curbs if y > 0.0),
-                                 default=None)
-            self.right_curb = max((y for _, y in self.curbs if y < 0.0),
-                                  default=None)
         except (TypeError, ValueError, json.JSONDecodeError):
             self.obstacle_y = 0.0
             self.obstacle_lidar_distance = None
             self.obstacles = ()
             self.curbs = ()
-            self.left_curb = self.right_curb = None
 
     def _case_state(self, message):
         try:
@@ -288,7 +279,7 @@ class ManeuverManagerNode(Node):
                       if obstacles else self.obstacle_y)
         left = min((y for _, y in curbs if y > 0.0), default=None)
         right = max((y for _, y in curbs if y < 0.0), default=None)
-        return obstacles, obstacle_y, left, right
+        return obstacles, obstacle_y, left, right, curbs
 
     def _exit_signal(self, message):
         if self.mode == 11:
@@ -425,7 +416,7 @@ class ManeuverManagerNode(Node):
                 if (qualified and stopped and distance_ready and
                         self.map_pose is not None and self.route and
                         0 <= self.active_index < len(self.route)):
-                    obstacles, obstacle_y, left, right = \
+                    obstacles, obstacle_y, left, right, curbs = \
                         self._mode5_scene_at_stop()
                     self.mode5_plan = plan_route_detour(
                         self.map_pose, self.route, self.active_index,
@@ -434,8 +425,6 @@ class ManeuverManagerNode(Node):
                             "detour_length_m").value),
                         maximum_ahead_m=float(self.get_parameter(
                             "detour_maximum_ahead_m").value),
-                        lateral_m=float(self.get_parameter(
-                            "detour_lateral_m").value),
                         wheelbase_m=float(self.get_parameter(
                             "wheelbase_m").value),
                         planner_max_steering_deg=float(self.get_parameter(
@@ -445,9 +434,12 @@ class ManeuverManagerNode(Node):
                             "vehicle_width_m").value),
                         obstacle_margin_m=float(self.get_parameter(
                             "obstacle_margin_m").value),
+                        vehicle_length_m=float(self.get_parameter(
+                            "vehicle_length_m").value),
                         maximum_replans=int(self.get_parameter(
                             "planner_maximum_replans").value),
-                        left_boundary_m=left, right_boundary_m=right)
+                        left_boundary_m=left, right_boundary_m=right,
+                        curbs=curbs)
                 # Even when synchronous generation finishes on this tick,
                 # keep publishing zero. Tracking can start on the next tick.
                 self._record_plan(self.mode5_plan)
@@ -545,8 +537,7 @@ class ManeuverManagerNode(Node):
                 track.drive, track.wheel, self.rejoin_valid,
                 time.monotonic())
         if self.mode == 9:
-            return self.mode9.update(self.hard, self.steering,
-                                     self.rejoin_valid, True)
+            return self.mode9.update(self.hard)
         if self.mode == 11:
             return self.mode11.evaluate(time.monotonic())
         return None

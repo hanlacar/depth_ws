@@ -19,9 +19,9 @@ from camera_navigation.ground_plane_calibration import (
 from camera_navigation.semantic_path_contract import decode_binary_rle
 
 from .csv_road_validator_core import (
-    CAMERA_UNAVAILABLE, INVALID_GEOMETRY, PATH_UNAVAILABLE, ValidatorConfig,
-    classify_input_state, render_bev_overlay, unavailable_result,
-    validate_metric_bev)
+    CAMERA_UNAVAILABLE, CameraRiskGate, INVALID_GEOMETRY, PATH_UNAVAILABLE,
+    ValidatorConfig, classify_input_state, grid_to_metric, render_bev_overlay,
+    unavailable_result, validate_metric_bev)
 
 
 def _yaw(quaternion):
@@ -54,6 +54,12 @@ class CsvRoadValidatorNode(Node):
             "y_max_m": 3.0,
             "resolution_m": 0.04,
             "vehicle_width_m": 0.78,
+            "vehicle_length_m": 1.40,
+            "wheelbase_m": 0.73,
+            "wheel_track_m": 0.68,
+            "lane_collision_margin_m": 0.06,
+            "lane_fail_collision_ratio": 0.03,
+            "fail_confirmation_s": 0.4,
             "minimum_center_inside_ratio": 0.90,
             "minimum_vehicle_corridor_inside_ratio": 0.75,
             "minimum_visible_path_ratio": 0.70,
@@ -76,6 +82,11 @@ class CsvRoadValidatorNode(Node):
             y_min_m=float(p("y_min_m")), y_max_m=float(p("y_max_m")),
             resolution_m=float(p("resolution_m")),
             vehicle_width_m=float(p("vehicle_width_m")),
+            vehicle_length_m=float(p("vehicle_length_m")),
+            wheelbase_m=float(p("wheelbase_m")),
+            wheel_track_m=float(p("wheel_track_m")),
+            lane_collision_margin_m=float(p("lane_collision_margin_m")),
+            lane_fail_collision_ratio=float(p("lane_fail_collision_ratio")),
             minimum_center_inside_ratio=float(
                 p("minimum_center_inside_ratio")),
             minimum_vehicle_corridor_inside_ratio=float(
@@ -84,6 +95,7 @@ class CsvRoadValidatorNode(Node):
             minimum_road_confidence=float(p("minimum_road_confidence")),
             lane_max_crossing_ratio=float(p("lane_max_crossing_ratio")))
         self.config.validate()
+        self.risk_gate = CameraRiskGate(float(p("fail_confirmation_s")))
         self.mount = load_camera_mount_config({
             "configured": p("camera_mount.configured"),
             "position_x_m": p("camera_mount.position_x_m"),
@@ -297,6 +309,21 @@ class CsvRoadValidatorNode(Node):
         camera_diagnostics = result.camera_diagnostics(
             result.state not in (CAMERA_UNAVAILABLE, INVALID_GEOMETRY,
                                  PATH_UNAVAILABLE, "STALE_INPUT"))
+        candidate = camera_diagnostics["state"]
+        camera_diagnostics["candidate_state"] = candidate
+        camera_diagnostics["state"] = self.risk_gate.update(
+            candidate, time.monotonic())
+        camera_diagnostics["fail_persistent"] = (
+            camera_diagnostics["state"] == "FAIL")
+        lane_points = []
+        if camera_diagnostics["fresh"] and self.lane is not None:
+            rows, cols = np.nonzero((self.lane > 0) & (self.visibility > 0))
+            if len(rows):
+                points = grid_to_metric(rows, cols, self.config)
+                stride = max(1, int(math.ceil(len(points)/256.0)))
+                lane_points = [[round(float(x), 3), round(float(y), 3)]
+                               for x, y in points[::stride][:256]]
+        camera_diagnostics["lane_boundary_points"] = lane_points
         # JSON has no portable infinity; unavailable boundaries are null.
         for key in ("nearest_left_boundary_m", "nearest_right_boundary_m"):
             if not math.isfinite(camera_diagnostics[key]):

@@ -35,7 +35,6 @@ class CsvOnlyBranchSelectorNode(Node):
         route_path = str(self.get_parameter("route_path").value)
         metadata_path = str(self.get_parameter("route_metadata_path").value)
         segments = csv_only_network_segments(route_path, metadata_path)
-        self.segments = segments
         self.geometry = parking_branch_geometry(segments)
         self.classifier = StartBranchClassifier(
             segments["START_A"], segments["START_B"],

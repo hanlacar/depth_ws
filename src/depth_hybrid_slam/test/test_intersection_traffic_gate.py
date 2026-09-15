@@ -47,18 +47,19 @@ def test_mode4_red_holds_indefinitely_and_green_releases_pending():
 def test_mode4_red_reholds_before_line_but_is_ignored_after_commit():
     gate = IntersectionTrafficGate(commit_margin_m=0.35)
     gate.evaluate(_progress(), True, "G", 0.0, 0.0)
+    gate.evaluate(_progress(), True, "G", 0.0, 3.0)
     rehold = gate.evaluate(
-        _progress(route_index=101, progress_m=10.30), False, "R", 0.0, 0.1)
+        _progress(route_index=101, progress_m=10.30), False, "R", 0.0, 3.1)
     assert rehold.state == STOP_LINE_HOLD and rehold.stop
     assert "RED_REHOLD_BEFORE_LINE" in rehold.event
     gate.evaluate(_progress(route_index=101, progress_m=10.30), False,
-                  "G", 0.0, 0.2)
+                  "G", 0.0, 3.2)
     committed = gate.evaluate(
-        _progress(route_index=102, progress_m=10.36), False, "G", 0.0, 0.3)
+        _progress(route_index=102, progress_m=10.36), False, "G", 0.0, 3.3)
     assert committed.state == INTERSECTION_COMMITTED
     assert committed.committed and not committed.stop
     red = gate.evaluate(
-        _progress(route_index=115, progress_m=15.0), False, "R", 0.0, 0.4)
+        _progress(route_index=115, progress_m=15.0), False, "R", 0.0, 3.4)
     assert red.state == INTERSECTION_COMMITTED
     assert not red.stop and not red.traffic_stop_allowed
     assert "RED_IGNORED_AFTER_COMMIT" in red.event
@@ -85,7 +86,7 @@ def test_unknown_releases_after_three_seconds_at_every_intersection(mode):
     assert continuing.state == RELEASE_PENDING and not continuing.stop
 
 
-def test_valid_red_cancels_unknown_timer_and_valid_green_releases_immediately():
+def test_valid_red_cancels_unknown_timer_and_green_obeys_minimum_stop():
     gate = IntersectionTrafficGate(unknown_hold_s=3.0)
     gate.evaluate(_progress(), True, "UNKNOWN", 0.0, 0.0)
     assert gate.evaluate(_progress(), True, "R", 0.0, 2.9).stop
@@ -106,9 +107,10 @@ def test_red_or_yellow_has_priority_over_simultaneous_green(signal):
 def test_crossing_and_red_in_same_update_commits_before_traffic_rehold():
     gate = IntersectionTrafficGate(commit_margin_m=0.35)
     gate.evaluate(_progress(), True, "G", 0.0, 0.0)
+    gate.evaluate(_progress(), True, "G", 0.0, 3.0)
     decision = gate.evaluate(
         _progress(route_index=102, progress_m=10.5), False,
-        "R", 0.0, 0.1)
+        "R", 0.0, 3.1)
     assert decision.state == INTERSECTION_COMMITTED
     assert not decision.stop and not decision.traffic_stop_allowed
     assert "RED_IGNORED_AFTER_COMMIT" in decision.event
@@ -117,9 +119,10 @@ def test_crossing_and_red_in_same_update_commits_before_traffic_rehold():
 def test_commit_latch_is_immutable_across_g_r_g_r_sequence():
     gate = IntersectionTrafficGate(commit_margin_m=0.35)
     gate.evaluate(_progress(), True, "G", 0.0, 0.0)
+    gate.evaluate(_progress(), True, "G", 0.0, 3.0)
     gate.evaluate(_progress(route_index=102, progress_m=10.5), False,
-                  "G", 0.0, 0.1)
-    for sequence, now in zip(("R", "G", "R"), (0.2, 0.3, 0.4)):
+                  "G", 0.0, 3.1)
+    for sequence, now in zip(("R", "G", "R"), (3.2, 3.3, 3.4)):
         decision = gate.evaluate(
             _progress(route_index=110, progress_m=14.0), False,
             sequence, 0.0, now)
@@ -130,7 +133,8 @@ def test_commit_latch_is_immutable_across_g_r_g_r_sequence():
 def test_mode8_green_left_releases_when_no_red_or_yellow_is_present():
     gate = IntersectionTrafficGate()
     progress = _progress(mode=8)
-    decision = gate.evaluate(progress, True, "GREEN_LEFT", 0.0, 0.0)
+    assert gate.evaluate(progress, True, "GREEN_LEFT", 0.0, 0.0).stop
+    decision = gate.evaluate(progress, True, "GREEN_LEFT", 0.0, 3.0)
     assert decision.state == RELEASE_PENDING and not decision.stop
     assert "MODE8_GREEN_LEFT_RELEASE" in decision.event
 
@@ -169,14 +173,16 @@ def test_mode8_red_plus_left_holds_until_unopposed_left_then_commits():
     line = _progress(mode=8)
     assert gate.evaluate(
         line, True, "R+GREEN_LEFT", 0.0, 0.0).stop
-    assert not gate.evaluate(
+    assert gate.evaluate(
         line, True, "GREEN_LEFT", 0.0, 0.1).stop
+    assert not gate.evaluate(
+        line, True, "GREEN_LEFT", 0.0, 3.0).stop
     crossed = _progress(mode=8, route_index=102, progress_m=10.5)
     assert gate.evaluate(
-        crossed, False, "GREEN_LEFT", 0.0, 0.2).committed
+        crossed, False, "GREEN_LEFT", 0.0, 3.1).committed
     red = gate.evaluate(
         _progress(mode=8, route_index=120, progress_m=16.0),
-        False, "R", 0.0, 0.3)
+        False, "R", 0.0, 3.2)
     assert not red.stop and not red.traffic_stop_allowed
     command = arbitrate(
         CommandCandidate(2.0, 22, True, True), CommandCandidate(),
@@ -197,37 +203,39 @@ def test_stale_red_becomes_unknown_and_releases_after_three_seconds():
 def test_wrong_segment_direction_and_backtrack_cannot_commit():
     gate = IntersectionTrafficGate(commit_margin_m=0.35)
     gate.evaluate(_progress(), True, "G", 0.0, 0.0)
+    gate.evaluate(_progress(), True, "G", 0.0, 3.0)
     assert gate.evaluate(
         _progress(route_index=101, progress_m=10.2), False,
-        "G", 0.0, 0.1).state == RELEASE_PENDING
+        "G", 0.0, 3.1).state == RELEASE_PENDING
     assert gate.evaluate(
         _progress(route_index=100, progress_m=10.8), False,
-        "G", 0.0, 0.2).state == RELEASE_PENDING
+        "G", 0.0, 3.2).state == RELEASE_PENDING
     assert gate.evaluate(
         _progress(route_index=102, progress_m=10.8, segment="OTHER"), False,
-        "G", 0.0, 0.3).state == RELEASE_PENDING
+        "G", 0.0, 3.3).state == RELEASE_PENDING
     assert gate.evaluate(
         _progress(route_index=102, progress_m=10.8, direction=-1), False,
-        "G", 0.0, 0.4).state == RELEASE_PENDING
+        "G", 0.0, 3.4).state == RELEASE_PENDING
     assert gate.evaluate(
         _progress(route_index=102, progress_m=10.8), False,
-        "G", 0.0, 0.5).state == INTERSECTION_COMMITTED
+        "G", 0.0, 3.5).state == INTERSECTION_COMMITTED
 
 
 def test_exit_resets_latch_and_mode6_gets_an_independent_gate():
     gate = IntersectionTrafficGate(commit_margin_m=0.35)
     gate.evaluate(_progress(), True, "G", 0.0, 0.0)
+    gate.evaluate(_progress(), True, "G", 0.0, 3.0)
     gate.evaluate(_progress(route_index=102, progress_m=10.5), False,
-                  "G", 0.0, 0.1)
+                  "G", 0.0, 3.1)
     exited = gate.evaluate(
         _progress(mode=5, route_index=131, progress_m=20.1), False,
-        "R", 0.0, 0.2)
+        "R", 0.0, 3.2)
     assert exited.state == INTERSECTION_EXITED and not exited.stop
     mode6 = _progress(
         mode=6, route_index=200, progress_m=30.0,
         stop_route_index=200, stop_index=554, stop_progress_m=30.0,
         exit_route_index=240, exit_progress_m=40.0)
-    hold = gate.evaluate(mode6, True, "R", 0.0, 0.3)
+    hold = gate.evaluate(mode6, True, "R", 0.0, 3.3)
     assert hold.state == STOP_LINE_HOLD and hold.stop
     assert not hold.committed
 
@@ -238,17 +246,18 @@ def test_mode6_right_turn_keeps_csv_command_after_committed_red():
         mode=6, route_index=200, progress_m=30.0,
         stop_route_index=200, stop_index=554, stop_progress_m=30.0,
         exit_route_index=250, exit_progress_m=45.0)
-    assert gate.evaluate(line, True, "G", 0.0, 0.0).state == RELEASE_PENDING
+    assert gate.evaluate(line, True, "G", 0.0, 0.0).state == STOP_LINE_HOLD
+    assert gate.evaluate(line, True, "G", 0.0, 3.0).state == RELEASE_PENDING
     crossed = _progress(
         mode=6, route_index=204, progress_m=30.5,
         stop_route_index=200, stop_index=554, stop_progress_m=30.0,
         exit_route_index=250, exit_progress_m=45.0)
-    assert gate.evaluate(crossed, False, "G", 0.0, 0.1).committed
+    assert gate.evaluate(crossed, False, "G", 0.0, 3.1).committed
     turn = _progress(
         mode=6, route_index=225, progress_m=38.0,
         stop_route_index=200, stop_index=554, stop_progress_m=30.0,
         exit_route_index=250, exit_progress_m=45.0)
-    decision = gate.evaluate(turn, False, "R", 0.0, 0.2)
+    decision = gate.evaluate(turn, False, "R", 0.0, 3.2)
     command = arbitrate(
         CommandCandidate(1.0, -22, True, True), CommandCandidate(),
         mission_hold=decision.stop)

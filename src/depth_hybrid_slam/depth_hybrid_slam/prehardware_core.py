@@ -301,6 +301,7 @@ class LidarPolicy:
                     return LidarDecision(0.0, 0, True, True, False,
                                          front_obstacle, False,
                                          "MODE5_BOTH_BLOCKED")
+                # Obstacle on the left requires a negative (right) command.
                 self.last_wheel = (-self.avoidance_wheel if left else
                                    self.avoidance_wheel)
                 return LidarDecision(1.0, self.last_wheel, False, True, False,

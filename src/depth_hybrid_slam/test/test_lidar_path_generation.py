@@ -137,6 +137,8 @@ def test_reverse_tracker_follows_every_generated_parking_segment_without_clamp(
     commands = [tracker.update(point) for point in plan.points[:-1]]
     assert all(command.valid for command in commands)
     assert max(abs(command.wheel) for command in commands) <= 21
+    assert min(command.wheel for command in commands) < 0
+    assert max(command.wheel for command in commands) > 0
 
 
 @pytest.mark.parametrize("mode", (7, 10))

@@ -49,13 +49,16 @@ class IntersectionTrafficGate:
     """
 
     def __init__(self, unknown_hold_s=3.0, traffic_timeout_s=0.5,
+                 minimum_stop_s=3.0,
                  commit_margin_m=0.35, intersection_modes=(4, 6, 8)):
         self.unknown_hold_s = float(unknown_hold_s)
+        self.minimum_stop_s = float(minimum_stop_s)
         self.traffic_timeout_s = float(traffic_timeout_s)
         self.commit_margin_m = float(commit_margin_m)
         self.intersection_modes = frozenset(int(mode)
                                             for mode in intersection_modes)
-        if (self.unknown_hold_s < 0.0 or self.traffic_timeout_s <= 0.0 or
+        if (self.unknown_hold_s < 0.0 or self.minimum_stop_s < 0.0 or
+                self.traffic_timeout_s <= 0.0 or
                 self.commit_margin_m <= 0.0 or not self.intersection_modes):
             raise ValueError("invalid intersection traffic gate configuration")
         self.reset()
@@ -68,6 +71,7 @@ class IntersectionTrafficGate:
         self.last_route_index = None
         self.high_water_progress_m = None
         self.unknown_since = None
+        self.stop_started = None
         self.release_cause = None
 
     def _signal(self, aspect, signal_age_s, mode):
@@ -95,13 +99,14 @@ class IntersectionTrafficGate:
             bool(stop), self.state, aspect, event, active,
             traffic_stop_allowed=not committed, committed=committed)
 
-    def _activate(self, progress):
+    def _activate(self, progress, now):
         self.active_mode = int(progress.mode)
         self.active_stop_route_index = int(progress.stop_route_index)
         self.active_stop_index = int(progress.stop_index)
         self.last_route_index = int(progress.route_index)
         self.high_water_progress_m = float(progress.progress_m)
         self.state = STOP_LINE_HOLD
+        self.stop_started = float(now)
         self.unknown_since = None
 
     def _exited(self, progress):
@@ -154,7 +159,7 @@ class IntersectionTrafficGate:
             if not mode_supported:
                 return self._decision(False, signal, active=False)
             if bool(stop_line_active):
-                self._activate(progress)
+                self._activate(progress, now)
                 event = f"STOP_LINE_HOLD traffic={signal}"
             else:
                 return self._decision(False, signal, "", active=True)
@@ -162,14 +167,19 @@ class IntersectionTrafficGate:
             event = ""
 
         if self.state == STOP_LINE_HOLD:
+            stopped_for = max(0.0, now-float(self.stop_started))
             if signal == "R":
                 self.unknown_since = None
                 return self._decision(
                     True, signal, "; ".join(filter(None, (
                         event, "RED_HOLD"))))
             if signal == "G":
-                self.state = RELEASE_PENDING
                 self.unknown_since = None
+                if stopped_for < self.minimum_stop_s:
+                    return self._decision(
+                        True, signal,
+                        f"MINIMUM_STOP elapsed={stopped_for:.3f}s")
+                self.state = RELEASE_PENDING
                 self.release_cause = "GREEN"
                 return self._decision(
                     False, signal, "; ".join(filter(None, (
@@ -179,7 +189,8 @@ class IntersectionTrafficGate:
                 return self._decision(
                     True, signal, "UNKNOWN_HOLD_STARTED")
             elapsed = max(0.0, now-self.unknown_since)
-            if elapsed < self.unknown_hold_s:
+            if (elapsed < self.unknown_hold_s or
+                    stopped_for < self.minimum_stop_s):
                 return self._decision(
                     True, signal,
                     f"UNKNOWN_HOLD elapsed={elapsed:.3f}s")

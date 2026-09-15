@@ -32,6 +32,11 @@ class ValidatorConfig:
     y_max_m: float = 3.0
     resolution_m: float = 0.04
     vehicle_width_m: float = 0.78
+    vehicle_length_m: float = 1.40
+    wheelbase_m: float = 0.73
+    wheel_track_m: float = 0.68
+    lane_collision_margin_m: float = 0.06
+    lane_fail_collision_ratio: float = 0.03
     minimum_center_inside_ratio: float = 0.90
     minimum_vehicle_corridor_inside_ratio: float = 0.75
     minimum_visible_path_ratio: float = 0.70
@@ -65,6 +70,9 @@ class ValidatorConfig:
     def validate(self):
         numeric = (self.forward_min_m, self.forward_max_m, self.y_min_m,
                    self.y_max_m, self.resolution_m, self.vehicle_width_m,
+                   self.vehicle_length_m, self.wheelbase_m,
+                   self.wheel_track_m, self.lane_collision_margin_m,
+                   self.lane_fail_collision_ratio,
                    self.minimum_center_inside_ratio,
                    self.minimum_vehicle_corridor_inside_ratio,
                    self.minimum_visible_path_ratio,
@@ -77,7 +85,10 @@ class ValidatorConfig:
         if (self.forward_min_m < 0.0 or
                 self.forward_max_m <= self.forward_min_m or
                 self.y_max_m <= self.y_min_m or self.resolution_m <= 0.0 or
-                self.vehicle_width_m <= 0.0 or
+                self.vehicle_width_m <= 0.0 or self.vehicle_length_m <= 0.0 or
+                self.wheelbase_m <= 0.0 or self.wheel_track_m <= 0.0 or
+                self.wheel_track_m > self.vehicle_width_m or
+                self.lane_collision_margin_m < 0.0 or
                 self.path_sample_spacing_m <= 0.0 or
                 self.corridor_lateral_samples < 3 or self.lane_min_pixels < 1):
             raise ValueError("invalid validator geometry")
@@ -86,7 +97,8 @@ class ValidatorConfig:
                       self.minimum_visible_path_ratio,
                       self.minimum_road_confidence,
                       self.lane_min_support_ratio,
-                      self.lane_max_crossing_ratio):
+                      self.lane_max_crossing_ratio,
+                      self.lane_fail_collision_ratio):
             if not 0.0 <= value <= 1.0:
                 raise ValueError("ratios must be in [0,1]")
 
@@ -104,6 +116,10 @@ class ValidationResult:
     lane_support_ratio: float = 0.0
     lane_crossing_ratio: float = 0.0
     lane_heading_error_deg: float = 180.0
+    wheel_lane_collision_ratio: float = 0.0
+    footprint_lane_collision_ratio: float = 0.0
+    lane_fail_collision_ratio: float = 0.03
+    lane_geometry_confident: bool = False
     nearest_left_boundary_m: float = math.inf
     nearest_right_boundary_m: float = math.inf
     evaluated_center_points: int = 0
@@ -115,20 +131,21 @@ class ValidationResult:
 
     @property
     def advisory_state(self):
-        """Stable camera advisory vocabulary; it never requests steering."""
-        if self.state == VALID_ROAD_AND_LANE:
-            return "VALID_LANE"
-        if self.state == VALID_ROAD_ONLY:
-            return "VALID_ROAD_ONLY"
-        if self.state == DEGRADED_LANE_UNCERTAIN:
-            return "NEAR_BOUNDARY"
-        if self.state in (INVALID_OUTSIDE_ROAD, INVALID_INSUFFICIENT_ROAD):
-            return "OUTSIDE_ROAD"
+        """Three-state contract based on predicted wheel/footprint risk."""
+        collision = max(self.wheel_lane_collision_ratio,
+                        self.footprint_lane_collision_ratio)
+        if (self.lane_geometry_confident and
+                collision >= self.lane_fail_collision_ratio):
+            return "FAIL"
+        if (self.state == VALID_ROAD_AND_LANE and
+                self.lane_geometry_confident and collision <= 0.0):
+            return "TRUE"
         return "UNKNOWN"
 
     def camera_diagnostics(self, fresh):
         return {
             "state": self.advisory_state,
+            "raw_validation_state": self.state,
             "road_valid": self.state in (
                 VALID_ROAD_AND_LANE, VALID_ROAD_ONLY,
                 DEGRADED_LANE_UNCERTAIN),
@@ -136,12 +153,44 @@ class ValidationResult:
             "road_confidence": self.road_confidence,
             "lane_confidence": self.lane_support_ratio,
             "lane_crossing_ratio": self.lane_crossing_ratio,
+            "wheel_lane_collision_ratio": self.wheel_lane_collision_ratio,
+            "footprint_lane_collision_ratio":
+                self.footprint_lane_collision_ratio,
+            "lane_geometry_confident": self.lane_geometry_confident,
             "visible_ratio": self.visible_path_ratio,
             "corridor_inside_ratio": self.vehicle_corridor_inside_ratio,
             "nearest_left_boundary_m": self.nearest_left_boundary_m,
             "nearest_right_boundary_m": self.nearest_right_boundary_m,
             "fresh": bool(fresh),
         }
+
+
+class CameraRiskGate:
+    """Require continuous wheel/footprint risk before publishing FAIL."""
+
+    def __init__(self, fail_confirm_s=0.4):
+        self.fail_confirm_s = float(fail_confirm_s)
+        if not 0.3 <= self.fail_confirm_s <= 0.5:
+            raise ValueError("camera FAIL confirmation must be 0.3..0.5 s")
+        self.fail_since = None
+        self.state = "UNKNOWN"
+
+    def update(self, candidate, now):
+        candidate = str(candidate).strip().upper()
+        now = float(now)
+        if candidate == "FAIL":
+            if self.fail_since is None:
+                self.fail_since = now
+            self.state = (
+                "FAIL" if now-self.fail_since >= self.fail_confirm_s else
+                "UNKNOWN")
+        elif candidate == "TRUE":
+            self.fail_since = None
+            self.state = "TRUE"
+        else:
+            self.fail_since = None
+            self.state = "UNKNOWN"
+        return self.state
 
 
 def unavailable_result(state, reason):
@@ -279,7 +328,7 @@ def _lane_evidence(lane, path, config):
     if len(lane_rows) < config.lane_min_pixels:
         return False, False, 0.0, 0.0, 180.0
     lane_xy = grid_to_metric(lane_rows, lane_cols, config)
-    supports, crossings, heading_points = [], [], []
+    supports, crossings = [], []
     half_width = config.vehicle_width_m*0.5
     stride = max(1, int(round(0.10/config.path_sample_spacing_m)))
     for point in path[::stride]:
@@ -297,18 +346,13 @@ def _lane_evidence(lane, path, config):
                       (np.abs(candidates) <= config.lane_max_distance_m))
         supports.append(bool(np.any(acceptable)))
         crossings.append(bool(np.any(np.abs(candidates) < half_width*0.90)))
-        chosen = candidates[acceptable]
-        if len(chosen):
-            lateral_value = chosen[np.argmin(np.abs(chosen))]
-            normal = np.array((-sine, cosine))
-            heading_points.append(point[:2]+normal*lateral_value)
     if not supports:
         return True, False, 0.0, 0.0, 180.0
     support_ratio = float(np.mean(supports))
     crossing_ratio = float(np.mean(crossings))
     heading_error = 180.0
-    if len(heading_points) >= 3:
-        samples = np.asarray(heading_points)
+    if len(lane_xy) >= 3:
+        samples = np.asarray(lane_xy)
         centered = samples-np.mean(samples, axis=0)
         _, _, vh = np.linalg.svd(centered, full_matrices=False)
         lane_heading = math.atan2(vh[0, 1], vh[0, 0])
@@ -343,6 +387,46 @@ def _nearest_lane_boundaries(lane, path, config):
         if np.any(values < 0.0):
             right = min(right, float(np.min(np.abs(values[values < 0.0]))))
     return left, right
+
+
+def _predicted_vehicle_samples(path, config):
+    """Return four wheel tracks and a rectangular footprint sweep."""
+    wheels, footprint = [], []
+    axle = config.wheelbase_m*0.5
+    half_track = config.wheel_track_m*0.5
+    half_length = config.vehicle_length_m*0.5
+    half_width = config.vehicle_width_m*0.5
+    longitudinal = np.linspace(-half_length, half_length, 5)
+    lateral = np.linspace(-half_width, half_width, 5)
+    for x, y, yaw in path:
+        c, s = math.cos(yaw), math.sin(yaw)
+        for forward in (-axle, axle):
+            for side in (-half_track, half_track):
+                wheels.append((x+c*forward-s*side,
+                               y+s*forward+c*side))
+        for forward in longitudinal:
+            for side in lateral:
+                footprint.append((x+c*forward-s*side,
+                                  y+s*forward+c*side))
+    return np.asarray(wheels), np.asarray(footprint)
+
+
+def _vehicle_lane_risk(lane, path, config):
+    wheels, footprint = _predicted_vehicle_samples(path, config)
+    radius = int(math.ceil(
+        config.lane_collision_margin_m/config.resolution_m))
+    expanded = lane
+    if radius > 0:
+        kernel = np.ones((2*radius+1, 2*radius+1), np.uint8)
+        expanded = cv2.dilate(lane, kernel)
+
+    def ratio(points):
+        samples, inside = _sample(expanded, points, config)
+        count = int(np.count_nonzero(inside))
+        return (float(np.count_nonzero(samples & inside)/count)
+                if count else 0.0)
+
+    return ratio(wheels), ratio(footprint)
 
 
 def validate_metric_bev(road_mask, lane_mask, visibility_mask,
@@ -392,6 +476,12 @@ def validate_metric_bev(road_mask, lane_mask, visibility_mask,
     nearest_left, nearest_right = _nearest_lane_boundaries(
         lane & visibility, path[visible], config) if visible_count else (
             math.inf, math.inf)
+    wheel_collision, footprint_collision = _vehicle_lane_risk(
+        lane & visibility, path[visible], config) if visible_count else (
+            0.0, 0.0)
+    lane_geometry_confident = bool(
+        lane_visible and
+        lane_heading <= config.lane_heading_tolerance_deg)
 
     common = dict(
         center_inside_ratio=center_ratio,
@@ -403,6 +493,10 @@ def validate_metric_bev(road_mask, lane_mask, visibility_mask,
         lane_support_ratio=lane_support,
         lane_crossing_ratio=lane_crossing,
         lane_heading_error_deg=lane_heading,
+        wheel_lane_collision_ratio=wheel_collision,
+        footprint_lane_collision_ratio=footprint_collision,
+        lane_fail_collision_ratio=config.lane_fail_collision_ratio,
+        lane_geometry_confident=lane_geometry_confident,
         nearest_left_boundary_m=nearest_left,
         nearest_right_boundary_m=nearest_right,
         evaluated_center_points=len(path),

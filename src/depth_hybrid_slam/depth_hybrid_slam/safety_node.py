@@ -36,7 +36,6 @@ class SafetyNode(Node):
         self.value.user_approved = bool(self.get_parameter("user_approved").value)
         self.value.map_route_match = bool(self.get_parameter("map_route_match").value)
         self.value.within_map = bool(self.get_parameter("within_map").value)
-        self.mission_reason = ""
         self.create_subscription(Bool, "/depth_slam/localization/tracking_valid",
                                  lambda m: setattr(self.value, "tracking_valid", bool(m.data)), 10)
         self.create_subscription(String, "/depth_slam/localization/state",

@@ -4,6 +4,20 @@ import math
 
 from .geometry import wrap_angle
 from .models import ControllerResult
+from .vehicle_kinematics import clamp_steering, steering_from_curvature
+
+
+def stop_reference_reached(waypoint, reference_pose, threshold_m):
+    """Return proximity from the supplied TF-derived sensor pose.
+
+    The caller deliberately supplies the live ``map -> front_laser`` pose;
+    the route follower's base-link pose is not accepted implicitly here.
+    """
+    if waypoint is None or reference_pose is None:
+        return False
+    return math.hypot(
+        float(waypoint.x)-float(reference_pose.x),
+        float(waypoint.y)-float(reference_pose.y)) <= float(threshold_m)
 
 
 class RouteFollower:
@@ -123,15 +137,16 @@ class RouteFollower:
             stop_reason = "HEADING_ERROR"
         elif nearest >= len(route)-2 and abs(cross_track) < 0.15 and projection > 0.9:
             stop_reason = "ROUTE_COMPLETE"
-        elif str(point.mission_marker).upper() in ("STOP", "STOP_POINT") and \
-                math.hypot(point.x-pose.x, point.y-pose.y) < 0.3:
-            stop_reason = "ROUTE_STOP_POINT"
-        # Stage-1 /slam_wheel contract is left-positive, right-negative.
-        standard = math.degrees(math.atan2(
-            2.0*self.wheelbase*math.sin(alpha), max(self.lookahead, 0.05)))
+        # STOP_LINE proximity is deliberately not evaluated here: this
+        # controller tracks from base_link, while the production stop gate
+        # uses the live map->front_laser TF in RouteFollowerNode.
+        # REP-103 positive curvature is a physical left turn and therefore a
+        # positive /wheel command throughout the production graph.
+        standard = steering_from_curvature(
+            2.0*math.sin(alpha)/max(self.lookahead, 0.05), self.wheelbase)
         if direction < 0:
             standard = -standard
-        requested = max(-self.max_steering, min(self.max_steering, standard))
+        requested = clamp_steering(standard, self.max_steering)
         curvature_limited = abs(standard) > self.max_steering
         slew = self.steering_rate * max(0.0, dt)
         steering = max(self.last_steering-slew,

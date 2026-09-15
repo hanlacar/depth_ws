@@ -40,6 +40,7 @@ setup(
             "map_route_validate = depth_hybrid_slam.map_route_validate:main",
             "route_follower = depth_hybrid_slam.route_follower_node:main",
             "csv_road_validator = depth_hybrid_slam.csv_road_validator_node:main",
+            "camera_correction = depth_hybrid_slam.camera_correction_node:main",
             "branch_selector = depth_hybrid_slam.branch_selector_node:main",
             "start_validation = depth_hybrid_slam.start_validation_node:main",
             "rtabmap_vslam_gate = depth_hybrid_slam.rtabmap_vslam_gate_node:main",

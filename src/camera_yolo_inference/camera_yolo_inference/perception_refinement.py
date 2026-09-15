@@ -503,6 +503,28 @@ class CommonPerceptionRefiner:
             evidence.update({"track_id": track_id, "raw_class": raw_class,
                              "observed_class": observed, "refined_class": stable,
                              "raw_confidence": float(instance.get("confidence", 0.0))})
+            geometry = _component_features(mask) or {}
+            rows, cols = np.nonzero(mask)
+            curve = 0.0
+            if len(rows) >= 6 and float(np.ptp(rows)) >= 3.0:
+                curve = float(np.polyfit(
+                    rows.astype(float), cols.astype(float), 2)[0])
+            evidence.update({
+                "color": stable,
+                "geometry": {
+                    "bbox": geometry.get("bbox"),
+                    "length": geometry.get("length", 0.0),
+                    "thickness": geometry.get("thickness", 0.0),
+                    "center": geometry.get("center"),
+                },
+                "curve": curve,
+                "heading": geometry.get("angle_deg", 0.0),
+                "confidence": max(float(yellow_score), float(white_score)),
+                "age": next((len(track.scores) for track in self._tracks
+                             if track.track_id == track_id), 1),
+                "last_seen": stamp,
+                "missing_duration": 0.0,
+            })
             line_diagnostics.append(evidence)
         # Aggregated line pixels absent from instance payload remain unknown.
         raw_line = (raw.get("white_line", np.zeros(shape, np.uint8)) |

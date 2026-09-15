@@ -38,7 +38,7 @@ camera_yolo_inference_node:
     # raw detector topics remain /perception/masks/{white,yellow}_line and
     # tracked-only pixels are published under /perception/tracked/.
     line_track_mode: none
-    line_track_max_hold_sec: 0.40
+    line_track_max_hold_sec: 0.20
     line_track_max_hold_frames: 12
     line_track_confidence_decay: 0.88
     line_track_min_flow_points: 18

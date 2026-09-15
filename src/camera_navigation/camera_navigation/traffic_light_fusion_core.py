@@ -335,13 +335,13 @@ class TrafficLightFusion:
                 self.confirmed_confidence = 0.0
                 self.pending_key = None
                 self.pending_count = 0
-            return self._decision(now, "UNKNOWN", "UNKNOWN", 0.0, reason,
+            return self._decision("UNKNOWN", "UNKNOWN", 0.0, reason,
                                   meta, route_mode)
         state, aspect, confidence, basis = raw
         key = (state, aspect, basis)
         if key == self.confirmed_key:
             self.confirmed_confidence = confidence
-            return self._decision(now, state, aspect, confidence, reason, meta,
+            return self._decision(state, aspect, confidence, reason, meta,
                                   route_mode)
         if basis == "PAIR":
             new_evidence = bool(
@@ -370,12 +370,12 @@ class TrafficLightFusion:
             self.confirmed_confidence = confidence
             self.pending_key = None
             self.pending_count = 0
-            return self._decision(now, state, aspect, confidence, reason, meta,
+            return self._decision(state, aspect, confidence, reason, meta,
                                   route_mode)
-        return self._decision(now, "UNKNOWN", "UNKNOWN", 0.0,
+        return self._decision("UNKNOWN", "UNKNOWN", 0.0,
                               "WAITING_CONFIRMATION", meta, route_mode)
 
-    def _decision(self, now, state, aspect, confidence, reason, meta,
+    def _decision(self, state, aspect, confidence, reason, meta,
                   route_mode):
         yolo, rgb = self.yolo, self.rgb
         diagnostics = {

@@ -21,16 +21,19 @@ def stop(_signum, _frame):
 
 
 def directory_size(path):
-    return sum(item.stat().st_size for item in Path(path).rglob("*") if item.is_file())
+    return sum(item.stat().st_size for item in Path(path).rglob("*")
+               if item.is_file())
 
 
 def gpu_sample():
     try:
         output = subprocess.run([
             "nvidia-smi", "--query-gpu=utilization.gpu,memory.used",
-            "--format=csv,noheader,nounits"], check=False, capture_output=True,
-            text=True, timeout=2).stdout.strip().splitlines()[0]
-        utilization, memory = (float(value.strip()) for value in output.split(","))
+            "--format=csv,noheader,nounits"], check=False,
+            capture_output=True, text=True, timeout=2).stdout.strip() \
+            .splitlines()[0]
+        utilization, memory = (
+            float(value.strip()) for value in output.split(","))
         return utilization, memory
     except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
         return None, None
@@ -38,7 +41,7 @@ def gpu_sample():
 
 def summary(values):
     clean = [value for value in values if value is not None]
-    return {"mean": sum(clean) / len(clean) if clean else None,
+    return {"mean": sum(clean)/len(clean) if clean else None,
             "max": max(clean) if clean else None}
 
 
@@ -57,10 +60,12 @@ def main():
     while running:
         now = time.monotonic()
         try:
-            current_size = directory_size(args.bag_path) if Path(args.bag_path).exists() else 0
+            current_size = (directory_size(args.bag_path)
+                            if Path(args.bag_path).exists() else 0)
             gpu, vram = gpu_sample()
             samples.append({
-                "elapsed_s": now - previous_time if not samples else now - samples[0]["monotonic"],
+                "elapsed_s": (now-previous_time if not samples else
+                              now-samples[0]["monotonic"]),
                 "monotonic": now,
                 "recorder_cpu_percent": process.cpu_percent(None),
                 "recorder_rss_bytes": process.memory_info().rss,
@@ -70,8 +75,8 @@ def main():
                 "gpu_memory_mb": vram,
                 "bag_size_bytes": current_size,
                 "bag_write_bytes_per_second": (
-                    max(0, current_size - previous_size) /
-                    max(now - previous_time, 1e-6)),
+                    max(0, current_size-previous_size)/
+                    max(now-previous_time, 1e-6)),
             })
             previous_size, previous_time = current_size, now
         except (psutil.Error, OSError):
@@ -81,13 +86,20 @@ def main():
         sample.pop("monotonic", None)
     report = {
         "samples": len(samples),
-        "recorder_cpu_percent": summary([s["recorder_cpu_percent"] for s in samples]),
-        "recorder_rss_bytes": summary([s["recorder_rss_bytes"] for s in samples]),
-        "system_cpu_percent": summary([s["system_cpu_percent"] for s in samples]),
-        "system_memory_percent": summary([s["system_memory_percent"] for s in samples]),
-        "gpu_utilization_percent": summary([s["gpu_utilization_percent"] for s in samples]),
-        "gpu_memory_mb": summary([s["gpu_memory_mb"] for s in samples]),
-        "bag_write_bytes_per_second": summary([s["bag_write_bytes_per_second"] for s in samples[1:]]),
+        "recorder_cpu_percent": summary([
+            sample["recorder_cpu_percent"] for sample in samples]),
+        "recorder_rss_bytes": summary([
+            sample["recorder_rss_bytes"] for sample in samples]),
+        "system_cpu_percent": summary([
+            sample["system_cpu_percent"] for sample in samples]),
+        "system_memory_percent": summary([
+            sample["system_memory_percent"] for sample in samples]),
+        "gpu_utilization_percent": summary([
+            sample["gpu_utilization_percent"] for sample in samples]),
+        "gpu_memory_mb": summary([
+            sample["gpu_memory_mb"] for sample in samples]),
+        "bag_write_bytes_per_second": summary([
+            sample["bag_write_bytes_per_second"] for sample in samples[1:]]),
         "raw_samples": samples,
     }
     with Path(args.output).open("x", encoding="utf-8") as stream:

@@ -7,6 +7,30 @@ import math
 COUNTS_PER_METER = 797.0
 WHEELBASE_M = 0.730
 MAX_STEERING_DEG = 22.0
+PLANNER_STEERING_DEG = 20.0
+
+
+def clamp_steering(value, limit=MAX_STEERING_DEG):
+    """Clamp a LEFT-positive steering command to a symmetric limit."""
+    limit = abs(float(limit))
+    return max(-limit, min(limit, float(value)))
+
+
+def curvature_from_steering(steering_deg, wheelbase_m=WHEELBASE_M):
+    """Convert LEFT-positive steering degrees to signed curvature."""
+    return math.tan(math.radians(float(steering_deg)))/float(wheelbase_m)
+
+
+def steering_from_curvature(curvature, wheelbase_m=WHEELBASE_M):
+    """Convert signed curvature to LEFT-positive steering degrees."""
+    return math.degrees(math.atan(float(wheelbase_m)*float(curvature)))
+
+
+def planner_steering_feasible(required_deg,
+                              limit=PLANNER_STEERING_DEG):
+    """Planner boundary: both signed 20 degree limits are inclusive."""
+    value = float(required_deg)
+    return math.isfinite(value) and abs(value) <= float(limit)+1.0e-9
 
 
 @dataclass(frozen=True)
@@ -65,7 +89,7 @@ class AckermannPathEvaluator:
         steer = float(steer_deg)
         if float(drive_stage) != stage or stage not in self.stage_mps:
             raise ValueError("drive stage must be -1, 0, 1, 2, or 3")
-        steer = max(-self.max_steering, min(self.max_steering, steer))
+        steer = clamp_steering(steer, self.max_steering)
         requested_direction = 1 if stage > 0 else -1 if stage < 0 else 0
         stopped = bool(stop) or stage == 0
         if stopped:
@@ -84,8 +108,7 @@ class AckermannPathEvaluator:
                 self.last_motion_direction = requested_direction
                 self.stop_elapsed = 0.0
         distance = speed*dt
-        steer_rad = math.radians(steer)
-        curvature = math.tan(steer_rad)/self.wheelbase
+        curvature = curvature_from_steering(steer, self.wheelbase)
         dtheta = distance*curvature
         if abs(dtheta) < 1.0e-12:
             self.x += distance*math.cos(self.yaw)

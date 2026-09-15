@@ -1,6 +1,6 @@
 import math
 
-from t870_mcu_simple.odom_core import MeasuredEncoderOdom
+from t870_mcu_simple.odom_core import MeasuredEncoderOdom, steering_from_adc
 
 
 def test_bridge_exposes_command_and_firmware_confirmation_contract():
@@ -41,6 +41,14 @@ def test_measured_ticks_and_measured_steering_drive_pose():
     assert distance > 0.0 and delta_yaw > 0.0
     assert odom.state.distance_m == abs(distance)
     assert all(math.isfinite(value) for value in odom.base_pose())
+
+
+def test_left_positive_axis_reaches_mcu_and_feedback_without_inversion():
+    source = (__import__("pathlib").Path(__file__).resolve().parents[1] /
+              "t870_mcu_simple" / "bridge_node.py").read_text()
+    assert 'self.send(f"W,{degree}")' in source
+    assert steering_from_adc(484+18*10, 484, 18, 22) == 10
+    assert steering_from_adc(484-18*10, 484, 18, 22) == -10
 
 
 def test_reverse_direction_uses_ticks_not_commanded_distance():

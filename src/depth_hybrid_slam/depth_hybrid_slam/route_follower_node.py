@@ -1,4 +1,4 @@
-"""Thirty-hertz dry-run route follower. MCU control is impossible by default."""
+"""CSV route follower that publishes candidates for the command arbiter."""
 
 import csv
 from dataclasses import replace
@@ -13,6 +13,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, Float32, Int32, String
+from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 from .models import ControllerResult, Pose2D, RoutePoint
@@ -28,7 +29,7 @@ from .ros_helpers import (
     status,
     yaw_from_quaternion,
 )
-from .route_follower_core import RouteFollower
+from .route_follower_core import RouteFollower, stop_reference_reached
 from .csv_only_branching import load_csv_only_route_case, remap_case_progress
 from .route_io import (
     DEFAULT_BRANCH, forward_tangent_yaw, is_segmented_columns,
@@ -89,6 +90,7 @@ class RouteFollowerNode(Node):
                               ("reverse_rejoin_allowed", False),
                               ("start_mode", 1), ("end_mode", 11),
                               ("direction_stop_trigger_distance_m", 1.0),
+                              ("stop_reference_frame", "front_laser"),
                               ("prehardware_test_override_alignment", False),
                               ("allow_odom_route_origin", False),
                               ("prehardware_csv_only_case_selection", False),
@@ -234,6 +236,8 @@ class RouteFollowerNode(Node):
         self.rejoin_plan = None
         self.rejoin_route = []
         self.stop_waypoint = StopWaypointMachine(3.0)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         self.mode_completion = (
             RouteModeCompletionTracker(self.route) if self.route else None)
         self.last_completion_error = ""
@@ -431,29 +435,43 @@ class RouteFollowerNode(Node):
             self.mode_completion.bind_route(self.route, new_index)
         self.publish_reference_path()
 
-    def _stop_line_ahead(self, nearest, pose, trigger_distance=0.50):
+    def _stop_line_ahead(self, nearest, stop_pose, trigger_distance=0.50):
+        """Test STOP proximity only from the live front-laser TF pose."""
         direction_trigger = float(self.get_parameter(
             "direction_stop_trigger_distance_m").value)
         if direction_trigger < trigger_distance:
             direction_trigger = trigger_distance
-        distance = 0.0
+        search_distance = 0.0
         last = self.route[nearest]
-        for point in self.route[nearest:min(len(self.route), nearest+80)]:
+        for route_index in range(nearest, min(len(self.route), nearest+80)):
+            point = self.route[route_index]
             if point is not last:
-                distance += math.hypot(point.x-last.x, point.y-last.y)
+                search_distance += math.hypot(point.x-last.x, point.y-last.y)
             last = point
             required_direction_stop = (
-                point.index+1 < len(self.route) and
-                point.direction != self.route[point.index+1].direction)
+                route_index+1 < len(self.route) and
+                point.direction != self.route[route_index+1].direction)
             limit = direction_trigger if required_direction_stop else trigger_distance
-            if (point.event == "STOP_LINE" or required_direction_stop) and (
-                    distance <= limit or
-                    math.hypot(point.x-pose.x, point.y-pose.y) <=
-                    limit):
+            if ((point.event == "STOP_LINE" or required_direction_stop) and
+                    stop_reference_reached(point, stop_pose, limit)):
                 return f"{point.segment_id}:{point.point_index}", True
-            if distance > direction_trigger:
+            if search_distance > max(3.0, direction_trigger):
                 break
         return "", False
+
+    def _stop_reference_pose(self):
+        frame = str(self.get_parameter("stop_reference_frame").value) \
+            .lstrip("/")
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                "map", frame, rclpy.time.Time())
+        except TransformException:
+            return None
+        translation = transform.transform.translation
+        return Pose2D(
+            float(translation.x), float(translation.y),
+            yaw_from_quaternion(transform.transform.rotation),
+            stamp_seconds(transform.header.stamp))
 
     def _next_stop_index(self):
         first = max(0, self.core.last_index or 0)
@@ -626,6 +644,8 @@ class RouteFollowerNode(Node):
                            not bool(self.get_parameter("dry_run").value) and
                            bool(self.get_parameter("user_approved").value))
         pose = self.pose or Pose2D(0.0, 0.0, 0.0, 0.0)
+        stop_reference_pose = self._stop_reference_pose()
+        stop_reference_ready = stop_reference_pose is not None
         localized = self.localization_ready()
         if stale or not localized:
             original = ControllerResult(
@@ -704,8 +724,9 @@ class RouteFollowerNode(Node):
                       if self.navigation_state != "FOLLOW_ROUTE" else
                       result.reason)
         waypoint_key, waypoint_reached = (self._stop_line_ahead(
-            max(0, original.nearest_index), pose) if self.route and
-            not stale and localized else ("", False))
+            max(0, original.nearest_index), stop_reference_pose)
+            if self.route and not stale and localized and
+            stop_reference_ready else ("", False))
         waypoint_decision = self.stop_waypoint.update(
             waypoint_key, waypoint_reached, self.mission_stop,
             time.monotonic())
@@ -722,6 +743,7 @@ class RouteFollowerNode(Node):
                     transition_release = True
                     break
         allow = (not stale and localized and self.control_route_available and
+                 stop_reference_ready and
                  self.safety_ready and not self.mission_stop and
                  not waypoint_decision.stop and not transition_release and
                  not result.stop_required and
@@ -729,7 +751,9 @@ class RouteFollowerNode(Node):
                  self.navigation_state in ("FOLLOW_ROUTE", "FOLLOW_REJOIN_PATH"))
         requested_drive = math.copysign(
             min(abs(result.drive), self.mission_speed_limit), result.drive)
-        preview_drive = 0.0 if (stale or not localized or not self.control_route_available or
+        preview_drive = 0.0 if (stale or not localized or
+                                not stop_reference_ready or
+                                not self.control_route_available or
                                 result.stop_required or self.mission_stop or
                                 waypoint_decision.stop or transition_release or
                                 self.navigation_state not in (
@@ -835,6 +859,9 @@ class RouteFollowerNode(Node):
               if self.rejoin_plan else 0.0),
              ("active_branch", self.active_branch),
              ("external_maneuver_active", self.external_maneuver_active),
+             ("stop_reference_frame", str(self.get_parameter(
+                 "stop_reference_frame").value)),
+             ("stop_reference_tf_ready", stop_reference_ready),
              ("stop_waypoint_state", waypoint_decision.state),
              ("stop_waypoint_elapsed_s", waypoint_decision.elapsed_s),
              ("direction_transition_release_stop", transition_release),

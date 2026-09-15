@@ -6,24 +6,21 @@ from .traffic_gate import IntersectionProgress, IntersectionTrafficGate
 
 class MissionMachine:
     def __init__(self, ramp_sections=(), acceleration_sections=(),
-                 finish_sections=(), traffic_timeout_s=0.3,
+                 traffic_timeout_s=0.3,
                  min_traffic_confidence=0.65, ramp_pitch_deg=15.0,
                  ramp_duration_s=0.5, ramp_stop_s=4.0,
-                 sign_confirmations=3, stop_distance_m=0.7,
-                 slowdown_distance_m=2.5, unknown_hold_s=3.0,
+                 sign_confirmations=3, unknown_hold_s=3.0,
+                 minimum_intersection_stop_s=3.0,
                  intersection_commit_margin_m=0.35,
                  intersection_modes=(4, 6, 8)):
         self.ramp_sections = set(ramp_sections)
         self.acceleration_sections = set(acceleration_sections)
-        self.finish_sections = set(finish_sections)
         self.traffic_timeout = float(traffic_timeout_s)
         self.min_traffic_confidence = float(min_traffic_confidence)
         self.ramp_pitch = float(ramp_pitch_deg)
         self.ramp_duration = float(ramp_duration_s)
         self.ramp_stop = float(ramp_stop_s)
         self.sign_confirmations = int(sign_confirmations)
-        self.stop_distance = float(stop_distance_m)
-        self.slowdown_distance = float(slowdown_distance_m)
         self.pitch_since = None
         self.ramp_stop_until = None
         self.ramp_latched = set()
@@ -32,6 +29,7 @@ class MissionMachine:
         self.previous_section = None
         self.traffic_gate = IntersectionTrafficGate(
             unknown_hold_s=unknown_hold_s,
+            minimum_stop_s=minimum_intersection_stop_s,
             traffic_timeout_s=self.traffic_timeout,
             commit_margin_m=intersection_commit_margin_m,
             intersection_modes=intersection_modes)

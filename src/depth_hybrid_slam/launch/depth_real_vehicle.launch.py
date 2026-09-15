@@ -84,13 +84,6 @@ def _runtime(context):
             package="depth_hybrid_slam", executable="odom_localization",
             name="odom_localization", output="screen"),
         Node(
-            package="depth_hybrid_slam", executable="start_validation",
-            name="depth_start_validation", output="screen", parameters=[{
-                "route_path": str(route_path),
-                "route_metadata_path": str(metadata_path),
-                "user_branch": branch,
-            }]),
-        Node(
             package="depth_hybrid_slam", executable="route_follower",
             name="route_follower", output="screen", parameters=follower),
         Node(
@@ -102,6 +95,11 @@ def _runtime(context):
                 str(Path(get_package_share_directory("camera_bringup")) /
                     "config"/"camera_mount.yaml"),
                 str(share/"config"/"csv_road_validator.yaml")],
+            condition=IfCondition(LaunchConfiguration("use_camera"))),
+        Node(
+            package="depth_hybrid_slam", executable="camera_correction",
+            name="depth_camera_correction", output="screen",
+            parameters=[str(share/"config"/"vehicle_navigation.yaml")],
             condition=IfCondition(LaunchConfiguration("use_camera"))),
         Node(
             package="depth_hybrid_slam", executable="branch_selector",

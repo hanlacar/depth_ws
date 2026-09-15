@@ -16,11 +16,12 @@ class CommandArbiterNode(Node):
         self.declare_parameter("publish_hz", 30.0)
         self.declare_parameter("candidate_timeout_s", 0.5)
         self.values = {
-            "csv_drive": 0.0, "csv_wheel": 0, "csv_valid": False,
+            "csv_drive": 0.0, "csv_wheel": 0,
             "lidar_drive": 0.0, "lidar_wheel": 0, "lidar_valid": False,
+            "camera_drive": 0.0, "camera_wheel": 0,
+            "camera_valid": False, "camera_hold": False,
             "hard": False, "mission": True, "branch": False,
-            "start_validation": True,
-            "lidar_hold": False, "road_hold": False,
+            "lidar_hold": False,
             "distance_slowdown": False, "steering_slowdown": False,
             "mode": -1, "steering": 0.0,
         }
@@ -32,6 +33,13 @@ class CommandArbiterNode(Node):
             (Float32, "/depth_slam/lidar/candidate_drive", "lidar_drive", float),
             (Int32, "/depth_slam/lidar/candidate_wheel", "lidar_wheel", int),
             (Bool, "/depth_slam/lidar/candidate_valid", "lidar_valid", bool),
+            (Float32, "/depth_slam/camera/candidate_drive",
+             "camera_drive", float),
+            (Int32, "/depth_slam/camera/candidate_wheel",
+             "camera_wheel", int),
+            (Bool, "/depth_slam/camera/candidate_valid",
+             "camera_valid", bool),
+            (Bool, "/depth_slam/camera/hold", "camera_hold", bool),
             (Bool, "/depth_slam/lidar/hard_emergency", "hard", bool),
             (Bool, "/depth_slam/lidar/distance_slowdown_required",
              "distance_slowdown", bool),
@@ -39,20 +47,18 @@ class CommandArbiterNode(Node):
              "steering_slowdown", bool),
             (Bool, "/depth_slam/mission/stop_required", "mission", bool),
             (Bool, "/depth_slam/route/branch_stop", "branch", bool),
-            (Bool, "/depth_slam/route/start_validation_stop",
-             "start_validation", bool),
             (Bool, "/depth_slam/lidar/hold", "lidar_hold", bool),
             (String, "/drive_mode", "mode", lambda value: int(str(value))),
             (Float32, "/mcu/steer_deg", "steering", float),
         ):
             self.create_subscription(
                 kind, topic, lambda msg, k=key, c=cast: self._set(k, c(msg.data)), 10)
-        self.create_subscription(
-            String, "/depth_slam/camera/csv_validation", self._camera, 10)
         self.drive_pub = self.create_publisher(Float32, "/cmd_drive", 10)
         self.wheel_pub = self.create_publisher(Int32, "/cmd_wheel", 10)
         self.state_pub = self.create_publisher(
             String, "/depth_slam/command_arbiter/state", 10)
+        self.owner_pub = self.create_publisher(
+            String, "/depth_slam/path_owner", 10)
         self.diag_pub = self.create_publisher(
             String, "/depth_slam/command_arbiter/diagnostics", 10)
         self.conflicts = []
@@ -65,15 +71,6 @@ class CommandArbiterNode(Node):
     def _set(self, key, value):
         self.values[key] = value
         self.received[key] = time.monotonic()
-
-    def _camera(self, message):
-        try:
-            value = json.loads(message.data)
-            self.values["road_hold"] = (
-                bool(value.get("fresh", False)) and
-                value.get("state") in ("OUTSIDE_ROAD", "NEAR_BOUNDARY"))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            self.values["road_hold"] = False
 
     def _fresh(self, keys, now):
         timeout = float(self.get_parameter("candidate_timeout_s").value)
@@ -98,6 +95,11 @@ class CommandArbiterNode(Node):
             self.values["lidar_drive"], self.values["lidar_wheel"],
             self.values["lidar_valid"],
             self._fresh(("lidar_drive", "lidar_wheel", "lidar_valid"), now))
+        camera = CommandCandidate(
+            self.values["camera_drive"], self.values["camera_wheel"],
+            self.values["camera_valid"],
+            self._fresh(("camera_drive", "camera_wheel", "camera_valid"),
+                        now))
         # Loss of a safety/hold producer is not permission to move. Camera
         # road validation remains advisory and may fall back to CSV, but the
         # LiDAR, mission, and branch gates must each be fresh.
@@ -106,20 +108,22 @@ class CommandArbiterNode(Node):
                                         "steering_slowdown", "steering"), now))
         gated_stop = (
             self.values["mission"] or self.values["branch"] or
-            self.values["start_validation"] or
-            self.values["lidar_hold"] or self.values["road_hold"] or
+            self.values["lidar_hold"] or
+            (self.values["camera_hold"] and
+             not (lidar.valid and lidar.fresh)) or
             not self._fresh(("mission",), now) or
             not self._fresh(("branch",), now) or
-            not self._fresh(("start_validation",), now) or
             not self._fresh(("lidar_hold",), now))
         decision = arbitrate(
             csv, lidar, safety_stop, gated_stop,
             self.values["distance_slowdown"], self.values["mode"],
-            self.values["steering"] if self._fresh(("steering",), now)
-            else None, self.values["steering_slowdown"])
+            self.values["steering_slowdown"], camera)
         self.drive_pub.publish(Float32(data=decision.drive))
         self.wheel_pub.publish(Int32(data=decision.wheel))
         self.state_pub.publish(String(data=decision.state))
+        self.owner_pub.publish(String(data=(
+            "STOP" if decision.drive == 0.0 and decision.owner not in
+            ("CSV", "CAMERA", "LIDAR", "PARKING") else decision.owner)))
         self.diag_pub.publish(String(data=json.dumps({
             "owner": decision.owner, "state": decision.state,
             "drive": decision.drive, "wheel": decision.wheel,

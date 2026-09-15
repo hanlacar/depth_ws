@@ -18,7 +18,6 @@ from .imu_filter import (
     axis_matrix_from_row_major,
     compute_level_alignment,
     transform_sensor_to_base,
-    validate_axis_matrix,
     validate_level_samples,
     validate_rotation_matrix,
 )

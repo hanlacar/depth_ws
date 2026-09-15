@@ -4,7 +4,6 @@ import argparse
 import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import hashlib
 import json
 import math
 import os
@@ -16,6 +15,7 @@ import time
 import yaml
 
 from .route_finalizer import realign_route
+from .route_io import sha256
 
 
 WORKSPACE = Path("/home/qor/depth_ws")
@@ -29,14 +29,6 @@ PROTECTED_MAP_DIRS = (
     MAPS_ROOT / "classroom_test",
     MAPS_ROOT / "corridor_hand_test",
 )
-
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def as_bool(value):

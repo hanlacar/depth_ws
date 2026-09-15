@@ -3,7 +3,6 @@
     # Populate only after the real map section IDs and two stop-line bounds are known.
     ramp_sections: [""]
     acceleration_sections: [""]
-    finish_sections: [""]
     # Camera inputs older than this are UNKNOWN, never a latched R or G.
     traffic_timeout_s: 0.3
     min_traffic_confidence: 0.65
@@ -12,6 +11,8 @@
     # At every gated intersection, continuous UNKNOWN releases after 3 s.
     # RED/YELLOW remain a hold and reset this timer.
     unknown_hold_s: 3.0
+    # R/Y never release; G can release only after this CSV stop duration.
+    minimum_intersection_stop_s: 3.0
     # Commit only after bounded CSV progress passes the line by this distance.
     intersection_commit_margin_m: 0.35
     intersection_modes: [4, 6, 8]

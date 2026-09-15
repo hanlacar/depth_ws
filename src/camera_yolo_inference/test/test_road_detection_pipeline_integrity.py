@@ -40,7 +40,8 @@ class ModelManifestMappingTest(unittest.TestCase):
             raise unittest.SkipTest("model .pt not present in this environment")
         from ultralytics import YOLO
         cls.model_names = YOLO(MODEL_PT, task="segment").names
-        cls.manifest = yaml.safe_load(open(MANIFEST_PATH))
+        with open(MANIFEST_PATH, encoding="utf-8") as manifest_file:
+            cls.manifest = yaml.safe_load(manifest_file)
 
     def test_model_class_names_resolve_against_manifest_without_error(self):
         from camera_yolo_inference.class_mapper import SemanticClassMapper

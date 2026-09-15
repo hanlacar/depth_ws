@@ -23,9 +23,6 @@ class CuvslamBridge(Node):
         self.declare_parameter("timeout_s", 0.15)
         self.declare_parameter("status_timeout_s", 0.20)
         self.declare_parameter("jump_translation_m", 0.75)
-        self.declare_parameter("jump_yaw_deg", 30.0)
-        self.declare_parameter("expected_parent_frame", "odom")
-        self.declare_parameter("expected_child_frame", "base_link")
         self.timeout = float(self.get_parameter("timeout_s").value)
         self.status_timeout = float(self.get_parameter("status_timeout_s").value)
         self.last_receipt = None

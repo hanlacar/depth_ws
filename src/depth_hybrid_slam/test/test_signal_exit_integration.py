@@ -13,7 +13,7 @@ from depth_hybrid_slam.lidar_roi_core import (
 from depth_hybrid_slam.mission_completion import MissionCompletionTracker
 from depth_hybrid_slam.mode_completion import RouteModeCompletionTracker
 from depth_hybrid_slam.signal_exit_core import (
-    DetectorConfig, HSVRange, NormalizedROI, ObservationState,
+    classify_exit_triplet, DetectorConfig, HSVRange, NormalizedROI, ObservationState,
     SelectedRoute, SignalExitDetector, SignalState, SignalVoteWindow)
 import numpy as np
 import pytest
@@ -37,10 +37,12 @@ def _detector():
         NormalizedROI(0.1, 0.1, 0.9, 0.9))
 
 
-def _frame(hue):
+def _frame(states):
     hsv = np.zeros((100, 100, 3), dtype=np.uint8)
-    hsv[20:80, 20:80] = (0, 0, 30)
-    hsv[45:55, 40:60] = (hue, 255, 255)
+    for center, state in zip((25, 50, 75), states):
+        hue = 60 if state == "G" else 2
+        hsv[40:60, center-8:center+8] = (0, 0, 30)
+        hsv[46:54, center-4:center+4] = (hue, 255, 255)
     return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
 
@@ -49,16 +51,25 @@ def _cluster(distance, motion=STATIC):
                    (distance, 0.0), motion=motion)
 
 
-def test_merged_a_panel_detector_maps_green_a_red_b_and_conflict_unknown():
+def test_mode11_detector_sorts_three_lamps_and_only_grr_maps_to_a():
     detector = _detector()
-    assert detector.detect(_frame(60)).state == SignalState.GREEN
-    assert detector.detect(_frame(2)).state == SignalState.RED
-    hsv = np.zeros((100, 100, 3), dtype=np.uint8)
-    hsv[20:80, 20:80] = (0, 0, 30)
-    hsv[45:55, 25:40] = (2, 255, 255)
-    hsv[45:55, 60:75] = (60, 255, 255)
-    assert detector.detect(cv2.cvtColor(
-        hsv, cv2.COLOR_HSV2BGR)).state == SignalState.UNKNOWN
+    assert detector.detect(_frame("GRR")).state == SignalState.GREEN
+    for states in ("RGR", "RRG", "RRR"):
+        assert detector.detect(_frame(states)).state == SignalState.RED
+    assert detector.detect(_frame("GR")).state == SignalState.UNKNOWN
+
+
+@pytest.mark.parametrize("states,expected", (
+    (("G", "R", "R"), SignalState.GREEN),
+    (("R", "G", "R"), SignalState.RED),
+    (("R", "R", "G"), SignalState.RED),
+    (("R", "R", "R"), SignalState.RED),
+    (("UNKNOWN", "R", "R"), SignalState.UNKNOWN),
+))
+def test_mode11_triplet_contract(states, expected):
+    candidates = tuple(
+        ((index+1)*0.2, state, 20) for index, state in enumerate(states))
+    assert classify_exit_triplet(candidates)[0] == expected
 
 
 def test_merged_five_second_vote_camera_and_default_are_latched():
@@ -109,7 +120,7 @@ def _satisfy_all_missions(tracker, end_branch):
     tracker.set_mode(2)
     tracker.tick(0.0, 0.0, stop_waypoint_active=True,
                  pitch_deg=6.0, pitch_valid=True)
-    tracker.tick(4.0, 0.0)
+    tracker.tick(4.0, 0.0, pitch_deg=6.0, pitch_valid=True)
     for mode in (4, 6, 8):
         tracker.observe_intersection_event(f"EXITED mode={mode}")
     tracker.set_mode(5)
@@ -236,10 +247,10 @@ def test_arbiter_all_priority_combinations_and_stale_source_guard_exists():
 
 @pytest.mark.parametrize("stop_s,pitch,route_complete,expected", (
     (4.0, 6.0, True, True),
-    (4.0, 5.0, True, True),
-    (4.0, -5.0, True, True),
+    (4.0, 4.5, True, True),
+    (4.0, -4.5, True, True),
     (3.9, 6.0, True, False),
-    (4.0, 4.9, True, False),
+    (4.0, 4.49, True, False),
     (0.0, 6.0, True, False),
     (4.0, 6.0, False, False),
 ))
@@ -253,6 +264,21 @@ def test_mode2_all_stop_pitch_route_combinations(
     if route_complete:
         tracker.observe_route_status({"route_complete_modes": [2]})
     assert tracker.mode_complete(2) is expected
+
+
+def test_mode2_pitch_requires_half_second_continuity():
+    tracker = MissionCompletionTracker()
+    tracker.set_mode(2)
+    tracker.tick(0.0, 0.0, stop_waypoint_active=True,
+                 pitch_deg=4.5, pitch_valid=True)
+    tracker.tick(0.49, 0.0, pitch_deg=4.5, pitch_valid=True)
+    assert not tracker.mode2_slope_seen
+    tracker.tick(0.50, 0.0, pitch_deg=4.49, pitch_valid=True)
+    tracker.tick(0.51, 0.0, pitch_deg=4.5, pitch_valid=True)
+    tracker.tick(1.00, 0.0, pitch_deg=4.5, pitch_valid=True)
+    assert not tracker.mode2_slope_seen
+    tracker.tick(1.01, 0.0, pitch_deg=4.5, pitch_valid=True)
+    assert tracker.mode2_slope_seen
 
 
 @pytest.mark.parametrize("mode", (7, 10))

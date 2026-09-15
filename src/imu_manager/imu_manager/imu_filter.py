@@ -426,22 +426,6 @@ def validate_axis_matrix(matrix):
     return validate_rotation_matrix(matrix).valid
 
 
-def level_mounting_rpy(gravity_in_camera_frame, yaw_deg=0.0):
-    """Find mounting roll/pitch that rotates stationary gravity onto base +Z.
-
-    Gravity cannot determine mounting yaw, so yaw is preserved as a manual
-    calibration input.
-    """
-    if not math.isfinite(yaw_deg):
-        raise ValueError("mounting yaw must be finite")
-    alignment = compute_level_alignment(
-        gravity_in_camera_frame,
-        allow_inverted_mount=True,
-        plausible_mount_angle_limit_deg=180.0,
-    )
-    return alignment.correction_roll_deg, alignment.correction_pitch_deg, float(yaw_deg)
-
-
 def quaternion_from_rpy(roll_deg, pitch_deg, yaw_deg):
     """Create a normalized quaternion consistent with active ZYX RPY."""
     if not np.all(np.isfinite([roll_deg, pitch_deg, yaw_deg])):

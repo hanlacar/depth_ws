@@ -16,14 +16,6 @@ def yaw_from_quaternion(q):
                       1.0-2.0*(q.y*q.y+q.z*q.z))
 
 
-def euler_from_quaternion(q):
-    roll = math.atan2(2.0*(q.w*q.x+q.y*q.z),
-                      1.0-2.0*(q.x*q.x+q.y*q.y))
-    sine = max(-1.0, min(1.0, 2.0*(q.w*q.y-q.z*q.x)))
-    pitch = math.asin(sine)
-    return roll, pitch, yaw_from_quaternion(q)
-
-
 def quaternion_from_yaw(yaw):
     from geometry_msgs.msg import Quaternion
     return Quaternion(x=0.0, y=0.0, z=math.sin(yaw/2.0), w=math.cos(yaw/2.0))

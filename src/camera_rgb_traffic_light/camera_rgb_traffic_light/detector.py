@@ -1,8 +1,8 @@
 """ROS-independent HSV/Lab/luminance traffic-light detector and tracker."""
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 import math
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -281,7 +281,7 @@ class ColorTrafficLightDetector:
         return left, right, down
 
     @staticmethod
-    def _green_shape(component, circle_score, left_score, right_score,
+    def _green_shape(circle_score, left_score, right_score,
                      down_score, rectangularity, config):
         if circle_score >= config.round_minimum_score:
             return "CIRCLE", circle_score
@@ -428,7 +428,7 @@ class ColorTrafficLightDetector:
                     state = "R"
                 else:
                     raw_shape, green_shape_score = self._green_shape(
-                        component, circle, left_score, right_score,
+                        circle, left_score, right_score,
                         down_score, rectangularity, self.config)
                     if raw_shape == "UNKNOWN_SHAPE":
                         reject("ambiguous_green_shape"); continue

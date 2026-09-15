@@ -39,19 +39,21 @@ def _route_case(case):
         case)
 
 
-def test_camera_advisory_five_state_contract():
+def test_camera_advisory_three_state_contract():
     states = {
-        ValidationResult(True, "VALID_ROAD_AND_LANE").advisory_state,
+        ValidationResult(True, "VALID_ROAD_AND_LANE",
+                         lane_geometry_confident=True).advisory_state,
         ValidationResult(True, "VALID_ROAD_ONLY").advisory_state,
         ValidationResult(True, DEGRADED_LANE_UNCERTAIN).advisory_state,
-        ValidationResult(False, INVALID_OUTSIDE_ROAD).advisory_state,
+        ValidationResult(False, INVALID_OUTSIDE_ROAD,
+                         lane_geometry_confident=True,
+                         wheel_lane_collision_ratio=.2).advisory_state,
         ValidationResult(False, "STALE_INPUT").advisory_state,
     }
-    assert states == {"VALID_LANE", "VALID_ROAD_ONLY", "NEAR_BOUNDARY",
-                      "OUTSIDE_ROAD", "UNKNOWN"}
+    assert states == {"TRUE", "FAIL", "UNKNOWN"}
     near = ValidationResult(True, DEGRADED_LANE_UNCERTAIN)
-    assert near.camera_diagnostics(True)["state"] == "NEAR_BOUNDARY"
-    assert "wheel" not in near.camera_diagnostics(True)
+    assert near.camera_diagnostics(True)["state"] == "UNKNOWN"
+    assert "wheel_lane_collision_ratio" in near.camera_diagnostics(True)
 
 
 def test_intersection_red_green_and_three_second_unknown_release():
@@ -63,7 +65,8 @@ def test_intersection_red_green_and_three_second_unknown_release():
         "STOP_LINE_HOLD"
     assert gate.evaluate(progress, True, "R", 0.0, 9.0).stop
     gate.reset()
-    assert not gate.evaluate(progress, True, "G", 0.0, 0.0).stop
+    assert gate.evaluate(progress, True, "G", 0.0, 0.0).stop
+    assert not gate.evaluate(progress, True, "G", 0.0, 3.0).stop
     gate.reset()
     assert gate.evaluate(progress, True, "UNKNOWN", 0.0, 0.0).stop
     assert not gate.evaluate(progress, True, "UNKNOWN", 0.0, 3.0).stop
@@ -320,48 +323,46 @@ def test_mode9_is_fixed_stage_three_except_hard_emergency():
     assert not safety.assess(_points(0.61)).hard_obstacle
     mode9 = Mode9Emergency()
     assert mode9.update(True).state == "EMERGENCY_STOP"
-    resumed = mode9.update(False, steering_deg=22.0)
+    resumed = mode9.update(False)
     assert resumed.state == "ACCEL_TRACKING"
     assert not resumed.stop and resumed.drive == 3.0
     csv = CommandCandidate(2.0, 8, True, True)
     assert arbitrate(
-        csv, CommandCandidate(), mode=9, steering_deg=22.0).drive == 3.0
+        csv, CommandCandidate(), mode=9).drive == 3.0
     assert arbitrate(
-        csv, CommandCandidate(), lidar_slowdown=True, mode=9,
-        steering_deg=-22.0).drive == 1.0
+        csv, CommandCandidate(), lidar_slowdown=True, mode=9).drive == 1.0
     assert arbitrate(
-        csv, CommandCandidate(), steering_slowdown=True, mode=9,
-        steering_deg=-22.0).drive == 1.0
+        csv, CommandCandidate(), steering_slowdown=True, mode=9).drive == 1.0
     assert arbitrate(
         csv, CommandCandidate(), hard_emergency=True,
-        lidar_slowdown=True, mode=9, steering_deg=0.0).drive == 0.0
+        lidar_slowdown=True, mode=9).drive == 0.0
 
 
-def test_all_mode_steering_slowdown_half_second_enter_one_second_exit():
+def test_all_mode_steering_slowdown_one_second_enter_and_exit():
     latch = SteeringSlowdownLatch(
-        threshold_deg=10.0, enter_duration_s=0.5, exit_duration_s=1.0)
+        threshold_deg=10.0, enter_duration_s=1.0, exit_duration_s=1.0)
 
-    assert not latch.update(10.0, mode=8, now=0.0)
-    assert not latch.update(10.0, mode=8, now=0.49)
-    assert latch.update(10.0, mode=8, now=0.5)
+    assert not latch.update(10.0, now=0.0)
+    assert not latch.update(10.0, now=0.99)
+    assert latch.update(10.0, now=1.0)
 
     # A short below-threshold interval cannot clear the slowdown.
-    assert latch.update(0.0, mode=8, now=0.6)
-    assert latch.update(10.0, mode=8, now=1.0)
+    assert latch.update(0.0, now=1.1)
+    assert latch.update(10.0, now=1.5)
     assert latch.below_since is None
 
-    assert latch.update(0.0, mode=8, now=1.1)
-    assert latch.update(0.0, mode=8, now=2.09)
-    assert not latch.update(0.0, mode=8, now=2.11)
+    assert latch.update(0.0, now=1.6)
+    assert latch.update(0.0, now=2.59)
+    assert not latch.update(0.0, now=2.6)
 
     # Stale measured steering cannot fabricate a debounce interval.
-    assert not latch.update(-10.01, mode=8, now=4.0)
-    assert not latch.update(None, mode=8, now=5.0)
-    assert not latch.update(-10.01, mode=8, now=5.1)
-    assert latch.update(-10.01, mode=8, now=5.6)
+    assert not latch.update(-10.01, now=4.0)
+    assert not latch.update(None, now=5.0)
+    assert not latch.update(-10.01, now=5.1)
+    assert latch.update(-10.01, now=6.1)
 
     # Mode 9 obeys the same measured-steering slowdown.
-    assert latch.update(-22.0, mode=9, now=6.2)
+    assert latch.update(-22.0, now=6.2)
 
 
 def test_mode9_emergency_latch_holds_dropouts_and_near_obstacle_until_clear():
@@ -398,7 +399,7 @@ def test_mode9_emergency_latch_holds_dropouts_and_near_obstacle_until_clear():
     assert not latch.update(False, 1.51, True, True, 26.0)
 
     # E: the qualified clear immediately restores fixed stage 3.
-    resumed = mode9.update(False, steering_deg=22.0)
+    resumed = mode9.update(False)
     assert resumed.state == "ACCEL_TRACKING" and resumed.drive == 3.0
 
 

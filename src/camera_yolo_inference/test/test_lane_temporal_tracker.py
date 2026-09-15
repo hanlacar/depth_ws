@@ -118,3 +118,24 @@ def test_long_dropout_expires_but_three_frame_dropout_is_supported():
     result = tracker.update(image, zero, zero, road, 1.0+4/30.0)
     assert not np.any(result.tracked_white_line)
     assert result.diagnostics["white_line"]["discard_reason"] == "HOLD_LIMIT"
+
+
+def test_track_state_exposes_identity_geometry_and_short_loss_duration():
+    tracker = LaneMaskTemporalTracker(LaneTemporalConfig(
+        mode="hold", max_hold_sec=.20, max_hold_frames=12))
+    image, white, yellow, road = frame_and_masks()
+    detected = tracker.update(image, white, yellow, road, 1.0)
+    first = detected.diagnostics["white_line"]
+    for key in ("track_id", "color", "geometry", "curve", "heading",
+                "confidence", "age", "last_seen", "missing_duration"):
+        assert key in first
+    assert first["track_id"] > 0 and first["missing_duration"] == 0.0
+    zero = np.zeros_like(white)
+    tracker.update(image, zero, zero, road, 1.05)
+    tracker.update(image, zero, zero, road, 1.10)
+    held = tracker.update(image, zero, zero, road, 1.15)
+    track = held.diagnostics["white_line"]
+    assert track["track_id"] == first["track_id"]
+    assert .149 <= track["missing_duration"] <= .151
+    expired = tracker.update(image, zero, zero, road, 1.201)
+    assert not np.any(expired.effective_white_line)

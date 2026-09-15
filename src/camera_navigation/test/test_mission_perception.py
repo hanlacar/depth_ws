@@ -125,7 +125,7 @@ def test_two_physical_stop_line_components_are_sorted_and_not_duplicated():
     message = SimpleNamespace(encoding="16UC1",
                               header=SimpleNamespace(frame_id="optical"))
     header = SimpleNamespace(frame_id="optical", stamp=SimpleNamespace())
-    result = node._component_distances(line_mask, depth, message, header, 1.0)
+    result = node._component_distances(line_mask, depth, message, header)
     assert [item["distance"] for item in result] == [1.0, 3.0]
 
 

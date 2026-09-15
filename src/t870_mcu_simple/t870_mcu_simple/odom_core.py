@@ -8,6 +8,18 @@ def normalize_angle(value):
     return math.atan2(math.sin(value), math.cos(value))
 
 
+def clamp_steering(value, limit=22.0):
+    """Clamp LEFT-positive steering without changing its sign."""
+    limit = abs(float(limit))
+    return max(-limit, min(limit, float(value)))
+
+
+def steering_from_adc(adc, center_adc, counts_per_degree, limit=22.0):
+    """Convert the commissioned LEFT-positive ADC axis to degrees."""
+    measured = (float(adc)-float(center_adc))/float(counts_per_degree)
+    return clamp_steering(measured, limit)
+
+
 @dataclass
 class OdomState:
     rear_x: float
@@ -39,8 +51,7 @@ class MeasuredEncoderOdom:
         self.last_discontinuity = False
 
     def set_steering_deg(self, value):
-        self.steer_deg = max(
-            -self.max_steer_deg, min(self.max_steer_deg, float(value)))
+        self.steer_deg = clamp_steering(value, self.max_steer_deg)
 
     def set_direction_from_stage(self, stage):
         value = float(stage)

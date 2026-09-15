@@ -29,16 +29,10 @@ from .imu_filter import (
     apply_sensor_axis_transform,
     axis_matrix_from_row_major,
     quaternion_from_rpy,
-    transform_sensor_to_base,
 )
 
 
 KNOWN_MODES = {"IDLE", "NORMAL", "PARALLEL_PARK", "T_PARK", "SLOPE"}
-
-
-def manager_transform_vector(raw_vector, axis_matrix, mounting_rpy_deg):
-    """Manager adapter to the single shared column-vector transform."""
-    return transform_sensor_to_base(raw_vector, axis_matrix, mounting_rpy_deg)
 
 
 def make_angle_message(stamp_sec, frame_id, roll_deg, pitch_deg, yaw_deg):
@@ -256,8 +250,7 @@ class ImuManagerNode(Node):
     def handle_mode_transition(self, old_mode, new_mode):
         self.filter.handle_mode_transition(old_mode, new_mode)
 
-    def reset_reference_callback(self, request, response):
-        del request
+    def reset_reference_callback(self, _request, response):
         self.filter.reset_reference()
         response.success = True
         response.message = "Relative yaw reference reset"

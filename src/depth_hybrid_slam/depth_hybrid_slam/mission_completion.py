@@ -7,11 +7,18 @@ MISSION_MODES = frozenset((2, 4, 5, 6, 7, 8, 9, 10, 11))
 
 
 class MissionCompletionTracker:
-    def __init__(self):
+    def __init__(self, slope_threshold_deg=4.5,
+                 slope_confirmation_s=0.5):
+        self.slope_threshold_deg = float(slope_threshold_deg)
+        self.slope_confirmation_s = float(slope_confirmation_s)
+        if (self.slope_threshold_deg <= 0.0 or
+                self.slope_confirmation_s <= 0.0):
+            raise ValueError("slope thresholds must be positive")
         self.mode = None
         self.route_complete = set()
         self.invalid_modes = set()
         self.mode2_stop_started = None
+        self.mode2_slope_started = None
         self.mode2_stop_4s_done = False
         self.mode2_slope_seen = False
         self.mode2_pitch_checked = False
@@ -153,22 +160,37 @@ class MissionCompletionTracker:
                 if self.mode2_stop_started is None:
                     self.mode2_stop_started = now
                     self._event("MODE2_STOP_BEGIN", 2)
-                    self.mode2_pitch_checked = True
-                    self.mode2_stop_pitch_deg = (
-                        float(pitch_deg) if bool(pitch_valid) else None)
-                    self.mode2_slope_seen = (
-                        bool(pitch_valid) and
-                        abs(float(pitch_deg)) >= 5.0)
-                    self._event(
-                        "MODE2_SLOPE_VALID" if self.mode2_slope_seen else
-                        "MODE2_SLOPE_INVALID", 2,
-                        pitch_deg=self.mode2_stop_pitch_deg,
-                        pitch_valid=bool(pitch_valid))
+                valid_pitch = (bool(pitch_valid) and
+                               abs(float(pitch_deg)) >=
+                               self.slope_threshold_deg)
+                self.mode2_pitch_checked = True
+                self.mode2_stop_pitch_deg = (
+                    float(pitch_deg) if bool(pitch_valid) else None)
+                if valid_pitch:
+                    if self.mode2_slope_started is None:
+                        self.mode2_slope_started = now
+                    if (not self.mode2_slope_seen and
+                            now-self.mode2_slope_started >=
+                            self.slope_confirmation_s):
+                        self.mode2_slope_seen = True
+                        self._event(
+                            "MODE2_SLOPE_VALID", 2,
+                            pitch_deg=self.mode2_stop_pitch_deg,
+                            pitch_valid=True)
+                else:
+                    self.mode2_slope_started = None
                 if now-self.mode2_stop_started >= 4.0 and not self.mode2_stop_4s_done:
                     self.mode2_stop_4s_done = True
                     self._event("MODE2_STOP_4S_DONE", 2)
+                    if not self.mode2_slope_seen:
+                        self._event(
+                            "MODE2_SLOPE_INVALID", 2,
+                            pitch_deg=self.mode2_stop_pitch_deg,
+                            pitch_valid=bool(pitch_valid))
             elif not self.mode2_stop_4s_done:
                 self.mode2_stop_started = None
+                self.mode2_slope_started = None
+                self.mode2_slope_seen = False
         if self.mode == 9 and self.mode9_hard_pending and self._zero(cmd_drive):
             if not self.mode9_emergency_applied:
                 self.mode9_emergency_applied = True

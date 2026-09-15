@@ -14,14 +14,14 @@ def obstacle(x, y, motion=STATIC):
     return Cluster(points, (x, y), motion=motion)
 
 
-def test_a_ackermann_roi_bends_right_straight_left():
-    right, _, _ = ackermann_centerline(-20)
-    straight, _, radius = ackermann_centerline(0)
+def test_a_ackermann_roi_uses_left_positive_right_negative():
     left, _, _ = ackermann_centerline(20)
-    assert right[-1][2] < -0.1
+    straight, _, radius = ackermann_centerline(0)
+    right, _, _ = ackermann_centerline(-20)
+    assert left[-1][2] > 0.1
     assert all(abs(point[2]) < 1.0e-9 for point in straight)
     assert math.isinf(radius)
-    assert left[-1][2] > 0.1
+    assert right[-1][2] < -0.1
 
 
 def test_b_distance_zones_static_and_dynamic():
@@ -156,10 +156,12 @@ def test_f_mode2_completion_requires_actual_four_seconds_and_pitch():
     value.observe_route_status({"route_complete_modes": [2]})
     value.tick(0.0, 0.0, stop_waypoint_active=True,
                pitch_deg=5.1, pitch_valid=True)
+    value.tick(0.5, 0.0, stop_waypoint_active=False,
+               pitch_deg=5.1, pitch_valid=True)
     value.tick(3.99, 0.0, stop_waypoint_active=False,
-               pitch_deg=0.0, pitch_valid=False)
+               pitch_deg=5.1, pitch_valid=True)
     assert not value.mode_complete(2)
-    value.tick(4.01, 0.0, pitch_deg=0.0, pitch_valid=False)
+    value.tick(4.01, 0.0, pitch_deg=5.1, pitch_valid=True)
     assert value.mode_complete(2)
 
 

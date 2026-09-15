@@ -1,12 +1,13 @@
 """Four-case map/route bundle creation and fail-closed verification."""
 
 import csv
-import hashlib
 from pathlib import Path
 import re
 import shutil
 
 import yaml
+
+from .route_io import sha256
 
 
 CASE_PATTERN = re.compile(r"^case_[1-4]$")
@@ -19,14 +20,6 @@ REQUIRED_METADATA = {
     "map_session_count", "localization_quality", "user_notes",
     "mission_markers",
 }
-
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1024*1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _safe_case(root, case_id):

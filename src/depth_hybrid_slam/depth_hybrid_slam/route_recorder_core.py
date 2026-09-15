@@ -1,12 +1,12 @@
 """Non-overwriting map-frame reference route recording and validation."""
 
 import csv
-import hashlib
 import math
 import os
 from pathlib import Path
 
 from .geometry import wrap_angle
+from .route_io import sha256 as file_sha256
 
 
 REQUIRED_FIELDS = (
@@ -29,14 +29,6 @@ COMPATIBILITY_FIELDS = (
 FIELDS = REQUIRED_FIELDS + FUTURE_FIELDS + COMPATIBILITY_FIELDS
 
 
-def file_sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _stamp_ns(sample):
     if "timestamp_sec" in sample:
         return (int(sample["timestamp_sec"]) * 1_000_000_000 +
@@ -52,8 +44,7 @@ def _coordinate(sample, new_name, old_name):
 
 class RouteRecorder:
     def __init__(self, output_path, min_interval_s=0.03,
-                 min_distance_m=0.05, min_angle_rad=0.03,
-                 min_yaw_deg=None, min_steering_delta_deg=1.0):
+                 min_distance_m=0.05, min_angle_rad=0.03):
         self.path = Path(output_path).expanduser().resolve()
         self.partial = self.path.with_suffix(self.path.suffix + ".partial")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,9 +56,7 @@ class RouteRecorder:
         self._sync()
         self.minimum_time_ns = int(float(min_interval_s) * 1.0e9)
         self.minimum_distance = float(min_distance_m)
-        self.minimum_yaw = (math.radians(float(min_yaw_deg))
-                            if min_yaw_deg is not None else float(min_angle_rad))
-        self.minimum_steering = float(min_steering_delta_deg)
+        self.minimum_yaw = float(min_angle_rad)
         self.last = None
         self.last_stamp_ns = None
         self.index = 0

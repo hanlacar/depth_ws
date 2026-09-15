@@ -22,10 +22,6 @@ def run_text(command, cwd=None):
         return "UNKNOWN"
 
 
-def metadata_value(metadata, key, default=None):
-    return metadata.get("rosbag2_bagfile_information", {}).get(key, default)
-
-
 def time_record(value):
     ns = (value or {}).get("nanoseconds_since_epoch")
     if ns is None:

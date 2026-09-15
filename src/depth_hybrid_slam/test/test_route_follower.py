@@ -1,7 +1,8 @@
 import math
 
 from depth_hybrid_slam.models import Pose2D, RoutePoint
-from depth_hybrid_slam.route_follower_core import RouteFollower
+from depth_hybrid_slam.route_follower_core import (
+    RouteFollower, stop_reference_reached)
 
 
 def route(points):
@@ -15,7 +16,7 @@ def test_straight_and_unapproved_is_zero_drive():
     assert result.steering_deg == 0.0
 
 
-def test_right_turn_is_negative_and_left_is_positive():
+def test_left_turn_is_positive_and_right_is_negative():
     right = RouteFollower(steering_rate_deg_s=1000).compute(
         Pose2D(0, 0, 0, 1), route([(0, 0, 0), (1, -1, -math.pi/4)]),
         allow_motion=True)
@@ -25,7 +26,7 @@ def test_right_turn_is_negative_and_left_is_positive():
     assert right.steering_deg < 0 and left.steering_deg > 0
 
 
-def test_reverse_uses_body_yaw_and_preserves_left_positive_sign():
+def test_reverse_uses_body_yaw_and_preserves_semantic_sign():
     points = [RoutePoint(0, 0, 0, math.pi, direction=-1),
               RoutePoint(1, 1, 1, -3*math.pi/4, direction=-1)]
     result = RouteFollower(steering_rate_deg_s=1000).compute(
@@ -66,11 +67,12 @@ def test_s_curve_is_continuous_and_respects_sign_and_limit():
         previous = result.steering_deg
 
 
-def test_route_end_and_explicit_stop_point_stop():
+def test_route_end_and_front_lidar_stop_reference():
     points = route([(0, 0, 0), (1, 0, 0)])
     assert RouteFollower().compute(Pose2D(1, 0, 0, 1), points,
                                    allow_motion=True).reason == "ROUTE_COMPLETE"
-    marked = [RoutePoint(0, 0, 0, 0),
-              RoutePoint(1, 1, 0, 0, mission_marker="STOP")]
-    assert RouteFollower(lookahead_m=.5).compute(
-        Pose2D(.75, 0, 0, 1), marked, allow_motion=True).reason == "ROUTE_STOP_POINT"
+    stop = RoutePoint(1, 1, 0, 0, mission_marker="STOP")
+    base = Pose2D(.4, 0, 0, 1)
+    front_lidar = Pose2D(.8, 0, 0, 1)
+    assert not stop_reference_reached(stop, base, .25)
+    assert stop_reference_reached(stop, front_lidar, .25)
