@@ -27,7 +27,7 @@ ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=B s
 # 대회장
 ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=B start_mode:=1 end_mode:=11 enable_vslam:=true front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
 ```
-a
+
 ### 1-1. A 시작 (vslma 사용x)
 
 ```bash
