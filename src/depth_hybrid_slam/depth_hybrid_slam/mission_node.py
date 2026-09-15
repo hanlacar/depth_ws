@@ -35,6 +35,7 @@ class MissionNode(Node):
                               ("slope_threshold_deg", 4.5)):
             self.declare_parameter(name, default)
         self.declare_parameter("intersection_modes", [4, 6, 8])
+        self.declare_parameter("end_mode", 11)
 
         def values(name):
             return [str(v) for v in self.get_parameter(name).value if str(v)]
@@ -71,7 +72,8 @@ class MissionNode(Node):
         self.completion = MissionCompletionTracker(
             slope_threshold_deg=self.get_parameter(
                 "slope_threshold_deg").value)
-        self.segment_results = SegmentResultLatch()
+        self.segment_results = SegmentResultLatch(
+            self.get_parameter("end_mode").value)
         self.segment3 = {
             "camera_valid": False, "camera_violation": False,
             "lidar_hard": False}
@@ -420,6 +422,11 @@ class MissionNode(Node):
             payload = json.dumps(event, sort_keys=True, separators=(",", ":"))
             self.pub_event.publish(String(data=payload))
             self.get_logger().info("[MISSION] "+payload)
+        if self.segment_results.terminal:
+            decision = MissionDecision(
+                "RANGE_TERMINAL_STOP", True, "RANGE_TERMINAL_STOP", 0.0,
+                decision.traffic_permission, decision.traffic_stop_allowed,
+                decision.intersection_committed)
         self.pub_mode_status.publish(String(data=json.dumps(
             self.completion.status(), sort_keys=True, separators=(",", ":"))))
         self.pub_state.publish(String(data=decision.state))

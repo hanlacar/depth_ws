@@ -18,6 +18,9 @@ def generate_launch_description():
             "route_metadata_path",
             default_value=route.replace(".csv", ".metadata.yaml")),
         DeclareLaunchArgument("start_branch", default_value="A"),
+        DeclareLaunchArgument("start_mode", default_value="1"),
+        DeclareLaunchArgument("end_mode", default_value="11"),
+        DeclareLaunchArgument("enable_vslam", default_value="true"),
         DeclareLaunchArgument(
             "map_path", default_value=(
                 "/home/qor/depth_ws/maps/"
@@ -37,6 +40,9 @@ def generate_launch_description():
                 "route_metadata_path": LaunchConfiguration(
                     "route_metadata_path"),
                 "start_branch": LaunchConfiguration("start_branch"),
+                "start_mode": LaunchConfiguration("start_mode"),
+                "end_mode": LaunchConfiguration("end_mode"),
+                "enable_vslam": LaunchConfiguration("enable_vslam"),
                 "map_path": LaunchConfiguration("map_path"),
                 "front_serial_port": LaunchConfiguration(
                     "front_serial_port"),

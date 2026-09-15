@@ -9,7 +9,10 @@ cd ~/depth_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source tools/ros_network_env.sh
-ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=A front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
+# 대회장 외
+ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=A start_mode:=1 end_mode:=11 enable_vslam:=false front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
+# 대회장
+ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=A start_mode:=1 end_mode:=11 enable_vslam:=true front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
 ```
 
 ### 2. B 시작
@@ -19,7 +22,10 @@ cd ~/depth_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source tools/ros_network_env.sh
-ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=B front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
+# 대회장 외
+ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=B start_mode:=1 end_mode:=11 enable_vslam:=false front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
+# 대회장
+ros2 launch depth_hybrid_slam depth_csv_camera_lidar.launch.py start_branch:=B start_mode:=1 end_mode:=11 enable_vslam:=true front_serial_port:=/dev/ttyUSB0 enable_control:=true user_approved:=true enable_rosbag:=true
 ```
 
 ### 3. MCU/Arduino
@@ -55,6 +61,13 @@ ros2 topic echo /cmd_drive
 ```bash
 ros2 topic echo /cmd_wheel
 ```
+
+## 부분 주행
+
+`start_mode:=N end_mode:=M`
+
+- 5번만: `start_mode:=5 end_mode:=5`
+- 3~7번: `start_mode:=3 end_mode:=7`
 
 ## rosbag
 

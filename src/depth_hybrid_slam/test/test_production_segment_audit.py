@@ -61,6 +61,16 @@ def test_segment_result_is_exactly_one_shot():
     assert len(latch.results) == 1
 
 
+def test_selected_end_mode_result_latches_terminal_stop():
+    latch = SegmentResultLatch(end_mode=5)
+    assert not latch.terminal
+    assert latch.report(4, True, "") == "[SEGMENT 4] COMPLETE"
+    assert not latch.terminal
+    assert latch.report(5, False, "blocked") == \
+        "[SEGMENT 5] FAIL - blocked"
+    assert latch.terminal
+
+
 def test_parking_never_defaults_a_without_measured_slot():
     for mode, prefix in ((7, "T"), (10, "V")):
         decision = parking_decision(mode, False, False, False)

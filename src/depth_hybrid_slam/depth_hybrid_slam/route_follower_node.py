@@ -1,7 +1,6 @@
 """CSV route follower that publishes candidates for the command arbiter."""
 
 import csv
-from dataclasses import replace
 import math
 from pathlib import Path as FilePath
 import time
@@ -29,13 +28,12 @@ from .ros_helpers import (
     status,
     yaw_from_quaternion,
 )
-from .route_follower_core import RouteFollower, stop_reference_reached
+from .route_follower_core import (
+    RouteFollower, select_mode_range, stop_reference_reached)
 from .csv_only_branching import load_csv_only_route_case, remap_case_progress
 from .route_io import (
-    DEFAULT_BRANCH, forward_tangent_yaw, is_segmented_columns,
-    load_segmented_route, sha256,
-    verify_route_binding,
-)
+    DEFAULT_BRANCH, is_segmented_columns, load_segmented_route, sha256,
+    verify_route_binding)
 
 
 def load_route(path):
@@ -336,19 +334,9 @@ class RouteFollowerNode(Node):
         self.publish_reference_path()
 
     def _select_mode_range(self, points):
-        start = int(self.get_parameter("start_mode").value)
-        end = int(self.get_parameter("end_mode").value)
-        if not 1 <= start <= end <= 11:
-            raise ValueError("start_mode/end_mode must satisfy 1 <= start <= end <= 11")
-        selected = [point for point in points if start <= int(point.mode) <= end]
-        if not selected:
-            raise ValueError("selected mode range contains no route points")
-        selected = [replace(point, index=index)
-                    for index, point in enumerate(selected)]
-        if start > 1 and int(selected[0].direction) > 0:
-            selected[0] = replace(
-                selected[0], yaw=forward_tangent_yaw(selected))
-        return selected
+        return select_mode_range(
+            points, self.get_parameter("start_mode").value,
+            self.get_parameter("end_mode").value)
 
     @staticmethod
     def _equivalent_segment(segment_id, branch):

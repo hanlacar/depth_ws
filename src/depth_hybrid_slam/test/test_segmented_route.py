@@ -2,7 +2,8 @@ import math
 from pathlib import Path
 
 from depth_hybrid_slam.models import Pose2D
-from depth_hybrid_slam.route_follower_core import RouteFollower
+from depth_hybrid_slam.route_follower_core import (
+    RouteFollower, select_mode_range, validate_mode_range)
 from depth_hybrid_slam.route_io import (
     A_EXCLUSIVE_SEGMENTS,
     B_EXCLUSIVE_SEGMENTS,
@@ -107,3 +108,40 @@ def test_synthetic_pose_progress_is_monotonic_and_never_enters_b():
     assert previous == len(route.points) - 2
     assert result.reason == "ROUTE_COMPLETE"
     assert result.progress == 1.0
+
+
+@pytest.mark.parametrize("start,end", ((0, 11), (1, 12), (7, 3)))
+def test_invalid_mode_range_is_rejected(start, end):
+    with pytest.raises(ValueError):
+        validate_mode_range(start, end)
+
+
+@pytest.mark.parametrize("start,end,expected", (
+    (1, 11, set(range(1, 12))),
+    (5, 5, {5}),
+    (3, 7, set(range(3, 8))),
+))
+def test_selected_mode_range_and_terminal_stop(start, end, expected):
+    selected = select_mode_range(loaded().points, start, end)
+    assert {point.mode for point in selected} == expected
+    assert [point.index for point in selected] == list(range(len(selected)))
+    follower = RouteFollower(steering_rate_deg_s=1000.0)
+    terminal = selected[-1]
+    result = follower.compute(
+        Pose2D(terminal.x, terminal.y, terminal.yaw, 0.0), selected,
+        allow_motion=True, global_search=True)
+    assert result.reason == "ROUTE_COMPLETE"
+    assert result.stop_required and result.drive == 0.0
+
+
+def test_partial_start_snaps_only_inside_selected_mode_and_branch():
+    selected = select_mode_range(loaded().points, 5, 5)
+    target = selected[len(selected)//2]
+    follower = RouteFollower(steering_rate_deg_s=1000.0)
+    result = follower.compute(
+        Pose2D(target.x, target.y, target.yaw, 0.0), selected,
+        allow_motion=True, global_search=True)
+    matched = selected[result.nearest_index]
+    assert matched.mode == 5
+    assert matched.segment_id not in B_EXCLUSIVE_SEGMENTS
+    assert abs(result.nearest_index-len(selected)//2) <= 1

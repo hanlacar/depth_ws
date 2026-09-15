@@ -1,10 +1,34 @@
 """Ackermann pure-pursuit route follower with T870 steering convention."""
 
+from dataclasses import replace
 import math
 
 from .geometry import wrap_angle
 from .models import ControllerResult
+from .route_io import forward_tangent_yaw
 from .vehicle_kinematics import clamp_steering, steering_from_curvature
+
+
+def validate_mode_range(start_mode, end_mode):
+    start, end = int(start_mode), int(end_mode)
+    if not 1 <= start <= end <= 11:
+        raise ValueError(
+            "start_mode/end_mode must satisfy 1 <= start <= end <= 11")
+    return start, end
+
+
+def select_mode_range(points, start_mode, end_mode):
+    """Return only the requested contiguous mode range with local indexes."""
+    start, end = validate_mode_range(start_mode, end_mode)
+    selected = [point for point in points if start <= int(point.mode) <= end]
+    if not selected:
+        raise ValueError("selected mode range contains no route points")
+    selected = [replace(point, index=index)
+                for index, point in enumerate(selected)]
+    if start > 1 and int(selected[0].direction) > 0:
+        selected[0] = replace(
+            selected[0], yaw=forward_tangent_yaw(selected))
+    return selected
 
 
 def stop_reference_reached(waypoint, reference_pose, threshold_m):

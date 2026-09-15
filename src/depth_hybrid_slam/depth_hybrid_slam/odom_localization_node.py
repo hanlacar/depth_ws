@@ -21,22 +21,27 @@ class OdomLocalizationNode(Node):
         super().__init__("odom_localization")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("base_frame", "base_link")
+        self.declare_parameter("enable_vslam", True)
         self.declare_parameter("odom_timeout_s", 0.5)
         self.declare_parameter("vslam_evidence_timeout_s", 0.5)
         self.declare_parameter("position_jump_threshold_m", 0.75)
         self.declare_parameter("yaw_jump_threshold_deg", 25.0)
         self.declare_parameter("vslam_recovery_s", 1.0)
-        self.buffer = Buffer(cache_time=Duration(seconds=10.0))
-        self.listener = TransformListener(self.buffer, self)
+        self.vslam_enabled = bool(self.get_parameter("enable_vslam").value)
+        self.buffer = (Buffer(cache_time=Duration(seconds=10.0))
+                       if self.vslam_enabled else None)
+        self.listener = (TransformListener(self.buffer, self)
+                         if self.vslam_enabled else None)
         self.last_received = None
         self.visual_consistent = False
         self.visual_received = None
         self.last_gate_state = "RUNNING_ODOM_ONLY"
         self.last_logged_gate_state = None
-        self.gate = VslamRecoveryGate(
+        self.gate = (VslamRecoveryGate(
             self.get_parameter("position_jump_threshold_m").value,
             self.get_parameter("yaw_jump_threshold_deg").value,
             self.get_parameter("vslam_recovery_s").value)
+            if self.vslam_enabled else None)
         self.pub_pose = self.create_publisher(
             PoseWithCovarianceStamped, "/depth_slam/localization/pose", 10)
         self.pub_state = self.create_publisher(
@@ -50,8 +55,13 @@ class OdomLocalizationNode(Node):
         self.pub_watchdog = self.create_publisher(
             String, "/depth_slam/localization/watchdog", 10)
         self.create_subscription(Odometry, "/odom", self._odom, 20)
-        self.create_subscription(
-            Bool, "/depth_slam/vslam/visual_consistent", self._visual, 10)
+        if self.vslam_enabled:
+            self.create_subscription(
+                Bool, "/depth_slam/vslam/visual_consistent", self._visual, 10)
+            self.get_logger().info("[LOCALIZATION] ODOM+VSLAM")
+        else:
+            self.get_logger().info(
+                "[LOCALIZATION] ODOM_ONLY - VSLAM DISABLED")
         self.create_timer(0.1, self._health)
 
     def _odom(self, message):
@@ -69,7 +79,7 @@ class OdomLocalizationNode(Node):
         x, y = float(pose.position.x), float(pose.position.y)
         yaw = yaw_from_quaternion(pose.orientation)
         candidate = None
-        if source != target:
+        if self.vslam_enabled and source != target:
             try:
                 tf = self.buffer.lookup_transform(
                     target, source, rclpy.time.Time())
@@ -79,16 +89,21 @@ class OdomLocalizationNode(Node):
                 translation = tf.transform.translation
                 candidate = (float(translation.x), float(translation.y),
                              yaw_from_quaternion(tf.transform.rotation))
-        elif source == target:
+        elif self.vslam_enabled and source == target:
             candidate = (0.0, 0.0, 0.0)
-        evidence_fresh = (
-            self.visual_received is not None and
-            now-self.visual_received <= float(self.get_parameter(
-                "vslam_evidence_timeout_s").value))
-        decision = self.gate.update(
-            candidate, visual_consistent=self.visual_consistent,
-            evidence_fresh=evidence_fresh, now=now)
-        tx, ty, tf_yaw = decision.transform
+        if self.vslam_enabled:
+            evidence_fresh = (
+                self.visual_received is not None and
+                now-self.visual_received <= float(self.get_parameter(
+                    "vslam_evidence_timeout_s").value))
+            decision = self.gate.update(
+                candidate, visual_consistent=self.visual_consistent,
+                evidence_fresh=evidence_fresh, now=now)
+            tx, ty, tf_yaw = decision.transform
+            self.last_gate_state = decision.state
+        else:
+            decision = None
+            tx, ty, tf_yaw = 0.0, 0.0, 0.0
         c, s = math.cos(tf_yaw), math.sin(tf_yaw)
         x, y = tx+c*x-s*y, ty+s*x+c*y
         yaw = math.atan2(math.sin(tf_yaw+yaw), math.cos(tf_yaw+yaw))
@@ -101,8 +116,7 @@ class OdomLocalizationNode(Node):
         output.pose.pose.orientation = quaternion_from_yaw(yaw)
         self.pub_pose.publish(output)
         self.last_received = now
-        self.last_gate_state = decision.state
-        if decision.state != self.last_logged_gate_state:
+        if decision is not None and decision.state != self.last_logged_gate_state:
             if decision.state in ("WARNING", "RECOVERING"):
                 self.get_logger().warning("[VSLAM] "+decision.state)
             else:
@@ -115,7 +129,7 @@ class OdomLocalizationNode(Node):
         self.visual_received = time.monotonic()
 
     def _publish_health(self, valid, decision=None):
-        stop = bool(decision and decision.stop)
+        stop = bool(self.vslam_enabled and decision and decision.stop)
         state = "STALE" if not valid else (
             decision.state if stop else "TRACKING")
         self.pub_state.publish(String(data=state))
@@ -130,7 +144,8 @@ class OdomLocalizationNode(Node):
             "odom": "OK" if valid else "STALE",
             "odom_age_s": None if self.last_received is None else
             max(0.0, now-self.last_received),
-            "vslam": ("OK" if decision and decision.use_vslam else
+            "vslam": ("DISABLED" if not self.vslam_enabled else
+                       "OK" if decision and decision.use_vslam else
                        "DEGRADED_ODOM_ONLY"),
             "visual_evidence_age_s": None if self.visual_received is None else
             max(0.0, now-self.visual_received),

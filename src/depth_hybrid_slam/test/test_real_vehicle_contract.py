@@ -49,6 +49,39 @@ def test_split_sensor_route_launch_waits_for_separate_real_mcu_odom():
     assert 'executable="route_local_path"' in real
 
 
+def test_production_launch_exposes_vslam_and_mode_range_controls():
+    real = LAUNCH.read_text(encoding="utf-8")
+    wrapper = SPLIT_LAUNCH.read_text(encoding="utf-8")
+    for source in (real, wrapper):
+        assert 'DeclareLaunchArgument("enable_vslam", default_value="true")' in source
+        assert 'DeclareLaunchArgument("start_mode", default_value="1")' in source
+        assert 'DeclareLaunchArgument("end_mode", default_value="11")' in source
+    assert '"enable_vslam": LaunchConfiguration("enable_vslam")' in wrapper
+    assert '"start_mode": LaunchConfiguration("start_mode")' in wrapper
+    assert '"end_mode": LaunchConfiguration("end_mode")' in wrapper
+    assert 'validate_mode_range(' in real
+    assert 'if vslam_enabled:' in real
+    assert real.count('share/"launch"/"hybrid_localization.launch.py"') == 1
+    assert '"enable_vslam": vslam_enabled' in real
+    assert '"start_mode": start_mode' in real
+    assert '"end_mode": end_mode' in real
+
+
+def test_odom_only_disables_vslam_gate_subscription_and_runtime_watchdog():
+    localization = (PACKAGE/"depth_hybrid_slam"/
+                    "odom_localization_node.py").read_text(encoding="utf-8")
+    monitor = (PACKAGE/"depth_hybrid_slam"/
+               "runtime_monitor_node.py").read_text(encoding="utf-8")
+    assert 'self.declare_parameter("enable_vslam", True)' in localization
+    assert 'if self.vslam_enabled else None' in localization
+    assert 'if self.vslam_enabled:' in localization
+    assert '[LOCALIZATION] ODOM_ONLY - VSLAM DISABLED' in localization
+    assert '[LOCALIZATION] ODOM+VSLAM' in localization
+    assert '"vslam": ("DISABLED" if not self.vslam_enabled else' in localization
+    assert 'if key == "vslam" and not self.vslam_enabled:' in monitor
+    assert 'return "DISABLED"' in monitor
+
+
 def test_real_camera_launch_keeps_mode2_imu_contract_alive():
     source = CAMERA_LAUNCH.read_text(encoding="utf-8")
     assert '"enable_depth": LaunchConfiguration("enable_vslam")' in source

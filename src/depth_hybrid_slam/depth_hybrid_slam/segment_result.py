@@ -2,8 +2,12 @@
 
 
 class SegmentResultLatch:
-    def __init__(self):
+    def __init__(self, end_mode=11):
+        self.end_mode = int(end_mode)
+        if not 1 <= self.end_mode <= 11:
+            raise ValueError("end_mode must be in [1, 11]")
         self.results = {}
+        self.terminal = False
 
     def report(self, segment, passed, reason):
         segment = int(segment)
@@ -17,4 +21,6 @@ class SegmentResultLatch:
         if detail:
             line += " - "+detail
         self.results[segment] = line
+        if segment == self.end_mode:
+            self.terminal = True
         return line

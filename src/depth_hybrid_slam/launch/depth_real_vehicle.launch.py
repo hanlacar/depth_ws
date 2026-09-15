@@ -14,6 +14,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 from depth_hybrid_slam.rosbag_rotation import prepare_bag_path
+from depth_hybrid_slam.route_follower_core import validate_mode_range
 
 
 ROOT = "/home/qor/depth_ws"
@@ -28,6 +29,17 @@ def _runtime(context):
     branch = value("start_branch").strip().upper()
     if branch not in ("A", "B"):
         raise RuntimeError("start_branch must be A or B")
+    try:
+        start_mode, end_mode = validate_mode_range(
+            value("start_mode"), value("end_mode"))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(str(error)) from error
+    vslam_enabled = value("enable_vslam").strip().lower() in (
+        "1", "true", "yes", "on")
+    camera_enabled = value("use_camera").strip().lower() in (
+        "1", "true", "yes", "on")
+    if vslam_enabled and not camera_enabled:
+        raise RuntimeError("enable_vslam=true requires use_camera=true")
     if not route_path.is_file() or not metadata_path.is_file():
         raise RuntimeError("final route CSV and metadata are required")
     share = Path(get_package_share_directory("depth_hybrid_slam"))
@@ -44,8 +56,8 @@ def _runtime(context):
         "enable_control": enabled,
         "dry_run": False,
         "user_approved": approved,
-        "start_mode": 1,
-        "end_mode": 11,
+        "start_mode": start_mode,
+        "end_mode": end_mode,
     }]
     actions = [
         IncludeLaunchDescription(
@@ -63,23 +75,14 @@ def _runtime(context):
                 "serial_no": LaunchConfiguration("camera_serial"),
                 "device": LaunchConfiguration("device"),
                 "require_cuda": LaunchConfiguration("require_cuda"),
-                "enable_vslam": "true",
-            }.items(), condition=IfCondition(LaunchConfiguration("use_camera"))),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(str(
-                share/"launch"/"hybrid_localization.launch.py")),
-            launch_arguments={
-                "map_path": LaunchConfiguration("map_path"),
-                "route_path": str(route_path),
-                "route_metadata_path": str(metadata_path),
-                "use_vehicle_odom": "true",
-                "publish_camera_mount_tf": "false",
-                "start_rviz": "false",
+                "enable_vslam": LaunchConfiguration("enable_vslam"),
             }.items(), condition=IfCondition(LaunchConfiguration("use_camera"))),
         Node(
             package="depth_hybrid_slam", executable="odom_localization",
             name="odom_localization", output="screen",
-            parameters=[str(share/"config"/"vehicle_navigation.yaml")]),
+            parameters=[str(share/"config"/"vehicle_navigation.yaml"), {
+                "enable_vslam": vslam_enabled,
+            }]),
         Node(
             package="depth_hybrid_slam", executable="route_follower",
             name="route_follower", output="screen", parameters=follower),
@@ -115,7 +118,9 @@ def _runtime(context):
         Node(
             package="depth_hybrid_slam", executable="mission_manager",
             name="depth_mission_manager", output="screen",
-            parameters=[str(share/"config"/"mission.yaml")]),
+            parameters=[str(share/"config"/"mission.yaml"), {
+                "end_mode": end_mode,
+            }]),
         Node(
             package="depth_hybrid_slam", executable="signal_exit",
             name="depth_signal_exit", output="screen",
@@ -153,8 +158,22 @@ def _runtime(context):
             }]),
         Node(
             package="depth_hybrid_slam", executable="runtime_monitor",
-            name="depth_runtime_monitor", output="screen"),
+            name="depth_runtime_monitor", output="screen", parameters=[{
+                "enable_vslam": vslam_enabled,
+            }]),
     ]
+    if vslam_enabled:
+        actions.insert(2, IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(str(
+                share/"launch"/"hybrid_localization.launch.py")),
+            launch_arguments={
+                "map_path": LaunchConfiguration("map_path"),
+                "route_path": str(route_path),
+                "route_metadata_path": str(metadata_path),
+                "use_vehicle_odom": "true",
+                "publish_camera_mount_tf": "false",
+                "start_rviz": "false",
+            }.items()))
     if value("enable_rosbag").strip().lower() in ("1", "true", "yes", "on"):
         bag_path = prepare_bag_path(ROOT+"/rosbags", max_bags=3)
         topics = (
@@ -194,6 +213,9 @@ def generate_launch_description():
             "route_metadata_path",
             default_value=ROOT+"/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml"),
         DeclareLaunchArgument("start_branch", default_value="A"),
+        DeclareLaunchArgument("start_mode", default_value="1"),
+        DeclareLaunchArgument("end_mode", default_value="11"),
+        DeclareLaunchArgument("enable_vslam", default_value="true"),
         DeclareLaunchArgument(
             "map_path", default_value=ROOT +
             "/maps/merged_competition_level_aligned_v10/rtabmap.db"),

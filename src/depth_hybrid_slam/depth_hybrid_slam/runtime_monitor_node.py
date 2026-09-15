@@ -14,6 +14,8 @@ class RuntimeMonitorNode(Node):
     def __init__(self):
         super().__init__("depth_runtime_monitor")
         self.declare_parameter("freshness_timeout_s", 0.5)
+        self.declare_parameter("enable_vslam", True)
+        self.vslam_enabled = bool(self.get_parameter("enable_vslam").value)
         self.values = {"mode": -1, "owner": "STOP", "drive": 0.0,
                        "wheel": 0, "camera": False, "lidar": False,
                        "vslam": False}
@@ -24,7 +26,6 @@ class RuntimeMonitorNode(Node):
             (Float32, "/cmd_drive", "drive", float),
             (Int32, "/cmd_wheel", "wheel", int),
             (Float32, "/mcu/steer_deg", "steering", float),
-            (Bool, "/depth_slam/vslam/visual_consistent", "vslam", bool),
             (Float32, "/imu/pitch_deg", "imu", float),
             (String, "/camera/traffic_light_fused/state", "traffic", str),
             (String, "/camera/exit_branch_signal", "exit_branch", str),
@@ -34,6 +35,10 @@ class RuntimeMonitorNode(Node):
                 kind, topic,
                 lambda message, k=key, c=cast: self._set(k, c(message.data)),
                 10)
+        if self.vslam_enabled:
+            self.create_subscription(
+                Bool, "/depth_slam/vslam/visual_consistent",
+                lambda message: self._set("vslam", bool(message.data)), 10)
         self.create_subscription(Odometry, "/odom", self._odom, 10)
         self.create_subscription(
             String, "/depth_slam/lidar/perception", self._lidar, 10)
@@ -66,6 +71,8 @@ class RuntimeMonitorNode(Node):
         self._document(message, "camera")
 
     def _health(self, key, now):
+        if key == "vslam" and not self.vslam_enabled:
+            return "DISABLED"
         timeout = float(self.get_parameter("freshness_timeout_s").value)
         fresh = key in self.received and now-self.received[key] <= timeout
         if key in ("camera", "lidar", "vslam"):
@@ -83,7 +90,8 @@ class RuntimeMonitorNode(Node):
         runtime_state = ("FAIL" if any(health[key] != "OK" for key in
                                        ("odom", "lidar", "steering")) else
                          "WARNING" if health["camera"] != "OK" or
-                         health["vslam"] != "OK" else "RUNNING")
+                         (self.vslam_enabled and health["vslam"] != "OK")
+                         else "RUNNING")
         payload = {"runtime_state": runtime_state, "segment": self.values["mode"],
                    "owner": self.values["owner"], "health": health, **ages}
         self.publisher.publish(String(data=json.dumps(
