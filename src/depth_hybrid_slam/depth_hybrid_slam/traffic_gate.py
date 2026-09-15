@@ -4,8 +4,13 @@ from dataclasses import dataclass
 
 
 APPROACH = "APPROACH"
-STOP_LINE_HOLD = "STOP_LINE_HOLD"
-RELEASE_PENDING = "RELEASE_PENDING"
+MINIMUM_3S_HOLD = "MINIMUM_3S_HOLD"
+WAIT_TRAFFIC_RELEASE = "WAIT_TRAFFIC_RELEASE"
+RELEASED = "RELEASED"
+# Import compatibility for callers that used the former constant names.  The
+# published state values intentionally use the explicit three-phase contract.
+STOP_LINE_HOLD = MINIMUM_3S_HOLD
+RELEASE_PENDING = RELEASED
 INTERSECTION_COMMITTED = "INTERSECTION_COMMITTED"
 INTERSECTION_EXITED = "INTERSECTION_EXITED"
 
@@ -41,7 +46,7 @@ class TrafficDecision:
 
 
 class IntersectionTrafficGate:
-    """Gate Modes 4/6 until their CSV STOP_LINE is actually crossed.
+    """Gate Modes 4/6/8 until their CSV STOP_LINE is actually crossed.
 
     The commit boundary uses only the follower's bounded monotonic cursor and
     metric progress. Camera observations can release/re-hold the vehicle
@@ -57,7 +62,7 @@ class IntersectionTrafficGate:
         self.commit_margin_m = float(commit_margin_m)
         self.intersection_modes = frozenset(int(mode)
                                             for mode in intersection_modes)
-        if (self.unknown_hold_s < 0.0 or self.minimum_stop_s < 0.0 or
+        if (self.unknown_hold_s < 0.0 or self.minimum_stop_s < 3.0 or
                 self.traffic_timeout_s <= 0.0 or
                 self.commit_margin_m <= 0.0 or not self.intersection_modes):
             raise ValueError("invalid intersection traffic gate configuration")
@@ -70,7 +75,6 @@ class IntersectionTrafficGate:
         self.active_stop_index = None
         self.last_route_index = None
         self.high_water_progress_m = None
-        self.unknown_since = None
         self.stop_started = None
         self.release_cause = None
 
@@ -105,9 +109,8 @@ class IntersectionTrafficGate:
         self.active_stop_index = int(progress.stop_index)
         self.last_route_index = int(progress.route_index)
         self.high_water_progress_m = float(progress.progress_m)
-        self.state = STOP_LINE_HOLD
+        self.state = MINIMUM_3S_HOLD
         self.stop_started = float(now)
-        self.unknown_since = None
 
     def _exited(self, progress):
         if self.active_mode is None:
@@ -139,7 +142,7 @@ class IntersectionTrafficGate:
         return True
 
     def evaluate(self, progress, stop_line_active, aspect, signal_age_s, now):
-        """Advance one intersection using CSV progress and fresh R/G only."""
+        """Advance one intersection using CSV progress and traffic freshness."""
         now = float(now)
         signal, signal_event = self._signal(
             aspect, signal_age_s, progress.mode)
@@ -160,51 +163,52 @@ class IntersectionTrafficGate:
                 return self._decision(False, signal, active=False)
             if bool(stop_line_active):
                 self._activate(progress, now)
-                event = f"STOP_LINE_HOLD traffic={signal}"
+                event = f"STOP_LINE_REACHED traffic={signal}"
             else:
                 return self._decision(False, signal, "", active=True)
         else:
             event = ""
 
-        if self.state == STOP_LINE_HOLD:
+        if self.state == MINIMUM_3S_HOLD:
+            stopped_for = max(0.0, now-float(self.stop_started))
+            # Observe and report the signal during this phase, but never use
+            # it to release the vehicle before the minimum stop has elapsed.
+            if stopped_for < self.minimum_stop_s:
+                return self._decision(
+                    True, signal, "; ".join(filter(None, (
+                        event,
+                        f"MINIMUM_STOP elapsed={stopped_for:.3f}s "
+                        f"traffic={signal}"))))
+            self.state = WAIT_TRAFFIC_RELEASE
+
+        if self.state == WAIT_TRAFFIC_RELEASE:
             stopped_for = max(0.0, now-float(self.stop_started))
             if signal == "STALE":
-                self.unknown_since = None
                 return self._decision(True, signal, "TRAFFIC_STALE_HOLD")
             if signal == "R":
-                self.unknown_since = None
                 return self._decision(
                     True, signal, "; ".join(filter(None, (
                         event, "RED_HOLD"))))
             if signal == "G":
-                self.unknown_since = None
-                if stopped_for < self.minimum_stop_s:
-                    return self._decision(
-                        True, signal,
-                        f"MINIMUM_STOP elapsed={stopped_for:.3f}s")
-                self.state = RELEASE_PENDING
+                self.state = RELEASED
                 self.release_cause = "GREEN"
                 return self._decision(
                     False, signal, "; ".join(filter(None, (
-                        signal_event, "GREEN_RELEASE", "RELEASE_PENDING"))))
-            if self.unknown_since is None:
-                self.unknown_since = now
-                return self._decision(
-                    True, signal, "UNKNOWN_HOLD_STARTED")
-            elapsed = max(0.0, now-self.unknown_since)
-            if (elapsed < self.unknown_hold_s or
-                    stopped_for < self.minimum_stop_s):
+                        signal_event, "GREEN_RELEASE", "RELEASED"))))
+            # UNKNOWN's configured observation time is measured from the CSV
+            # STOP arrival, never from a later R/Y -> UNKNOWN transition.
+            if stopped_for < self.unknown_hold_s:
                 return self._decision(
                     True, signal,
-                    f"UNKNOWN_HOLD elapsed={elapsed:.3f}s")
-            self.state = RELEASE_PENDING
-            self.release_cause = "UNKNOWN_TIMEOUT"
+                    f"UNKNOWN_HOLD elapsed={stopped_for:.3f}s")
+            self.state = RELEASED
+            self.release_cause = "UNKNOWN"
             return self._decision(
                 False, signal,
                 f"UNKNOWN_RELEASE_AFTER_{self.unknown_hold_s:.1f}S; "
-                "RELEASE_PENDING")
+                "RELEASED")
 
-        if self.state == RELEASE_PENDING:
+        if self.state == RELEASED:
             if self._monotonic_progress(progress):
                 crossed = (
                     int(progress.route_index) > int(progress.stop_route_index)
@@ -223,8 +227,7 @@ class IntersectionTrafficGate:
                     return self._decision(
                         False, signal, event)
             if signal in ("R", "STALE"):
-                self.state = STOP_LINE_HOLD
-                self.unknown_since = None
+                self.state = WAIT_TRAFFIC_RELEASE
                 self.release_cause = None
                 return self._decision(
                     True, signal, ("RED_REHOLD_BEFORE_LINE" if signal == "R"
@@ -232,14 +235,8 @@ class IntersectionTrafficGate:
             if signal == "G":
                 self.release_cause = "GREEN"
                 return self._decision(False, signal)
-            if self.release_cause == "UNKNOWN_TIMEOUT":
-                return self._decision(
-                    False, signal, "UNKNOWN_TIMEOUT_RELEASE_CONTINUES")
-            self.state = STOP_LINE_HOLD
-            self.unknown_since = now
-            self.release_cause = None
             return self._decision(
-                True, signal, "UNKNOWN_REHOLD_BEFORE_LINE")
+                False, signal, "UNKNOWN_RELEASE_CONTINUES")
 
         if self.state == INTERSECTION_COMMITTED:
             event = ("RED_IGNORED_AFTER_COMMIT; CSV_TRACKING CONTINUES"

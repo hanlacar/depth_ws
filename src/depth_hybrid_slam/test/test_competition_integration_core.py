@@ -62,7 +62,7 @@ def test_intersection_red_green_and_three_second_unknown_release():
         True, 4, "COMMON_1", 1, 100, 10.0,
         "COMMON_1", 1, 100, 25, 10.0, 130, 20.0)
     assert gate.evaluate(progress, True, "R", 0.0, 0.0).state == \
-        "STOP_LINE_HOLD"
+        "MINIMUM_3S_HOLD"
     assert gate.evaluate(progress, True, "R", 0.0, 9.0).stop
     gate.reset()
     assert gate.evaluate(progress, True, "G", 0.0, 0.0).stop
@@ -85,7 +85,7 @@ def test_low_confidence_traffic_is_unknown_even_when_fresh():
             True, 4, "COMMON_1", 1, 100, 10.0,
             "COMMON_1", 1, 100, 25, 10.0, 130, 20.0))
     decision = machine.update(value)
-    assert decision.state == "STOP_LINE_HOLD"
+    assert decision.state == "MINIMUM_3S_HOLD"
     assert decision.stop_required
 
 

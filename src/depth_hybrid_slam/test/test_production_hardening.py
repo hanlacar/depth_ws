@@ -117,7 +117,9 @@ def test_camera_prediction_horizon_persistence_and_mode_gate():
         assert camera_correction_allowed(mode)
     for mode in (4, 6, 8):
         assert camera_correction_allowed(mode, "APPROACH")
-        assert not camera_correction_allowed(mode, "STOP_LINE_HOLD")
+        for state in ("MINIMUM_3S_HOLD", "WAIT_TRAFFIC_RELEASE",
+                      "RELEASED", "INTERSECTION_COMMITTED"):
+            assert not camera_correction_allowed(mode, state)
         assert camera_correction_allowed(mode, "INTERSECTION_EXITED")
     for mode in (5, 7, 9, 10, 11):
         assert not camera_correction_allowed(mode, "APPROACH")
@@ -242,14 +244,25 @@ def test_rosbag_timestamp_and_max_three_rotation(tmp_path):
         assert len(completed_bags(root)) == initial+1
 
 
-def test_readme_exactly_five_execution_items_and_production_logging():
+def test_readme_simplified_a_vslam_off_command_matches_production_launch():
     readme = (ROOT/"README.md").read_text()
-    assert readme.count("\n### ") == 5
-    for value in ("start_branch:=A", "start_branch:=B", "mcu.launch.py",
-                  "rviz2 -d", "ros2 topic echo /cmd_drive",
-                  "ros2 topic echo /cmd_wheel", "~/depth_ws/rosbags/",
-                  "최대: 완료된 주행 3개"):
+    launch = (ROOT/"src/depth_hybrid_slam/launch/"
+              "depth_csv_camera_lidar.launch.py").read_text()
+    assert readme.count("\n## ") == 1
+    assert readme.count("\n### ") == 1
+    for value in ("cd ~/depth_ws", "source /opt/ros/jazzy/setup.bash",
+                  "source install/setup.bash", "source tools/ros_network_env.sh",
+                  "ros2 launch depth_hybrid_slam "
+                  "depth_csv_camera_lidar.launch.py"):
         assert value in readme
+    for name, value in (
+            ("start_branch", "A"), ("start_mode", "1"),
+            ("end_mode", "11"), ("enable_vslam", "false"),
+            ("front_serial_port", "/dev/ttyUSB0"),
+            ("enable_control", "true"), ("user_approved", "true"),
+            ("enable_rosbag", "true")):
+        assert f"{name}:={value}" in readme
+        assert f'DeclareLaunchArgument("{name}"' in launch
     runtime = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam/"
                "runtime_monitor_node.py").read_text()
     mission = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam/"

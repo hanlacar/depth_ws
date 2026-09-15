@@ -48,7 +48,7 @@ def test_red_at_mode4_csv_stop_line_holds():
                                  intersection_progress=progress(),
                                  stop_line_distance_m=1.5))
     assert decision.stop_required and decision.speed_limit == 0.0
-    assert decision.state == "STOP_LINE_HOLD"
+    assert decision.state == "MINIMUM_3S_HOLD"
 
 
 def test_ramp_requires_section_duration_and_holds_once():
@@ -94,7 +94,7 @@ def test_mission_fresh_red_presence_overrides_simultaneous_green():
         traffic_red_present=True, traffic_green_present=True,
         traffic_diagnostics_age=.1, csv_stop_line_active=True,
         intersection_progress=progress(mode=4)))
-    assert decision.state == "STOP_LINE_HOLD"
+    assert decision.state == "MINIMUM_3S_HOLD"
     assert decision.stop_required
     assert core.last_traffic_decision.aspect == "R"
 
@@ -107,9 +107,31 @@ def test_mission_mode8_red_presence_overrides_green_left():
         traffic_red_present=True, traffic_green_present=True,
         traffic_diagnostics_age=.1, csv_stop_line_active=True,
         intersection_progress=progress(mode=8)))
-    assert decision.state == "STOP_LINE_HOLD"
+    assert decision.state == "MINIMUM_3S_HOLD"
     assert decision.stop_required
     assert core.last_traffic_decision.aspect == "R"
+
+
+def test_fresh_red_source_clears_to_green_without_restarting_hold():
+    for mode in (4, 6, 8):
+        core = MissionMachine()
+        common = {
+            "traffic_state": "G", "traffic_aspect": "GREEN_CIRCLE",
+            "traffic_confidence": .9, "traffic_age": .1,
+            "traffic_green_present": True, "traffic_diagnostics_age": .1,
+            "csv_stop_line_active": True,
+            "intersection_progress": progress(mode=mode),
+        }
+        assert core.update(value(
+            0.0, traffic_red_present=True, **common)).stop_required
+        waiting = core.update(value(
+            3.0, traffic_red_present=True, **common))
+        assert waiting.state == "WAIT_TRAFFIC_RELEASE"
+        assert waiting.stop_required
+        released = core.update(value(
+            5.2, traffic_red_present=False, **common))
+        assert released.state == "RELEASED"
+        assert not released.stop_required
 
 
 def test_direct_red_topic_holds_regardless_of_fusion_confidence():
