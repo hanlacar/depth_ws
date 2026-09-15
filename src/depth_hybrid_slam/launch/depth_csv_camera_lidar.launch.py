@@ -19,13 +19,16 @@ def generate_launch_description():
             default_value=route.replace(".csv", ".metadata.yaml")),
         DeclareLaunchArgument("start_branch", default_value="A"),
         DeclareLaunchArgument(
-            "map_path", default_value="/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db"),
+            "map_path", default_value=(
+                "/home/qor/depth_ws/maps/"
+                "merged_competition_level_aligned_v10/rtabmap.db")),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),
         DeclareLaunchArgument("camera_serial", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),
         DeclareLaunchArgument("require_cuda", default_value="true"),
         DeclareLaunchArgument("enable_control", default_value="true"),
         DeclareLaunchArgument("user_approved", default_value="true"),
+        DeclareLaunchArgument("enable_rosbag", default_value="true"),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(
                 share/"launch"/"depth_real_vehicle.launch.py")),
@@ -42,8 +45,8 @@ def generate_launch_description():
                 "require_cuda": LaunchConfiguration("require_cuda"),
                 "use_lidar": "true",
                 "use_camera": "true",
-                "launch_mcu_odom": "false",
                 "enable_control": LaunchConfiguration("enable_control"),
                 "user_approved": LaunchConfiguration("user_approved"),
+                "enable_rosbag": LaunchConfiguration("enable_rosbag"),
             }.items()),
     ])

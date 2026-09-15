@@ -92,7 +92,7 @@ def test_command_priority_stop_distance_steering_then_mode9_speed():
     empty = CommandCandidate()
     assert arbitrate(csv, empty, mode=9).drive == 3.0
     assert arbitrate(csv, empty, mode=9,
-                     steering_slowdown=True).drive == 1.0
+                     steering_slowdown=True).drive == 3.0
     assert arbitrate(csv, empty, mode=9, lidar_slowdown=True,
                      steering_slowdown=True).state == "LIDAR_DISTANCE_SLOWDOWN"
     assert arbitrate(csv, empty, mission_hold=True, mode=9,

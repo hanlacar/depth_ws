@@ -1,8 +1,77 @@
 """Fuse high-rate odometry with low-rate map-to-odom corrections."""
 
 import math
+from dataclasses import dataclass
 
 from .geometry import compose, interpolate_transform, wrap_angle
+
+
+@dataclass(frozen=True)
+class VslamGateDecision:
+    use_vslam: bool
+    stop: bool
+    state: str
+    transform: tuple
+
+
+class VslamRecoveryGate:
+    """Accept map corrections only after visual evidence and jump recovery."""
+
+    def __init__(self, position_jump_threshold_m=0.75,
+                 yaw_jump_threshold_deg=25.0, recovery_s=1.0):
+        self.position_threshold = float(position_jump_threshold_m)
+        self.yaw_threshold = math.radians(float(yaw_jump_threshold_deg))
+        self.recovery_s = max(1.0, float(recovery_s))
+        self.transform = (0.0, 0.0, 0.0)
+        self.initialized = False
+        self.recovery_started = None
+        self.degraded = False
+
+    def _jump(self, candidate):
+        return (math.hypot(candidate[0]-self.transform[0],
+                           candidate[1]-self.transform[1]) >
+                self.position_threshold or
+                abs(wrap_angle(candidate[2]-self.transform[2])) >
+                self.yaw_threshold)
+
+    def update(self, candidate, *, visual_consistent, evidence_fresh,
+               now):
+        now = float(now)
+        if not evidence_fresh or not visual_consistent or candidate is None:
+            # A visual mismatch rejects VSLAM before pose comparison, so it
+            # must never start or prolong jump recovery.
+            self.recovery_started = None
+            return VslamGateDecision(
+                False, False, "RUNNING_ODOM_ONLY", self.transform)
+        candidate = tuple(float(value) for value in candidate)
+        if not self.initialized:
+            self.transform = candidate
+            self.initialized = True
+            self.degraded = False
+            return VslamGateDecision(True, False, "RUNNING", self.transform)
+        jump = self._jump(candidate)
+        if self.degraded:
+            if jump:
+                return VslamGateDecision(
+                    False, False, "RUNNING_ODOM_ONLY", self.transform)
+            self.transform = candidate
+            self.degraded = False
+            return VslamGateDecision(True, False, "RUNNING", self.transform)
+        if not jump:
+            self.transform = candidate
+            self.recovery_started = None
+            return VslamGateDecision(True, False, "RUNNING", self.transform)
+        if self.recovery_started is None:
+            self.recovery_started = now
+            return VslamGateDecision(False, True, "WARNING", self.transform)
+        if now-self.recovery_started < self.recovery_s:
+            return VslamGateDecision(False, True, "RECOVERING", self.transform)
+        # One bounded recovery attempt: a persistent jump is ignored and the
+        # vehicle resumes on the last accepted map->odom plus actual odometry.
+        self.recovery_started = None
+        self.degraded = True
+        return VslamGateDecision(
+            False, False, "RUNNING_ODOM_ONLY", self.transform)
 
 
 class LocalizationFusion:

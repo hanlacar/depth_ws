@@ -55,6 +55,7 @@ setup(
             "mission_manager = depth_hybrid_slam.mission_node:main",
             "signal_exit = depth_hybrid_slam.signal_exit_node:main",
             "safety_monitor = depth_hybrid_slam.safety_node:main",
+            "runtime_monitor = depth_hybrid_slam.runtime_monitor_node:main",
             "case_manager = depth_hybrid_slam.case_cli:main",
             "performance_probe = depth_hybrid_slam.performance_probe:main",
             "bag_preflight = depth_hybrid_slam.bag_preflight:main",

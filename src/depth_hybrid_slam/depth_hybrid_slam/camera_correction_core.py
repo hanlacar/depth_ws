@@ -25,6 +25,22 @@ class CameraPlan:
     max_curvature_jump: float = math.inf
 
 
+def camera_correction_allowed(mode, intersection_state=""):
+    """Production mode gate; intersection mission ownership stays exclusive."""
+    try:
+        mode = int(mode)
+    except (TypeError, ValueError):
+        return False
+    if mode in (5, 7, 9, 10, 11):
+        return False
+    if mode in (1, 2, 3):
+        return True
+    if mode in (4, 6, 8):
+        return str(intersection_state).strip().upper() in (
+            "", "INACTIVE_MODE_GATE", "APPROACH", "INTERSECTION_EXITED")
+    return mode >= 0
+
+
 class CameraCorrectionMachine:
     """Stop, observe for three seconds, plan, follow, and rejoin CSV."""
 
@@ -39,9 +55,15 @@ class CameraCorrectionMachine:
 
     def update(self, validation, lane_confident, *, now,
                vehicle_stopped=False, lidar_active=False, emergency=False,
-               plan_valid=None, path_complete=False, rejoin_valid=False):
+               plan_valid=None, path_complete=False, rejoin_valid=False,
+               enabled=True):
         validation = str(validation).strip().upper()
         now = float(now)
+        if not bool(enabled):
+            self.reset()
+            return CameraCorrectionDecision(
+                "CAMERA_DISABLED_MODE_GATE", False, False,
+                discard_path=True)
         if emergency:
             self.reset()
             return CameraCorrectionDecision(

@@ -100,7 +100,7 @@ class MissionCompletionTracker:
             self.slot_seen[mode] = True
         distance = value.get("distance_m")
         if (mode == 9 and value.get("hard_stop") and distance is not None and
-                float(distance) <= 0.50):
+                float(distance) <= 1.00):
             self.mode9_hard_pending = True
             self.mode9_hard_distance = float(distance)
 
@@ -120,6 +120,8 @@ class MissionCompletionTracker:
         if mode in (7, 10):
             if event == "PARKING_CSV_FALLBACK" or state.endswith("CSV_FALLBACK"):
                 self.parking_source[mode] = "CSV_FALLBACK"
+                if str(value.get("branch", "")) in ("A", "B"):
+                    self.slot_seen[mode] = True
             if event == "PARKING_CSV_REJOINED" or state in ("T_COMPLETE", "V_COMPLETE"):
                 newly_completed = not self.parking_completed[mode]
                 self.parking_completed[mode] = True
@@ -182,6 +184,13 @@ class MissionCompletionTracker:
                 if now-self.mode2_stop_started >= 4.0 and not self.mode2_stop_4s_done:
                     self.mode2_stop_4s_done = True
                     self._event("MODE2_STOP_4S_DONE", 2)
+                    self.mode2_slope_seen = valid_pitch
+                    self._event(
+                        "MODE2_STOP_EVALUATED", 2,
+                        pitch_deg=self.mode2_stop_pitch_deg,
+                        pitch_valid=bool(pitch_valid),
+                        threshold_deg=self.slope_threshold_deg,
+                        passed=valid_pitch)
                     if not self.mode2_slope_seen:
                         self._event(
                             "MODE2_SLOPE_INVALID", 2,

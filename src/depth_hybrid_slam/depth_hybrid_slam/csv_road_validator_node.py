@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 import rclpy
-from nav_msgs.msg import Path
+from nav_msgs.msg import Odometry, Path
 from race_interfaces.msg import SemanticPathFrame
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
@@ -21,7 +21,7 @@ from camera_navigation.semantic_path_contract import decode_binary_rle
 from .csv_road_validator_core import (
     CAMERA_UNAVAILABLE, CameraRiskGate, INVALID_GEOMETRY, PATH_UNAVAILABLE,
     ValidatorConfig, classify_input_state, grid_to_metric, render_bev_overlay,
-    unavailable_result, validate_metric_bev)
+    predict_path_horizon, unavailable_result, validate_metric_bev)
 
 
 def _yaw(quaternion):
@@ -65,6 +65,8 @@ class CsvRoadValidatorNode(Node):
             "minimum_visible_path_ratio": 0.70,
             "minimum_road_confidence": 0.70,
             "lane_max_crossing_ratio": 0.0,
+            "prediction_horizon_s": 1.5,
+            "motion_timeout_s": 0.5,
             "camera_mount.configured": False,
             "camera_mount.position_x_m": 0.0,
             "camera_mount.position_y_m": 0.0,
@@ -120,6 +122,9 @@ class CsvRoadValidatorNode(Node):
         self.path = np.empty((0, 3), dtype=float)
         self.path_receipt = None
         self.path_error = "path not received"
+        self.speed_mps = self.steering_deg = 0.0
+        self.odom_receipt = self.steering_receipt = None
+        self.predicted_path = self.path
 
         semantic_topic = str(p("semantic_topic"))
         camera_topic = str(p("camera_info_topic"))
@@ -129,6 +134,9 @@ class CsvRoadValidatorNode(Node):
         self.create_subscription(CameraInfo, camera_topic,
                                  self._on_camera_info, 10)
         self.create_subscription(Path, path_topic, self._on_path, 10)
+        self.create_subscription(Odometry, "/odom", self._on_odom, 10)
+        self.create_subscription(Float32, "/mcu/steer_deg",
+                                 self._on_steering, 10)
         prefix = "/depth_slam/csv_road_validation"
         self.pub_valid = self.create_publisher(Bool, prefix+"/valid", 10)
         self.pub_state = self.create_publisher(String, prefix+"/state", 10)
@@ -250,8 +258,22 @@ class CsvRoadValidatorNode(Node):
         self.path_receipt = time.monotonic()
         self.path_error = ""
 
+    def _on_odom(self, message):
+        self.speed_mps = float(message.twist.twist.linear.x)
+        self.odom_receipt = time.monotonic()
+
+    def _on_steering(self, message):
+        self.steering_deg = float(message.data)
+        self.steering_receipt = time.monotonic()
+
     def _result(self):
         now = time.monotonic()
+        motion_timeout = float(self.get_parameter("motion_timeout_s").value)
+        if (self.odom_receipt is None or self.steering_receipt is None or
+                now-self.odom_receipt > motion_timeout or
+                now-self.steering_receipt > motion_timeout):
+            return unavailable_result(STALE_INPUT,
+                                      "odom or steering prediction input stale")
         if self.camera_seen and self.camera is None:
             return unavailable_result(INVALID_GEOMETRY, self.semantic_error)
         if self.semantic_seen and self.semantic_receipt is None:
@@ -269,14 +291,18 @@ class CsvRoadValidatorNode(Node):
             reason = self.path_error if state.state == PATH_UNAVAILABLE else \
                 self.semantic_error if state.state == CAMERA_UNAVAILABLE else state.reason
             return unavailable_result(state.state, reason)
+        self.predicted_path = predict_path_horizon(
+            self.path, self.speed_mps, self.steering_deg,
+            self.get_parameter("prediction_horizon_s").value,
+            self.config.wheelbase_m)
         return validate_metric_bev(self.road, self.lane, self.visibility,
-                                   self.path, self.config)
+                                   self.predicted_path, self.config)
 
     def _publish_overlay(self, result):
         if self.road is None or self.lane is None or self.visibility is None:
             return
         image = render_bev_overlay(self.road, self.lane, self.visibility,
-                                   self.path, result, self.config)
+                                   self.predicted_path, result, self.config)
         message = Image()
         message.header.stamp = self.get_clock().now().to_msg()
         message.header.frame_id = self.expected_path_frame
@@ -303,6 +329,10 @@ class CsvRoadValidatorNode(Node):
             "validation_only": True,
             "path_frame": self.expected_path_frame,
             "projection": "calibrated_ground_plane_bev",
+            "prediction_horizon_s": self.get_parameter(
+                "prediction_horizon_s").value,
+            "prediction_speed_mps": self.speed_mps,
+            "prediction_steering_deg": self.steering_deg,
             "camera_mount_configured": self.mount.is_usable()})
         self.pub_diagnostics.publish(String(
             data=json.dumps(diagnostics, sort_keys=True)))

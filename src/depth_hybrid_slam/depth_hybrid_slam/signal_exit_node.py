@@ -12,11 +12,12 @@ from std_msgs.msg import String
 
 from .signal_exit_core import (
     DetectorConfig, HSVRange, NormalizedROI, ObservationState,
-    SelectedRoute, SignalExitDetector, SignalState, SignalVoteWindow)
+    SelectedRoute, ExitSignalTrack, SignalExitDetector, SignalState,
+    SignalVoteWindow)
 
 
 class SignalExitNode(Node):
-    """Publish A only for a stable left-to-right G/R/R observation."""
+    """Track the upper-image lamps and publish only explicit stable A/B."""
 
     def __init__(self):
         super().__init__("depth_signal_exit")
@@ -31,6 +32,8 @@ class SignalExitNode(Node):
             "green_extended_high": [110, 255, 125],
             "minimum_valid_frames": 60, "decision_ratio": 0.75,
             "observation_duration_s": 5.0,
+            "track_confirmations": 3, "track_missing_hold_s": 0.25,
+            "track_minimum_confidence": 0.5,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -50,6 +53,10 @@ class SignalExitNode(Node):
         self.window = SignalVoteWindow(
             value("observation_duration_s"), value("minimum_valid_frames"),
             value("decision_ratio"))
+        self.track = ExitSignalTrack(
+            value("track_confirmations"), value("track_missing_hold_s"),
+            value("track_minimum_confidence"))
+        self.latest_track = {}
         self.bridge = CvBridge()
         self.mode = -1
         self.last_window_state = ObservationState.IDLE
@@ -73,6 +80,7 @@ class SignalExitNode(Node):
         if mode == 11 and self.mode != 11:
             self.window.reset()
             self.window.start(time.monotonic())
+            self.track.reset()
         elif mode != 11 and self.mode == 11:
             self.window.reset()
         self.mode = mode
@@ -95,10 +103,12 @@ class SignalExitNode(Node):
             self.get_logger().error(f"Mode11 image processing failed: {error}")
             return
         now = time.monotonic()
-        snapshot = self.window.observe(detection.state, now)
+        self.latest_track = self.track.update(detection, now)
+        tracked_state = self.latest_track["state"]
+        snapshot = self.window.observe(tracked_state, now)
         # Raw A/B evidence feeds the existing five-second commit gate.  The
         # gate, not this advisory camera node, owns DEFAULT and branch commit.
-        self.signal_pub.publish(String(data=self._raw_route(detection.state)))
+        self.signal_pub.publish(String(data=self._raw_route(tracked_state)))
         self._publish(snapshot)
 
     def _tick(self):
@@ -117,6 +127,13 @@ class SignalExitNode(Node):
             "source": source, "confidence": snapshot.confidence,
             "green": snapshot.green, "red": snapshot.red,
             "unknown": snapshot.unknown, "elapsed_s": snapshot.elapsed,
+            "bbox": self.latest_track.get("bbox", ()),
+            "track_confidence": self.latest_track.get("confidence", 0.0),
+            "last_seen": self.latest_track.get("last_seen"),
+            "missing_duration": self.latest_track.get(
+                "missing_duration", 0.0),
+            "track_continuity": self.latest_track.get(
+                "track_continuity", 0),
         }, separators=(",", ":"))))
         self.last_window_state = snapshot.state
 

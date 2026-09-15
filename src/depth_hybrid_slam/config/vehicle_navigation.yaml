@@ -25,6 +25,14 @@ route_follower:
     dry_run: true
     user_approved: false
 
+odom_localization:
+  ros__parameters:
+    odom_timeout_s: 0.5
+    vslam_evidence_timeout_s: 0.5
+    position_jump_threshold_m: 0.75
+    yaw_jump_threshold_deg: 25.0
+    vslam_recovery_s: 1.0
+
 depth_camera_correction:
   ros__parameters:
     publish_hz: 20.0

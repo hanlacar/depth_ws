@@ -105,6 +105,44 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /depth_slam/route/collision_preview
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Current Owner and Segment
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /depth_slam/runtime/status_marker
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera Lane Road Validation
+      Normalize Range: true
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /depth_slam/csv_road_validation/overlay
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Camera Traffic Light Result
+      Normalize Range: true
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /camera/traffic_light_rgb/overlay_image
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 20; 20; 20

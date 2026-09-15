@@ -26,7 +26,7 @@ def test_real_launch_contains_only_measured_odom_and_one_front_lidar():
             "virtual_odom", "virtual_vehicle", "mock_odom", "gazebo",
             "test_odom_publisher", "rear_rplidar_node"):
         assert forbidden not in source
-    assert 'package="t870_mcu_simple", executable="bridge"' in source
+    assert 'package="t870_mcu_simple", executable="bridge"' not in source
     assert '"launch_rear_lidar_driver": "false"' in source
     assert '"--frame-id", "map", "--child-frame-id", "odom"' not in source
     assert '"hybrid_localization.launch.py"' in source
@@ -38,13 +38,13 @@ def test_real_launch_contains_only_measured_odom_and_one_front_lidar():
 
 def test_split_sensor_route_launch_waits_for_separate_real_mcu_odom():
     source = SPLIT_LAUNCH.read_text(encoding="utf-8")
-    assert '"launch_mcu_odom": "false"' in source
+    assert '"launch_mcu_odom": "false"' not in source
     assert '"use_lidar": "true"' in source
     assert '"use_camera": "true"' in source
     assert "test_odom_publisher" not in source
     assert "synthetic_odom" not in source
     real = LAUNCH.read_text(encoding="utf-8")
-    assert 'LaunchConfiguration("launch_mcu_odom")' in real
+    assert 'LaunchConfiguration("launch_mcu_odom")' not in real
     assert 'executable="csv_only_network_visualizer"' in real
     assert 'executable="route_local_path"' in real
 

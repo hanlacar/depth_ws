@@ -78,7 +78,7 @@ class IntersectionTrafficGate:
         value = str(aspect).strip().upper()
         fresh = 0.0 <= float(signal_age_s) <= self.traffic_timeout_s
         if not fresh:
-            return "UNKNOWN", ""
+            return "STALE", "TRAFFIC_STALE"
         if value in ("R+GREEN_LEFT", "Y+GREEN_LEFT"):
             return "R", "RED_PRESENT_HOLD"
         if value in ("R+G", "Y+G"):
@@ -168,6 +168,9 @@ class IntersectionTrafficGate:
 
         if self.state == STOP_LINE_HOLD:
             stopped_for = max(0.0, now-float(self.stop_started))
+            if signal == "STALE":
+                self.unknown_since = None
+                return self._decision(True, signal, "TRAFFIC_STALE_HOLD")
             if signal == "R":
                 self.unknown_since = None
                 return self._decision(
@@ -219,12 +222,13 @@ class IntersectionTrafficGate:
                                   "CSV_TRACKING CONTINUES")
                     return self._decision(
                         False, signal, event)
-            if signal == "R":
+            if signal in ("R", "STALE"):
                 self.state = STOP_LINE_HOLD
                 self.unknown_since = None
                 self.release_cause = None
                 return self._decision(
-                    True, signal, "RED_REHOLD_BEFORE_LINE")
+                    True, signal, ("RED_REHOLD_BEFORE_LINE" if signal == "R"
+                                   else "TRAFFIC_STALE_REHOLD_BEFORE_LINE"))
             if signal == "G":
                 self.release_cause = "GREEN"
                 return self._decision(False, signal)

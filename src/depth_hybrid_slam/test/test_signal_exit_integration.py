@@ -87,7 +87,7 @@ def test_merged_five_second_vote_camera_and_default_are_latched():
     default.start(0.0)
     result = default.evaluate(5.0)
     assert result.state == ObservationState.DEFAULTED
-    assert result.route == SelectedRoute.B
+    assert result.route == SelectedRoute.A
 
 
 @pytest.mark.parametrize("signal,expected", (
@@ -105,15 +105,15 @@ def test_mode11_actual_hold_mapping_and_late_opposite(signal, expected):
     assert gate.evaluate(8.0).branch == expected
 
 
-def test_mode11_stale_unknown_and_divided_votes_default_b():
+def test_mode11_stale_unknown_and_divided_votes_default_a():
     for observations in (("B", "B"), ("UNKNOWN", "UNKNOWN"),
                          ("A", "B")):
         gate = Mode11ExitGate(confirmations=2)
         gate.enter(0.0)
         for index, signal in enumerate(observations):
             gate.observe(signal, 0.1+index*0.1)
-        assert gate.evaluate(5.0).branch == "B"
-        assert gate.commit_source == "DEFAULT"
+        assert gate.evaluate(5.0).branch == "A"
+        assert gate.commit_source == "DEFAULT_A"
 
 
 def _satisfy_all_missions(tracker, end_branch):

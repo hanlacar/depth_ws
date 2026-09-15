@@ -16,3 +16,6 @@
     # Commit only after bounded CSV progress passes the line by this distance.
     intersection_commit_margin_m: 0.35
     intersection_modes: [4, 6, 8]
+    imu_timeout_s: 0.5
+    imu_average_window_s: 0.5
+    slope_threshold_deg: 4.5

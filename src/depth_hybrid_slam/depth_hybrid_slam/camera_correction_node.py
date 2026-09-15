@@ -11,7 +11,8 @@ from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, Int32, String
 
 from .camera_correction_core import (
-    CameraCorrectionMachine, plan_camera_correction)
+    CameraCorrectionMachine, camera_correction_allowed,
+    plan_camera_correction)
 from .lidar_path_tracker import LocalPathTracker
 from .ros_helpers import quaternion_from_yaw, yaw_from_quaternion
 
@@ -41,6 +42,7 @@ class CameraCorrectionNode(Node):
         self.lidar_candidate_active = False
         self.lidar_hold = False
         self.mode = -1
+        self.intersection_state = "INACTIVE_MODE_GATE"
         self.emergency = False
         self.received = {}
         self.plan = None
@@ -60,6 +62,9 @@ class CameraCorrectionNode(Node):
         self.create_subscription(
             Bool, "/depth_slam/lidar/hold", self._lidar_hold, 10)
         self.create_subscription(String, "/drive_mode", self._mode, 10)
+        self.create_subscription(
+            String, "/depth_slam/mission/traffic_gate_state",
+            self._intersection, 10)
         self.create_subscription(
             Bool, "/depth_slam/lidar/hard_emergency",
             self._emergency, 10)
@@ -144,6 +149,10 @@ class CameraCorrectionNode(Node):
         self.emergency = bool(message.data)
         self.received["emergency"] = time.monotonic()
 
+    def _intersection(self, message):
+        self.intersection_state = str(message.data).strip().upper()
+        self.received["intersection"] = time.monotonic()
+
     def _perception(self, message):
         try:
             value = json.loads(message.data)
@@ -195,10 +204,14 @@ class CameraCorrectionNode(Node):
                      self._fresh("path", now) and
                      self._fresh("pose", now) and
                      self._fresh("perception", now))
+        enabled = (self._fresh("mode", now) and
+                   camera_correction_allowed(
+                       self.mode, self.intersection_state if
+                       self._fresh("intersection", now) else "STALE"))
         decision = self.machine.update(
             validation, confident, now=now, vehicle_stopped=stopped,
             lidar_active=lidar_active, emergency=emergency,
-            rejoin_valid=self.rejoin_pending)
+            rejoin_valid=self.rejoin_pending, enabled=enabled)
         if decision.discard_path:
             self._clear_plan()
         if decision.need_plan:
@@ -214,7 +227,8 @@ class CameraCorrectionNode(Node):
                              self.plan.points, self.pose, 1.0))
             decision = self.machine.update(
                 validation, confident, now=now,
-                vehicle_stopped=stopped, plan_valid=activated)
+                vehicle_stopped=stopped, plan_valid=activated,
+                enabled=enabled)
             if not activated:
                 self.tracker.clear()
             else:
@@ -226,12 +240,14 @@ class CameraCorrectionNode(Node):
                 self.machine.state = "CAMERA_NO_VALID_PATH"
                 decision = self.machine.update(
                     validation, confident, now=now,
-                    vehicle_stopped=stopped, plan_valid=False)
+                    vehicle_stopped=stopped, plan_valid=False,
+                    enabled=enabled)
                 self.tracker.clear()
             elif command.complete:
                 decision = self.machine.update(
                     validation, confident, now=now,
-                    vehicle_stopped=stopped, path_complete=True)
+                    vehicle_stopped=stopped, path_complete=True,
+                    enabled=enabled)
                 self.rejoin_pending = True
             else:
                 drive, wheel, valid = command.drive, command.wheel, True

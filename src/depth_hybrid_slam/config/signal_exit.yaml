@@ -14,3 +14,6 @@ depth_signal_exit:
     minimum_valid_frames: 60
     decision_ratio: 0.75
     observation_duration_s: 5.0
+    track_confirmations: 3
+    track_missing_hold_s: 0.25
+    track_minimum_confidence: 0.5

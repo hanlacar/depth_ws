@@ -9,6 +9,13 @@ depth_lidar_perception:
     clear_distance_m: 0.60
     mode9_clear_distance_m: 1.5
     mode9_clear_duration_s: 1.0
+    mode9_stop_distance_m: 1.0
+    mode9_slow_distance_m: 1.5
+    mode9_reaction_time_s: 0.35
+    mode9_deceleration_mps2: 1.5
+    mode9_braking_margin_m: 0.20
+    mode9_ttc_stop_s: 0.75
+    mode9_ttc_slow_s: 1.5
     steering_slowdown_threshold_deg: 10.0
     steering_slowdown_enter_s: 1.0
     steering_slowdown_exit_s: 1.0
@@ -37,6 +44,9 @@ depth_command_arbiter:
   ros__parameters:
     publish_hz: 30.0
     candidate_timeout_s: 0.5
+    odom_timeout_s: 0.5
+    owner_stop_duration_s: 1.0
+    owner_standstill_speed_mps: 0.03
 
 depth_lidar_rejoin_validator:
   ros__parameters:

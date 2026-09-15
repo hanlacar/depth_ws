@@ -280,6 +280,34 @@ def densify_path(path_xy_yaw, spacing_m):
     return np.asarray(output, dtype=float)
 
 
+def predict_path_horizon(path_xy_yaw, speed_mps, steering_deg, horizon_s,
+                         wheelbase_m=0.73, minimum_distance_m=1.0):
+    """Select a 1-2 s CSV preview and apply current bicycle-yaw momentum."""
+    horizon = float(horizon_s)
+    if not 1.0 <= horizon <= 2.0:
+        raise ValueError("camera prediction horizon must be 1..2 seconds")
+    path = densify_path(path_xy_yaw, 0.05)
+    if not len(path):
+        return path
+    distance_limit = max(float(minimum_distance_m),
+                         abs(float(speed_mps))*horizon)
+    cumulative = np.zeros(len(path), dtype=float)
+    if len(path) > 1:
+        cumulative[1:] = np.cumsum(np.linalg.norm(
+            np.diff(path[:, :2], axis=0), axis=1))
+    selected = path[cumulative <= distance_limit+1.0e-9].copy()
+    if not len(selected):
+        selected = path[:1].copy()
+    curvature = math.tan(math.radians(float(steering_deg)))/float(wheelbase_m)
+    selected_distance = cumulative[:len(selected)]
+    # Steering influence fades as the controller converges back to the CSV.
+    selected[:, 2] += curvature*selected_distance*np.exp(
+        -selected_distance/max(distance_limit, 1.0e-6))
+    selected[:, 2] = np.arctan2(np.sin(selected[:, 2]),
+                                np.cos(selected[:, 2]))
+    return selected
+
+
 def ego_connected_road(road_mask, config):
     """Keep only road connected to the near-field vehicle neighbourhood."""
     road = (np.asarray(road_mask) > 0).astype(np.uint8)

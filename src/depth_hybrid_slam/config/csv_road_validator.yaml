@@ -20,6 +20,8 @@ csv_road_validator:
     lane_collision_margin_m: 0.06
     lane_fail_collision_ratio: 0.03
     fail_confirmation_s: 0.4
+    prediction_horizon_s: 1.5
+    motion_timeout_s: 0.5
     minimum_center_inside_ratio: 0.90
     minimum_vehicle_corridor_inside_ratio: 0.75
     minimum_visible_path_ratio: 0.70

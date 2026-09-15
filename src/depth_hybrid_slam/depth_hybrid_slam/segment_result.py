@@ -12,6 +12,9 @@ class SegmentResultLatch:
         if segment in self.results:
             return None
         verdict = "COMPLETE" if bool(passed) else "FAIL"
-        line = f"[SEGMENT {segment}] {verdict} - {str(reason).strip()}"
+        detail = str(reason).strip()
+        line = f"[SEGMENT {segment}] {verdict}"
+        if detail:
+            line += " - "+detail
         self.results[segment] = line
         return line

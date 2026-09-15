@@ -190,14 +190,14 @@ def test_mode8_red_plus_left_holds_until_unopposed_left_then_commits():
     assert command.state == "CSV_TRACKING" and command.drive == 2.0
 
 
-def test_stale_red_becomes_unknown_and_releases_after_three_seconds():
+def test_stale_red_is_distinct_from_unknown_and_remains_stopped():
     gate = IntersectionTrafficGate(unknown_hold_s=3.0, traffic_timeout_s=0.3)
     assert gate.evaluate(_progress(), True, "R", 0.0, 0.0).stop
     stale = gate.evaluate(_progress(), True, "R", 0.31, 5.0)
-    assert stale.aspect == "UNKNOWN" and stale.stop
+    assert stale.aspect == "STALE" and stale.stop
     assert gate.evaluate(_progress(), True, "R", 0.31, 7.99).stop
-    released = gate.evaluate(_progress(), True, "R", 0.31, 8.0)
-    assert released.aspect == "UNKNOWN" and not released.stop
+    held = gate.evaluate(_progress(), True, "R", 0.31, 8.0)
+    assert held.aspect == "STALE" and held.stop
 
 
 def test_wrong_segment_direction_and_backtrack_cannot_commit():

@@ -20,7 +20,8 @@ from .lidar_roi_core import (
     clusters_in_centerline_corridor, DYNAMIC, DynamicClusterTracker, mode_gates,
     mode5_avoidance_requested, speed_bump_suppressed)
 from .lidar_scan_core import ScanSafety
-from .lidar_mission_core import Mode9EmergencyLatch, SteeringSlowdownLatch
+from .lidar_mission_core import (
+    Mode9EmergencyLatch, Mode9Safety, SteeringSlowdownLatch)
 
 
 def scan_points(message):
@@ -51,6 +52,13 @@ class LidarPerceptionNode(Node):
             ("emergency_distance_m", 0.50), ("clear_distance_m", 0.60),
             ("mode9_clear_distance_m", 1.5),
             ("mode9_clear_duration_s", 1.0),
+            ("mode9_stop_distance_m", 1.0),
+            ("mode9_slow_distance_m", 1.5),
+            ("mode9_reaction_time_s", 0.35),
+            ("mode9_deceleration_mps2", 1.5),
+            ("mode9_braking_margin_m", 0.20),
+            ("mode9_ttc_stop_s", 0.75),
+            ("mode9_ttc_slow_s", 1.5),
             ("steering_slowdown_threshold_deg", 10.0),
             ("steering_slowdown_enter_s", 1.0),
             ("steering_slowdown_exit_s", 1.0),
@@ -90,6 +98,7 @@ class LidarPerceptionNode(Node):
         self.front_sequence = self.processed_sequence = 0
         self.clusters = self.local_clusters = ()
         self.odom = None
+        self.odom_speed = 0.0
         self.odom_at = None
         self.actual_steering = 0.0
         self.actual_steering_at = None
@@ -104,6 +113,11 @@ class LidarPerceptionNode(Node):
         self.front_clear_count = 0
         self.mode9_emergency = Mode9EmergencyLatch(
             p("mode9_clear_distance_m"), p("mode9_clear_duration_s"))
+        self.mode9_safety = Mode9Safety(
+            p("mode9_stop_distance_m"), p("mode9_slow_distance_m"),
+            p("mode9_reaction_time_s"), p("mode9_deceleration_mps2"),
+            p("mode9_braking_margin_m"), p("mode9_ttc_stop_s"),
+            p("mode9_ttc_slow_s"))
         self.steering_slowdown = SteeringSlowdownLatch(
             p("steering_slowdown_threshold_deg"),
             p("steering_slowdown_enter_s"),
@@ -211,6 +225,7 @@ class LidarPerceptionNode(Node):
                               orientation.x*orientation.y),
                          1.0-2.0*(orientation.y**2+orientation.z**2))
         self.odom = (float(position.x), float(position.y), yaw)
+        self.odom_speed = abs(float(message.twist.twist.linear.x))
         self.odom_at = time.monotonic()
 
     def _actual_steering(self, message):
@@ -411,14 +426,18 @@ class LidarPerceptionNode(Node):
             half_width_m=self.get_parameter("corridor_half_width_m").value,
             wheelbase_m=self.get_parameter("wheelbase_m").value,
             length_m=1.5)
-        distance_slowdown_evidence = assessment.slowdown
+        mode9_safety = self.mode9_safety.evaluate(
+            assessment.nearest_m, self.odom_speed,
+            fresh=front_fresh and odom_fresh)
+        distance_slowdown_evidence = (
+            mode9_safety.slowdown if self.mode == 9 else assessment.slowdown)
         steering_slowdown = self.steering_slowdown.update(
             steering if steering_source != "STALE" else None,
             now)
         slowdown = distance_slowdown_evidence or steering_slowdown
         if self.mode == 9:
             hard_stop = self.mode9_emergency.update(
-                assessment.hard_stop, assessment.nearest_m,
+                mode9_safety.stop, assessment.nearest_m,
                 front_fresh, new_scan, now)
             # A stale scan is always fail-safe even before an obstacle has
             # established the persistent emergency latch.
@@ -537,6 +556,13 @@ class LidarPerceptionNode(Node):
             "distance_slowdown_required": distance_slowdown_evidence,
             "steering_slowdown_required": steering_slowdown,
             "slowdown_policy": "DISTANCE_1M_OR_MEASURED_STEERING_HYSTERESIS",
+            "mode9_safety_state": mode9_safety.state,
+            "mode9_stopping_distance_m": (
+                None if not math.isfinite(mode9_safety.stopping_distance_m)
+                else mode9_safety.stopping_distance_m),
+            "mode9_ttc_s": (None if not math.isfinite(mode9_safety.ttc_s)
+                            else mode9_safety.ttc_s),
+            "odom_speed_mps": self.odom_speed,
             "distance_slowdown_evidence": distance_slowdown_evidence,
             "steering_slowdown_threshold_deg": self.steering_slowdown.threshold_deg,
             "steering_above_elapsed_s": (
@@ -569,7 +595,7 @@ class LidarPerceptionNode(Node):
                  "in_roi": id(c) in mode5_ids}
                 for c in local_filtered],
             "obstacles": [[round(p[0], 3), round(p[1], 3)]
-                          for c in mode5_obstacles for p in c.points][:64],
+                          for c in local_filtered for p in c.points][:128],
             "curbs": [[round(p[0], 3), round(p[1], 3)]
                       for c in broad.curbs for p in c.points][:64],
             "speed_bump_suppression_configured": bool(self.speed_bump_zones),

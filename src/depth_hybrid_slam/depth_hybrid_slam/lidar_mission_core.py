@@ -24,9 +24,11 @@ class ManeuverDecision:
 class Mode5Avoidance:
     def __init__(self):
         self.state = "CSV_TRACKING"
+        self.path_locked = False
 
     def reset(self):
         self.state = "CSV_TRACKING"
+        self.path_locked = False
 
     def update(self, avoidance_required=False, hard_obstacle=False,
                planner_state="IDLE", path_valid=False,
@@ -50,6 +52,7 @@ class Mode5Avoidance:
             self.state = "CSV_TRACKING"
         elif self.state == "STOP_FOR_PLANNING" and path_valid:
             self.state = "LIDAR_PATH_TRACKING"
+            self.path_locked = True
         elif self.state == "LIDAR_PATH_TRACKING" and path_complete:
             self.state = "CSV_REJOIN"
         elif self.state == "CSV_REJOIN" and rejoin_valid:
@@ -146,6 +149,25 @@ def select_parking_branch(a_free, b_free):
     return ""
 
 
+def select_parking_fallback(*, lidar_fresh, scan_valid, slot_a=None,
+                            slot_b=None, path_a_safe=None,
+                            path_b_safe=None):
+    """Select an explicit slot first, otherwise audit both parking CSVs."""
+    if not bool(lidar_fresh) or not bool(scan_valid):
+        return ""
+    if slot_a is True:
+        return "A"
+    if slot_b is True:
+        return "B"
+    if path_a_safe is None or path_b_safe is None:
+        return ""
+    if bool(path_a_safe):
+        return "A"
+    if bool(path_b_safe):
+        return "B"
+    return ""
+
+
 def parking_decision(mode, a_free, b_free, path_valid,
                      planner_state="IDLE", hard_obstacle=False):
     branch = select_parking_branch(a_free, b_free)
@@ -183,6 +205,72 @@ class Mode9Emergency:
         if self.state != "ACCEL_TRACKING":
             self.state = "ACCEL_TRACKING"
         return ManeuverDecision(self.state, "CSV", False, 3.0)
+
+
+@dataclass(frozen=True)
+class Mode9SafetyDecision:
+    stop: bool
+    slowdown: bool
+    state: str
+    stopping_distance_m: float
+    ttc_s: float
+
+
+class Mode9Safety:
+    """Mode 9 fixed-distance policy plus conservative speed-based preview."""
+
+    def __init__(self, stop_distance_m=1.0, slow_distance_m=1.5,
+                 reaction_time_s=0.35, deceleration_mps2=1.5,
+                 braking_margin_m=0.20, ttc_stop_s=0.75,
+                 ttc_slow_s=1.5):
+        self.stop_distance_m = float(stop_distance_m)
+        self.slow_distance_m = float(slow_distance_m)
+        self.reaction_time_s = float(reaction_time_s)
+        self.deceleration_mps2 = float(deceleration_mps2)
+        self.braking_margin_m = float(braking_margin_m)
+        self.ttc_stop_s = float(ttc_stop_s)
+        self.ttc_slow_s = float(ttc_slow_s)
+        if (self.stop_distance_m <= 0.0 or
+                self.slow_distance_m < self.stop_distance_m or
+                self.reaction_time_s < 0.0 or
+                self.deceleration_mps2 <= 0.0 or
+                self.braking_margin_m < 0.0 or
+                self.ttc_stop_s <= 0.0 or
+                self.ttc_slow_s < self.ttc_stop_s):
+            raise ValueError("invalid Mode 9 safety policy")
+
+    def evaluate(self, distance_m, speed_mps, fresh=True):
+        if not bool(fresh):
+            return Mode9SafetyDecision(True, True, "MODE9_LIDAR_STALE",
+                                       math.inf, 0.0)
+        try:
+            distance = float(distance_m)
+            speed = max(0.0, float(speed_mps))
+        except (TypeError, ValueError):
+            return Mode9SafetyDecision(True, True, "MODE9_INPUT_INVALID",
+                                       math.inf, 0.0)
+        if math.isnan(distance):
+            return Mode9SafetyDecision(True, True, "MODE9_INPUT_INVALID",
+                                       math.inf, 0.0)
+        braking = (speed*self.reaction_time_s +
+                   speed*speed/(2.0*self.deceleration_mps2) +
+                   self.braking_margin_m)
+        ttc = distance/speed if speed > 1.0e-6 else math.inf
+        # Fixed hard boundaries are evaluated first and can never be weakened
+        # by tuning the dynamic parameters.
+        if distance <= self.stop_distance_m:
+            return Mode9SafetyDecision(True, True, "MODE9_DISTANCE_STOP",
+                                       braking, ttc)
+        if distance <= braking or ttc <= self.ttc_stop_s:
+            return Mode9SafetyDecision(True, True, "MODE9_DYNAMIC_STOP",
+                                       braking, ttc)
+        if distance <= self.slow_distance_m:
+            return Mode9SafetyDecision(False, True, "MODE9_DISTANCE_SLOW",
+                                       braking, ttc)
+        if distance <= braking+self.braking_margin_m or ttc <= self.ttc_slow_s:
+            return Mode9SafetyDecision(False, True, "MODE9_DYNAMIC_SLOW",
+                                       braking, ttc)
+        return Mode9SafetyDecision(False, False, "MODE9_CLEAR", braking, ttc)
 
 
 class Mode9EmergencyLatch:
@@ -418,7 +506,7 @@ def route_rejoin_candidates(route, active_segment, current_index, pose,
 
 
 class Mode11ExitGate:
-    """Five-second A/B vote; default B and ignore late opposite signals."""
+    """Five-second vote that selects B only from explicit fresh B evidence."""
 
     def __init__(self, hold_s=5.0, stale_s=0.5, confirmations=60,
                  decision_ratio=0.75):
@@ -430,6 +518,7 @@ class Mode11ExitGate:
         self.committed = None
         self.commit_source = ""
         self.signal_at = None
+        self.last_signal = "UNKNOWN"
         self.votes = {"A": 0, "B": 0, "UNKNOWN": 0}
 
     def reset(self):
@@ -448,6 +537,7 @@ class Mode11ExitGate:
         route = "A" if value in ("1", "A") else \
             "B" if value in ("2", "B") else "UNKNOWN"
         self.votes[route] += 1
+        self.last_signal = route
         self.signal_at = float(now)
 
     def evaluate(self, now):
@@ -460,12 +550,8 @@ class Mode11ExitGate:
             return ManeuverDecision("MODE11_5S_HOLD", "MISSION", True)
         fresh = (self.signal_at is not None and
                  float(now)-self.signal_at <= self.stale_s)
-        valid = self.votes["A"]+self.votes["B"]
-        winner = "B" if self.votes["B"] > self.votes["A"] else "A"
-        confidence = self.votes[winner]/valid if valid else 0.0
-        confirmed = (fresh and valid >= self.confirmations and
-                     confidence >= self.decision_ratio)
-        self.committed = winner if confirmed else "B"
-        self.commit_source = "CAMERA" if confirmed else "DEFAULT"
+        confirmed_b = fresh and self.last_signal == "B"
+        self.committed = "B" if confirmed_b else "A"
+        self.commit_source = "CAMERA_EXPLICIT_B" if confirmed_b else "DEFAULT_A"
         return ManeuverDecision("MODE11_COMMIT_"+self.committed,
                                 "CSV", False, branch=self.committed)

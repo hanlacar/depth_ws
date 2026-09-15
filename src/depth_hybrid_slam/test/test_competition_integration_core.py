@@ -72,7 +72,7 @@ def test_intersection_red_green_and_three_second_unknown_release():
     assert not gate.evaluate(progress, True, "UNKNOWN", 0.0, 3.0).stop
     gate.reset()
     assert gate.evaluate(progress, True, "G", 0.51, 0.0).stop
-    assert not gate.evaluate(progress, True, "G", 0.51, 3.0).stop
+    assert gate.evaluate(progress, True, "G", 0.51, 3.0).stop
 
 
 def test_low_confidence_traffic_is_unknown_even_when_fresh():
@@ -332,7 +332,7 @@ def test_mode9_is_fixed_stage_three_except_hard_emergency():
     assert arbitrate(
         csv, CommandCandidate(), lidar_slowdown=True, mode=9).drive == 1.0
     assert arbitrate(
-        csv, CommandCandidate(), steering_slowdown=True, mode=9).drive == 1.0
+        csv, CommandCandidate(), steering_slowdown=True, mode=9).drive == 3.0
     assert arbitrate(
         csv, CommandCandidate(), hard_emergency=True,
         lidar_slowdown=True, mode=9).drive == 0.0
@@ -460,10 +460,10 @@ def test_mode11_five_second_default_and_commit_is_immutable():
     gate.observe("2", 0.1)
     gate.observe("2", 0.2)
     assert gate.evaluate(4.99).stop
-    # Stale/non-explicit A evidence defaults B.
-    assert gate.evaluate(5.0).branch == "B"
+    # Stale B evidence is not an explicit fresh B and therefore defaults A.
+    assert gate.evaluate(5.0).branch == "A"
     gate.observe("2", 5.1)
-    assert gate.evaluate(5.2).branch == "B"
+    assert gate.evaluate(5.2).branch == "A"
     fresh = Mode11ExitGate(confirmations=2)
     fresh.enter(0.0)
     fresh.observe("2", 4.8)
@@ -478,7 +478,7 @@ def test_mode11_five_second_default_and_commit_is_immutable():
     assert first.evaluate(5.0).branch == "A"
     unknown = Mode11ExitGate(confirmations=2)
     assert unknown.evaluate(5.0).stop
-    assert unknown.evaluate(10.0).branch == "B"
+    assert unknown.evaluate(10.0).branch == "A"
 
 
 def test_mode11_csv_branch_mapping_is_a_end_aa_b_end_ab():

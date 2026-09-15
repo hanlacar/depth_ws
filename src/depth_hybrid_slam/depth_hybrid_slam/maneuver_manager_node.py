@@ -10,11 +10,12 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, Int32, String
 
-from .lidar_local_planner import plan_parking, plan_route_detour
+from .lidar_local_planner import (
+    plan_parking, plan_route_detour, swept_footprint_clear)
 from .lidar_mission_core import (
     ManeuverDecision, Mode11ExitGate, Mode5Avoidance, Mode5ObstacleLatch,
     Mode9Emergency, ParkingManeuver, StationaryConfirmation,
-    mode5_planning_distance_ready)
+    mode5_planning_distance_ready, select_parking_fallback)
 from .lidar_path_tracker import LocalPathTracker, TrackCommand
 from .route_io import load_segmented_route
 
@@ -50,6 +51,8 @@ class ManeuverManagerNode(Node):
         self.avoidance = self.hard = self.rear_hard = False
         self.a_free = self.b_free = False
         self.slots_fresh = False
+        self.perception_fresh = False
+        self.perception_at = None
         self.planner_state = "IDLE"
         self.path_valid = self.path_complete = self.rejoin_valid = False
         self.obstacle_y = 0.0
@@ -70,6 +73,7 @@ class ManeuverManagerNode(Node):
         self.plan_audit = {}
         self.active_branch = "A"
         self.route = ()
+        self.routes_by_branch = {}
         self.mode5_plan = None
         self.mode5_obstacles_map = ()
         self.mode5_curbs_map = ()
@@ -189,11 +193,14 @@ class ManeuverManagerNode(Node):
                 (float(point[0]), float(point[1]))
                 for point in value.get("curbs", ())
                 if isinstance(point, (list, tuple)) and len(point) >= 2)
+            self.perception_fresh = bool(value.get("fresh", False))
+            self.perception_at = time.monotonic()
         except (TypeError, ValueError, json.JSONDecodeError):
             self.obstacle_y = 0.0
             self.obstacle_lidar_distance = None
             self.obstacles = ()
             self.curbs = ()
+            self.perception_fresh = False
 
     def _case_state(self, message):
         try:
@@ -229,9 +236,35 @@ class ManeuverManagerNode(Node):
         metadata = str(self.get_parameter("route_metadata_path").value)
         if not path:
             self.route = ()
+            self.routes_by_branch = {}
             return
-        self.route = load_segmented_route(
-            path, metadata, branch=self.active_branch).points
+        self.routes_by_branch = {
+            branch: load_segmented_route(
+                path, metadata, branch=branch).points
+            for branch in ("A", "B")}
+        self.route = self.routes_by_branch[self.active_branch]
+
+    def _parking_path_safe(self, branch):
+        if self.map_pose is None:
+            return None
+        prefix = "T" if self.mode == 7 else "V"
+        segment = prefix+"_"+str(branch)
+        points = tuple(point for point in self.routes_by_branch.get(branch, ())
+                       if point.segment_id == segment)
+        if not points:
+            return None
+        px, py, pyaw = self.map_pose
+        c, s = math.cos(pyaw), math.sin(pyaw)
+        local = tuple((c*(point.x-px)+s*(point.y-py),
+                       -s*(point.x-px)+c*(point.y-py),
+                       math.atan2(math.sin(point.yaw-pyaw),
+                                  math.cos(point.yaw-pyaw)))
+                      for point in points)
+        return swept_footprint_clear(
+            local, self.obstacles+self.curbs,
+            vehicle_length_m=self.get_parameter("vehicle_length_m").value,
+            vehicle_width_m=self.get_parameter("vehicle_width_m").value,
+            margin_m=self.get_parameter("obstacle_margin_m").value)
 
     def _selected_branch(self, message):
         branch = str(message.data).strip().upper()
@@ -484,10 +517,21 @@ class ManeuverManagerNode(Node):
         if self.mode in (7, 10):
             prefix = "T" if self.mode == 7 else "V"
             if not bool(self.get_parameter("rear_lidar_enabled").value):
-                if not self.slots_fresh or not (self.a_free or self.b_free):
+                now = time.monotonic()
+                lidar_fresh = (
+                    self.slots_fresh and self.perception_fresh and
+                    self.perception_at is not None and
+                    now-self.perception_at <= 0.5)
+                branch = select_parking_fallback(
+                    lidar_fresh=lidar_fresh, scan_valid=lidar_fresh,
+                    slot_a=True if self.a_free else None,
+                    slot_b=True if self.b_free else None,
+                    path_a_safe=self._parking_path_safe("A"),
+                    path_b_safe=self._parking_path_safe("B"))
+                if not branch:
                     return ManeuverDecision(
-                        prefix+"_WAIT_LIDAR_SLOT", "LIDAR", True)
-                branch = "A" if self.a_free else "B"
+                        prefix+"_PARKING_BOTH_UNSAFE_OR_LIDAR_INVALID",
+                        "SAFETY", True)
                 return ManeuverDecision(
                     prefix+"_CSV_FALLBACK", "CSV", False,
                     branch=branch)
@@ -631,6 +675,10 @@ class ManeuverManagerNode(Node):
                 time.monotonic()-self.mode5_stationary.since >=
                 self.mode5_stationary.duration_s),
             "path_audit": self.plan_audit,
+            "avoidance_path_locked": self.mode5.path_locked,
+            "avoidance_path_lock_state": (
+                "AVOIDANCE_PATH_LOCKED" if self.mode5.path_locked else
+                "UNLOCKED"),
         }, separators=(",", ":"))))
 
 

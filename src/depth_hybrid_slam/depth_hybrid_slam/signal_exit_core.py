@@ -81,6 +81,8 @@ class SignalDetection:
     red_pixel_count: int
     green_pixel_count: int
     lamp_states: tuple = ()
+    bbox: tuple = ()
+    confidence: float = 0.0
 
 
 def classify_exit_triplet(candidates, merge_distance_ratio=0.04):
@@ -92,7 +94,8 @@ def classify_exit_triplet(candidates, merge_distance_ratio=0.04):
                     text, SignalState.UNKNOWN)
 
     groups = []
-    for x, state, pixels in sorted(candidates, key=lambda item: item[0]):
+    for item in sorted(candidates, key=lambda item: item[0]):
+        x, state, pixels = item[:3]
         if groups and abs(float(x)-groups[-1][0]) <= merge_distance_ratio:
             groups[-1][1].append((normalized(state), int(pixels)))
             continue
@@ -163,7 +166,9 @@ class SignalExitDetector:
             component = np.zeros(mask.shape, dtype=np.uint8)
             cv2.drawContours(component, [contour], -1, 255, -1)
             pixels = int(np.count_nonzero((component > 0) & (mask > 0)))
-            candidates.append((center_x, state, pixels))
+            candidates.append((center_x, state, pixels,
+                               (offset[0]+x, offset[1]+y,
+                                offset[0]+x+width, offset[1]+y+height)))
         return tuple(candidates)
 
     def detect(self, frame):
@@ -197,7 +202,12 @@ class SignalExitDetector:
                   if value[1] == SignalState.RED)
         green = sum(value[2] for value in candidates
                     if value[1] == SignalState.GREEN)
-        return SignalDetection(state, red, green, lamps)
+        boxes = [value[3] for value in candidates]
+        bbox = (() if not boxes else (
+            min(value[0] for value in boxes), min(value[1] for value in boxes),
+            max(value[2] for value in boxes), max(value[3] for value in boxes)))
+        confidence = min(1.0, (red+green)/max(minimum_pixels*3.0, 1.0))
+        return SignalDetection(state, red, green, lamps, bbox, confidence)
 
 
 @dataclass(frozen=True)
@@ -212,7 +222,7 @@ class VoteSnapshot:
 
 
 class SignalVoteWindow:
-    """Five-second vote with fail-safe DEFAULT B unless A is explicit."""
+    """Five-second vote with explicit-B-only and default-A policy."""
 
     def __init__(self, duration_s=5.0, minimum_valid_frames=60,
                  decision_ratio=0.75):
@@ -267,7 +277,7 @@ class SignalVoteWindow:
                 red_ratio >= self.decision_ratio:
             self.route, self.state = SelectedRoute.B, ObservationState.LATCHED
         else:
-            self.route, self.state = SelectedRoute.B, ObservationState.DEFAULTED
+            self.route, self.state = SelectedRoute.A, ObservationState.DEFAULTED
         return self.snapshot(now)
 
     def snapshot(self, now):
@@ -276,3 +286,55 @@ class SignalVoteWindow:
         return VoteSnapshot(
             self.state, self.route, self.confidence,
             self.green, self.red, self.unknown, elapsed)
+
+
+class ExitSignalTrack:
+    """Small continuity tracker for brief occlusion of the upper-image lamps."""
+
+    def __init__(self, confirmations=3, missing_hold_s=0.25,
+                 minimum_confidence=0.5):
+        self.confirmations = max(2, int(confirmations))
+        self.missing_hold_s = float(missing_hold_s)
+        self.minimum_confidence = float(minimum_confidence)
+        self.reset()
+
+    def reset(self):
+        self.state = SignalState.UNKNOWN
+        self.count = 0
+        self.bbox = ()
+        self.confidence = 0.0
+        self.last_seen = None
+
+    @staticmethod
+    def _iou(first, second):
+        if len(first) != 4 or len(second) != 4:
+            return 0.0
+        x1, y1 = max(first[0], second[0]), max(first[1], second[1])
+        x2, y2 = min(first[2], second[2]), min(first[3], second[3])
+        intersection = max(0.0, x2-x1)*max(0.0, y2-y1)
+        a = max(0.0, first[2]-first[0])*max(0.0, first[3]-first[1])
+        b = max(0.0, second[2]-second[0])*max(0.0, second[3]-second[1])
+        return intersection/max(a+b-intersection, 1.0e-9)
+
+    def update(self, detection, now):
+        now = float(now)
+        observed = (detection.state != SignalState.UNKNOWN and
+                    detection.confidence >= self.minimum_confidence and
+                    len(detection.bbox) == 4)
+        if observed:
+            same = (detection.state == self.state and
+                    (not self.bbox or self._iou(detection.bbox, self.bbox) > 0.05))
+            self.count = self.count+1 if same else 1
+            self.state = detection.state
+            self.bbox = detection.bbox
+            self.confidence = detection.confidence
+            self.last_seen = now
+        missing = (None if self.last_seen is None else
+                   max(0.0, now-self.last_seen))
+        valid = (self.count >= self.confirmations and missing is not None and
+                 missing <= self.missing_hold_s)
+        return {
+            "state": self.state if valid else SignalState.UNKNOWN,
+            "bbox": self.bbox, "confidence": self.confidence,
+            "last_seen": self.last_seen, "missing_duration": missing,
+            "track_continuity": self.count, "valid": valid}

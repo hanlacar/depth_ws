@@ -4,12 +4,16 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription,
+    OpaqueFunction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+from depth_hybrid_slam.rosbag_rotation import prepare_bag_path
 
 
 ROOT = "/home/qor/depth_ws"
@@ -27,7 +31,6 @@ def _runtime(context):
     if not route_path.is_file() or not metadata_path.is_file():
         raise RuntimeError("final route CSV and metadata are required")
     share = Path(get_package_share_directory("depth_hybrid_slam"))
-    mcu = Path(get_package_share_directory("t870_mcu_simple"))
     camera = Path(get_package_share_directory("camera_navigation"))
     enabled = ParameterValue(
         LaunchConfiguration("enable_control"), value_type=bool)
@@ -44,14 +47,7 @@ def _runtime(context):
         "start_mode": 1,
         "end_mode": 11,
     }]
-    return [
-        Node(
-            package="t870_mcu_simple", executable="bridge",
-            name="t870_mcu_simple_bridge", output="screen",
-            parameters=[str(mcu/"config"/"mcu.yaml"), {
-                "port": LaunchConfiguration("mcu_port"),
-            }], condition=IfCondition(
-                LaunchConfiguration("launch_mcu_odom"))),
+    actions = [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(
                 share/"launch"/"dual_rplidar.launch.py")),
@@ -82,7 +78,8 @@ def _runtime(context):
             }.items(), condition=IfCondition(LaunchConfiguration("use_camera"))),
         Node(
             package="depth_hybrid_slam", executable="odom_localization",
-            name="odom_localization", output="screen"),
+            name="odom_localization", output="screen",
+            parameters=[str(share/"config"/"vehicle_navigation.yaml")]),
         Node(
             package="depth_hybrid_slam", executable="route_follower",
             name="route_follower", output="screen", parameters=follower),
@@ -154,7 +151,39 @@ def _runtime(context):
                 "require_map_route_match": False,
                 "require_within_map": False,
             }]),
+        Node(
+            package="depth_hybrid_slam", executable="runtime_monitor",
+            name="depth_runtime_monitor", output="screen"),
     ]
+    if value("enable_rosbag").strip().lower() in ("1", "true", "yes", "on"):
+        bag_path = prepare_bag_path(ROOT+"/rosbags", max_bags=3)
+        topics = (
+            "/odom", "/tf", "/tf_static", "/cmd_drive", "/cmd_wheel",
+            "/mcu/steer_deg", "/drive_mode",
+            "/depth_slam/route/active_index",
+            "/depth_slam/route/active_segment",
+            "/depth_slam/route/mode_status", "/depth_slam/path_owner",
+            "/depth_slam/csv_validation/local_path",
+            "/depth_slam/lidar/local_path",
+            "/depth_slam/camera/correction_path",
+            "/depth_slam/lidar/perception",
+            "/depth_slam/lidar/safety_event",
+            "/depth_slam/camera/csv_validation",
+            "/depth_slam/camera/correction_state",
+            "/camera/traffic_light_fused/state",
+            "/camera/exit_branch_signal",
+            "/depth_slam/vslam/tracking_valid",
+            "/depth_slam/vslam/confidence",
+            "/depth_slam/vslam/evidence", "/imu/pitch_deg", "/imu/valid",
+            "/depth_slam/runtime/watchdog",
+            "/depth_slam/localization/watchdog",
+            "/depth_slam/mission/state", "/depth_slam/mission/event",
+            "/depth_slam/mission/mode_status",
+            "/depth_slam/command_arbiter/state")
+        actions.append(ExecuteProcess(
+            cmd=["ros2", "bag", "record", "--output", str(bag_path),
+                 *topics], output="screen"))
+    return actions
 
 
 def generate_launch_description():
@@ -168,8 +197,6 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "map_path", default_value=ROOT +
             "/maps/merged_competition_level_aligned_v10/rtabmap.db"),
-        DeclareLaunchArgument("mcu_port", default_value="auto"),
-        DeclareLaunchArgument("launch_mcu_odom", default_value="true"),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),
         DeclareLaunchArgument("camera_serial", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),
@@ -178,5 +205,6 @@ def generate_launch_description():
         DeclareLaunchArgument("use_camera", default_value="true"),
         DeclareLaunchArgument("enable_control", default_value="false"),
         DeclareLaunchArgument("user_approved", default_value="false"),
+        DeclareLaunchArgument("enable_rosbag", default_value="true"),
         OpaqueFunction(function=_runtime),
     ])

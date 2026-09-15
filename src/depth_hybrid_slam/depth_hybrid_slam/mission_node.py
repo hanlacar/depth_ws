@@ -3,6 +3,7 @@
 import json
 import math
 import time
+from collections import deque
 
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 import rclpy
@@ -28,7 +29,10 @@ class MissionNode(Node):
                               ("direct_signal_timeout_s", 0.5),
                               ("unknown_hold_s", 3.0),
                               ("minimum_intersection_stop_s", 3.0),
-                              ("intersection_commit_margin_m", 0.35)):
+                              ("intersection_commit_margin_m", 0.35),
+                              ("imu_timeout_s", 0.5),
+                              ("imu_average_window_s", 0.5),
+                              ("slope_threshold_deg", 4.5)):
             self.declare_parameter(name, default)
         self.declare_parameter("intersection_modes", [4, 6, 8])
 
@@ -64,7 +68,9 @@ class MissionNode(Node):
         }
         self.last_logged_state = None
         self.last_logged_event = ""
-        self.completion = MissionCompletionTracker()
+        self.completion = MissionCompletionTracker(
+            slope_threshold_deg=self.get_parameter(
+                "slope_threshold_deg").value)
         self.segment_results = SegmentResultLatch()
         self.segment3 = {
             "camera_valid": False, "camera_violation": False,
@@ -74,6 +80,9 @@ class MissionNode(Node):
         self.final_drive = 0.0
         self.imu_pitch = 0.0
         self.imu_valid = False
+        self.imu_pitch_at = self.imu_valid_at = None
+        self.imu_samples = deque()
+        self.entered_segments = set()
         self.maneuver_state = ""
         self.create_subscription(String, "/camera/traffic_light_fused/state", self.on_traffic, 10)
         self.create_subscription(
@@ -115,9 +124,9 @@ class MissionNode(Node):
         self.create_subscription(Float32, "/cmd_drive",
                                  self.on_final_drive, 10)
         self.create_subscription(Float32, "/imu/pitch_deg",
-                                 lambda m: setattr(self, "imu_pitch", float(m.data)), 10)
+                                 self.on_imu_pitch, 10)
         self.create_subscription(Bool, "/imu/valid",
-                                 lambda m: setattr(self, "imu_valid", bool(m.data)), 10)
+                                 self.on_imu_valid, 10)
         self.create_subscription(String, "/depth_slam/route/mode_status",
                                  lambda m: self.completion.observe_route_status(m.data), 10)
         self.create_subscription(String, "/depth_slam/lidar/safety_event",
@@ -182,6 +191,32 @@ class MissionNode(Node):
                 9, passed, self.segment9["violation"] or
                 "drive=3 nominal and LiDAR speed limits respected")
         self.completion.set_mode(mode)
+        if mode not in self.entered_segments:
+            self.entered_segments.add(mode)
+            self.get_logger().info(f"[SEGMENT {mode}] ENTER")
+
+    def on_imu_pitch(self, message):
+        now = time.monotonic()
+        self.imu_pitch = float(message.data)
+        self.imu_pitch_at = now
+        self.imu_samples.append((now, self.imu_pitch))
+
+    def on_imu_valid(self, message):
+        self.imu_valid = bool(message.data)
+        self.imu_valid_at = time.monotonic()
+
+    def _imu_average(self, now):
+        window = float(self.get_parameter("imu_average_window_s").value)
+        while self.imu_samples and now-self.imu_samples[0][0] > window:
+            self.imu_samples.popleft()
+        timeout = float(self.get_parameter("imu_timeout_s").value)
+        valid = (self.imu_valid and self.imu_pitch_at is not None and
+                 self.imu_valid_at is not None and
+                 now-self.imu_pitch_at <= timeout and
+                 now-self.imu_valid_at <= timeout and bool(self.imu_samples))
+        average = (sum(value for _, value in self.imu_samples) /
+                   len(self.imu_samples)) if valid else 0.0
+        return average, valid
 
     def on_csv_validation(self, message):
         if self.completion.mode != 3:
@@ -225,10 +260,10 @@ class MissionNode(Node):
             self.segment9["nominal_3"] = True
         if distance is None:
             return
-        if distance <= 0.5 and abs(self.final_drive) > 1.0e-6:
-            self.segment9["violation"] = "drive nonzero with obstacle <=0.5m"
-        elif 0.5 < distance <= 1.0 and self.final_drive > 1.0+1.0e-6:
-            self.segment9["violation"] = "drive >1 with obstacle <=1.0m"
+        if distance <= 1.0 and abs(self.final_drive) > 1.0e-6:
+            self.segment9["violation"] = "drive nonzero with obstacle <=1.0m"
+        elif 1.0 < distance <= 1.5 and self.final_drive > 1.0+1.0e-6:
+            self.segment9["violation"] = "drive >1 with obstacle <=1.5m"
 
     def on_traffic(self, message):
         self.value.traffic_state = message.data.upper()
@@ -330,10 +365,11 @@ class MissionNode(Node):
             self.last_logged_event = ""
         if decision.state != self.last_logged_state:
             self.last_logged_state = decision.state
+        imu_average, imu_fresh = self._imu_average(now)
         self.completion.tick(
             now, self.final_drive,
             stop_waypoint_active=self.csv_stop_line_active,
-            pitch_deg=self.imu_pitch, pitch_valid=self.imu_valid,
+            pitch_deg=imu_average, pitch_valid=imu_fresh,
             maneuver_state=self.maneuver_state)
         if (self.completion.force_mode2_stop() or
                 self.completion.force_mode11_stop()):
@@ -346,20 +382,22 @@ class MissionNode(Node):
         for event in self.completion.drain_events():
             event_name = str(event.get("event", ""))
             event_mode = int(event.get("mode", -1))
-            if event_name == "MODE2_SLOPE_INVALID":
+            if event_name == "MODE2_STOP_EVALUATED":
                 pitch = event.get("pitch_deg")
-                reason = ("STOP reached but IMU pitch invalid" if pitch is None
-                          else f"STOP reached but IMU pitch={float(pitch):.1f}deg")
-                self._report_segment(2, False, reason)
+                display = float(pitch) if pitch is not None else float("nan")
+                threshold = float(event.get("threshold_deg", 4.5))
+                self.get_logger().info(
+                    f"[SEGMENT 2] STOP - IMU_AVG={display:.2f}deg "
+                    f"THRESHOLD={threshold:.2f}deg")
+            elif event_name == "MODE2_SLOPE_INVALID":
+                self._report_segment(2, False, "")
             elif event_name == "MODE5_MISSION_FAILED":
                 self._report_segment(
                     5, False, "successful avoidance count=" +
                     str(event.get("avoidance_rejoined_count", 0)))
             elif event_name == "MISSION_MODE_COMPLETE":
                 if event_mode == 2:
-                    self._report_segment(
-                        2, True,
-                        "CSV STOP and |relative IMU pitch|>=4.5deg for 0.5s")
+                    self._report_segment(2, True, "")
                 elif event_mode in (4, 6, 8):
                     self._report_segment(
                         event_mode, True,
@@ -414,6 +452,8 @@ class MissionNode(Node):
              ("traffic_stop_allowed", decision.traffic_stop_allowed),
              ("intersection_committed", decision.intersection_committed),
              ("pitch_deg", self.value.pitch_deg),
+             ("imu_average_deg", imu_average),
+             ("imu_fresh", imu_fresh),
              ("uphill_detected", self.value.uphill_detected)))]
         self.pub_diag.publish(diag)
 
