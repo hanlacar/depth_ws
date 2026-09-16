@@ -6,6 +6,10 @@ import yaml
 
 from depth_hybrid_slam.command_arbiter_core import (
     CommandCandidate, arbitrate)
+from depth_hybrid_slam.localization_core import align_odom_pose_to_route_entry
+from depth_hybrid_slam.models import Pose2D
+from depth_hybrid_slam.route_follower_core import RouteFollower, select_mode_range
+from depth_hybrid_slam.route_io import load_segmented_route
 from depth_hybrid_slam.traffic_gate import (
     IntersectionProgress, IntersectionTrafficGate)
 
@@ -65,7 +69,25 @@ def test_production_launch_exposes_vslam_and_mode_range_controls():
     assert '"enable_vslam": vslam_enabled' in real
     assert '"start_mode": start_mode' in real
     assert '"end_mode": end_mode' in real
+    assert '"initial_branch": branch' in real
     assert '"VSLAM" if vslam_enabled else "ODOM_ONLY"' in real
+    assert 'if not vslam_enabled:' in real
+    assert ('follower_overrides["localization_stability_s"] = 0.0'
+            in real)
+
+
+def test_odom_only_skips_only_vslam_stability_delay():
+    real = LAUNCH.read_text(encoding="utf-8")
+    config = yaml.safe_load(
+        (PACKAGE/"config/vehicle_navigation.yaml").read_text(
+            encoding="utf-8"))
+    assert config["route_follower"]["ros__parameters"][
+        "localization_stability_s"] == 2.0
+    override = real.index(
+        'follower_overrides["localization_stability_s"] = 0.0')
+    odom_only_branch = real.rindex("if not vslam_enabled:", 0, override)
+    follower_build = real.index("follower =", override)
+    assert odom_only_branch < override < follower_build
 
 
 def test_odom_only_disables_vslam_gate_subscription_and_runtime_watchdog():
@@ -80,6 +102,16 @@ def test_odom_only_disables_vslam_gate_subscription_and_runtime_watchdog():
     assert '[LOCALIZATION] ODOM+VSLAM' in localization
     assert 'decision.use_vslam else 0.6' in localization
     assert 'if not source or child != expected_child:' in localization
+    assert 'if not self.vslam_enabled or self.centralize_vslam_map_tf else' in \
+        localization
+    assert 'map_edge = odom_only_map_edge(' in localization
+    assert 'align_odom_pose_to_route_entry(' in localization
+    assert ('transform.header.frame_id, transform.child_frame_id = map_edge'
+            in localization)
+    assert 'transform.transform.translation.x = tx' in localization
+    assert 'transform.transform.rotation = quaternion_from_yaw(tf_yaw)' in \
+        localization
+    assert 'self.odom_map_transform.sendTransform(transform)' in localization
     assert '"vslam": ("DISABLED" if not self.vslam_enabled else' in localization
     assert 'if key == "vslam" and not self.vslam_enabled:' in monitor
     assert 'return "DISABLED"' in monitor
@@ -146,8 +178,38 @@ def test_mcu_bridge_is_the_odom_and_odom_base_tf_owner():
     launch = LAUNCH.read_text(encoding="utf-8")
     assert 'self.odom_pub = self.create_publisher(Odometry, "/odom"' in bridge
     assert "TransformBroadcaster(self)" in bridge
+    localization = (PACKAGE/"depth_hybrid_slam"/
+                    "odom_localization_node.py").read_text(encoding="utf-8")
+    assert "if map_edge is not None:" in localization
+    assert "owns only map->odom" in localization
     assert '"odom_localization"' in launch
     assert 'executable="test_odom_publisher"' not in launch
+
+
+def test_odom_only_route_origin_uses_selected_branch_and_mode_entry():
+    launch = LAUNCH.read_text(encoding="utf-8")
+    assert "load_segmented_route(" in launch
+    assert "branch=branch" in launch
+    assert "select_mode_range(" in launch
+    for parameter in (
+            "odom_route_entry_x_m", "odom_route_entry_y_m",
+            "odom_route_entry_yaw_rad"):
+        assert f'"{parameter}"' in launch
+
+
+def test_real_odom_origin_produces_mode1_csv_drive_without_deviation():
+    route = select_mode_range(
+        load_segmented_route(ROUTE, METADATA, branch="A").points, 1, 2)
+    entry = route[0]
+    x, y, yaw = align_odom_pose_to_route_entry(
+        0.0, 0.0, 0.0, entry.x, entry.y, entry.yaw)
+    result = RouteFollower(corridor_m=1.0).compute(
+        Pose2D(x, y, yaw, 1.0), route,
+        allow_motion=True, global_search=True)
+    assert result.cross_track_error == 0.0
+    assert result.drive == 2.0
+    assert not result.stop_required
+    assert result.reason == "OK"
 
 
 def test_active_start_a_mode2_stop_line_and_metadata_hash():

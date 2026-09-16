@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-source /opt/ros/jazzy/setup.bash
-set -u
-export ROS_DOMAIN_ID=41
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+workspace="$(cd -- "${script_dir}/.." && pwd)"
+source "${workspace}/setup_depth.sh"
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 
+camera_serial="${CAMERA_SERIAL:-}"
+serial_argument=()
+[[ -z "${camera_serial}" ]] || serial_argument=("serial_no:=_${camera_serial#_}")
+
 exec ros2 launch realsense2_camera rs_launch.py \
-  camera_name:=camera serial_no:=_338122302896 \
+  camera_name:=camera "${serial_argument[@]}" \
   enable_color:=true enable_depth:=true enable_infra1:=true enable_infra2:=true \
   enable_gyro:=true enable_accel:=true \
   rgb_camera.color_profile:=640x480x60 \

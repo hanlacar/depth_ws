@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-workspace=/home/qor/depth_ws
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+workspace="$(cd -- "${script_dir}/.." && pwd)"
+source "${workspace}/setup_depth.sh"
 case_id=""
 purpose=competition
 profile=camera_slam
@@ -33,12 +35,6 @@ done
 [[ "$session_id" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] || { echo "unsafe session id" >&2; exit 2; }
 [[ "$purpose" =~ ^(mapping|localization|competition)$ ]] || { echo "invalid purpose" >&2; exit 2; }
 
-set +u
-source /opt/ros/jazzy/setup.bash
-source "$workspace/install/setup.bash"
-set -u
-export ROS_DOMAIN_ID=41
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOG_DIR="$workspace/log/competition_bag"
 mkdir -p "$ROS_LOG_DIR" "$workspace/bags/.locks"
 

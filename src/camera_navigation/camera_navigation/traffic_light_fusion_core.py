@@ -135,11 +135,11 @@ def normalize_yolo_document(document, received_at, sequence):
     green_present = "G" in families
     result_reason = "OK"
     if len(families) > 1:
-        # Competition permission policy is intentionally green-first. Keep
-        # detailed green evidence instead of collapsing co-active R/G to R or
-        # UNKNOWN before the mode-aware mission gate can consume it.
-        candidates = [item for item in candidates if item[2][0] == "G"]
-        result_reason = "YOLO_GREEN_PRIORITY_OVER_RED"
+        confidence = max(item[0] for item in candidates)
+        return SourceObservation(
+            "YOLO", "UNKNOWN", "UNKNOWN", confidence, stamp,
+            float(received_at), int(sequence), red_present=red_present,
+            green_present=green_present), "YOLO_INTERNAL_COLOR_CONFLICT"
     candidates.sort(reverse=True, key=lambda item: item[0])
     confidence, name, (state, aspect), bbox = candidates[0]
     detailed = {item[2][1] for item in candidates if item[2][1] != "UNKNOWN"}
@@ -281,10 +281,8 @@ class TrafficLightFusion:
         if paired:
             yolo, rgb = self.yolo, self.rgb
             if yolo.state != rgb.state:
-                green = yolo if yolo.state == "G" else rgb
-                meta["green_priority"] = True
-                return ("G", green.aspect, green.confidence, "PAIR"), \
-                    "GREEN_PRIORITY_OVER_RED", \
+                meta["conflict"] = True
+                return None, "CONFLICT", \
                     ("PAIR", yolo.sequence, rgb.sequence), meta
             position = positions_match(yolo.bbox, rgb.bbox, self.config)
             meta["position_match"] = position

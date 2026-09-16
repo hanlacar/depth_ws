@@ -15,6 +15,7 @@ rgb_traffic_light_node:
     roi_y_max_ratio: 0.55
 
     minimum_area_ratio: 0.00003
+    minimum_signal_area_px: 40
     maximum_area_ratio: 0.012
     minimum_aspect_ratio: 0.25
     maximum_aspect_ratio: 4.0
@@ -33,10 +34,14 @@ rgb_traffic_light_node:
     hsv_minimum_value: 130
     red_hue_low_max: 12
     red_hue_high_min: 168
-    yellow_hue_min: 15
+    yellow_hue_min: 12
     yellow_hue_max: 40
-    green_hue_min: 40
-    green_hue_max: 95
+    yellow_s_min: 90
+    yellow_v_min: 110
+    green_hue_min: 35
+    green_hue_max: 105
+    green_s_min: 80
+    green_v_min: 90
     red_lab_a_min: 145
     yellow_lab_b_min: 145
     green_lab_a_max: 140
@@ -46,6 +51,8 @@ rgb_traffic_light_node:
     housing_expand_ratio: 0.55
     housing_dark_luma_max: 80
     minimum_housing_dark_ratio: 0.08
+    dark_pixel_threshold: 80
+    dark_ratio_threshold: 0.08
     morphology_open_kernel: 3
     morphology_close_kernel: 3
     reject_roi_boundary_contact: true

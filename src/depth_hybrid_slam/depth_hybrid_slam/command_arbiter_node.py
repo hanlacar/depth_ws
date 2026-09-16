@@ -9,7 +9,8 @@ from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, Int32, String
 
 from .command_arbiter_core import (
-    arbitrate, CommandCandidate, OwnershipHandshake, safety_stop_reasons)
+    arbitrate, CommandCandidate, front_hard_emergency_applies,
+    OwnershipHandshake, parking_reverse_requested, safety_stop_reasons)
 
 
 class CommandArbiterNode(Node):
@@ -26,6 +27,7 @@ class CommandArbiterNode(Node):
             "camera_drive": 0.0, "camera_wheel": 0,
             "camera_valid": False, "camera_hold": False,
             "hard": False, "mission": True, "branch": False,
+            "front_scan_fresh": False,
             "lidar_hold": False,
             "distance_slowdown": False, "steering_slowdown": False,
             "mode": -1, "steering": 0.0,
@@ -49,6 +51,8 @@ class CommandArbiterNode(Node):
              "camera_valid", bool),
             (Bool, "/depth_slam/camera/hold", "camera_hold", bool),
             (Bool, "/depth_slam/lidar/hard_emergency", "hard", bool),
+            (Bool, "/depth_slam/lidar/front_scan_fresh",
+             "front_scan_fresh", bool),
             (Bool, "/depth_slam/lidar/distance_slowdown_required",
              "distance_slowdown", bool),
             (Bool, "/depth_slam/lidar/steering_slowdown_required",
@@ -135,17 +139,30 @@ class CommandArbiterNode(Node):
         odom_fresh = self._fresh(
             ("odom",), now, self.get_parameter("odom_timeout_s").value)
         lidar_safety_fresh = self._fresh(
-            ("hard", "distance_slowdown", "steering_slowdown"), now)
+            ("hard", "front_scan_fresh", "distance_slowdown",
+             "steering_slowdown"), now)
         steering_fresh = self._fresh(("steering",), now)
+        parking_reverse = parking_reverse_requested(
+            self.values["mode"], csv, lidar)
+        effective_front_hard = front_hard_emergency_applies(
+            self.values["hard"], self.values["front_scan_fresh"],
+            self.values["mode"], csv, lidar)
         safety_reasons = safety_stop_reasons(
-            hard_emergency=self.values["hard"], odom_fresh=odom_fresh,
+            hard_emergency=effective_front_hard, odom_fresh=odom_fresh,
             lidar_safety_fresh=lidar_safety_fresh,
             steering_fresh=steering_fresh,
             publisher_conflict=bool(self.conflicts))
         safety_stop = bool(safety_reasons)
+        # A Mode 9 obstacle stop is a recoverable wait, not a terminal
+        # mission failure.  Keep other simultaneous safety faults under their
+        # original fail-safe labels.
+        mode9_obstacle_wait = (
+            int(self.values["mode"]) == 9 and
+            safety_reasons == ("HARD_EMERGENCY",))
         gated_stop = (
             self.values["mission"] or self.values["branch"] or
-            self.values["lidar_hold"] or
+            (self.values["lidar_hold"] and
+             not (lidar.valid and lidar.fresh)) or
             (self.values["camera_hold"] and
              self._fresh(("camera_hold",), now) and
              not (lidar.valid and lidar.fresh)) or
@@ -155,7 +172,8 @@ class CommandArbiterNode(Node):
         decision = arbitrate(
             csv, lidar, safety_stop, gated_stop,
             self.values["distance_slowdown"], self.values["mode"],
-            self.values["steering_slowdown"], camera)
+            self.values["steering_slowdown"], camera,
+            mode9_obstacle_wait)
         if not safety_stop and decision.owner in self.handshake.SOURCE_OWNERS:
             candidates = {"CSV": csv, "CAMERA": camera,
                           "LIDAR": lidar, "PARKING": lidar}
@@ -184,7 +202,10 @@ class CommandArbiterNode(Node):
         self.owner_pub.publish(String(data=published_owner))
         stop_reason = ""
         if published_owner == "STOP":
-            stop_reason = ",".join(safety_reasons)
+            visible_safety_reasons = (
+                ("MODE9_OBSTACLE_WAIT",) if mode9_obstacle_wait else
+                safety_reasons)
+            stop_reason = ",".join(visible_safety_reasons)
             if (not stop_reason and
                     self._fresh(("route_safety_state",
                                  "route_safety_reason"), now) and
@@ -200,7 +221,16 @@ class CommandArbiterNode(Node):
         self.diag_pub.publish(String(data=json.dumps({
             "owner": decision.owner, "state": decision.state,
             "drive": decision.drive, "wheel": decision.wheel,
+            "owner_handoff_active": self.handshake.transitioning,
+            "owner_handoff_elapsed_s": (
+                0.0 if self.handshake.requested_at is None else
+                max(0.0, now-self.handshake.requested_at)),
             "stop_reason": stop_reason,
+            "front_hard_raw": self.values["hard"],
+            "front_scan_fresh": self.values["front_scan_fresh"],
+            "parking_reverse": parking_reverse,
+            "front_hard_ignored_reverse": (
+                self.values["hard"] and not effective_front_hard),
             "publisher_conflicts": self.conflicts,
             "active_owner": self.handshake.owner,
             "pending_owner": self.handshake.pending_owner,

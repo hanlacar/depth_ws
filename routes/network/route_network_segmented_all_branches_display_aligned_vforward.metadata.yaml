@@ -1,11 +1,11 @@
 format_version: 1
 finalized: true
 route_name: competition_all_branches_stop_editor_display_only
-route_csv: /home/qor/depth_ws/routes/network/route_network_segmented_all_branches_display_aligned_vforward.csv
+route_csv: routes/network/route_network_segmented_all_branches_display_aligned_vforward.csv
 route_sha256: e0a3a9d83ef905127e732104e799f964b10ce5682fd7124a8521ed333e3187f2
-source_route_csv: /home/qor/depth_ws/routes/network/route_network_segmented.csv
+source_route_csv: routes/network/route_network_segmented.csv
 source_route_sha256: d8e36adb9ccf275e5203474f0beaf12437f7a58724f61168ea15a98981f533ee
-active_a_overlay_csv: /home/qor/depth_ws/routes/network/route_network_segmented_aligned.csv
+active_a_overlay_csv: routes/network/route_network_segmented_aligned.csv
 active_a_overlay_sha256: 72f3fc5ad696982b037a561843552438c227aa8ce5192f44c2af3f650fcafba1
 route_coordinate_frame: map
 source_coordinate_frame: gps_local_enu
@@ -283,7 +283,7 @@ vforward_integration:
   reference_repository: https://github.com/hanlacar/mmission_ws.git
   reference_commit: fc535402100c19159fc87474143b9a874bd0848e
   reference_csv: routes/route_network_segmented_10.csv
-  source_csv: /home/qor/depth_ws/routes/network/route_network_segmented_all_branches_display_aligned.csv
+  source_csv: routes/network/route_network_segmented_all_branches_display_aligned.csv
   source_sha256: 5e8088023613bc18e2826085e59091496907f2f0b1de968c9fabc6d2935670a7
   longitude_origin_delta_deg: 1.6940001046350517e-07
   geometry_coordinates_modified: false

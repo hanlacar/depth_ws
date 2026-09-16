@@ -13,9 +13,9 @@ fi
 log_dir="/tmp/depth_ws_ros_${domain_id}_${case_name}"
 mkdir -p "${log_dir}"
 
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-set -u
+tool_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+workspace="$(cd -- "${tool_dir}/.." && pwd)"
+source "${workspace}/setup_depth.sh"
 export ROS_DOMAIN_ID="${domain_id}"
 export ROS_LOG_DIR="${log_dir}"
 
@@ -32,6 +32,6 @@ trap cleanup EXIT INT TERM
 sleep 2
 
 ros2 run depth_hybrid_slam csv_only_closed_loop_probe --ros-args \
-  -p route_path:=/home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv \
-  -p route_metadata_path:=/home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml \
+  -p route_path:="${workspace}/routes/network/route_network_segmented_stop_edited_vforward.csv" \
+  -p route_metadata_path:="${workspace}/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml" \
   -p expected_case:="${case_name}" -p timeout_s:="${timeout_s}"

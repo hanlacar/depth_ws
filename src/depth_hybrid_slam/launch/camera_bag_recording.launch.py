@@ -3,6 +3,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
+from depth_hybrid_slam.workspace_paths import workspace_path
 
 
 def generate_launch_description():
@@ -12,7 +13,7 @@ def generate_launch_description():
         DeclareLaunchArgument("duration", default_value="0"),
         DeclareLaunchArgument("profile", default_value="camera_slam"),
         ExecuteProcess(cmd=[
-            "/home/qor/depth_ws/scripts/record_competition_bag.sh",
+            str(workspace_path("scripts", "record_competition_bag.sh")),
             "--case", LaunchConfiguration("case_id"),
             "--purpose", LaunchConfiguration("purpose"),
             "--duration", LaunchConfiguration("duration"),

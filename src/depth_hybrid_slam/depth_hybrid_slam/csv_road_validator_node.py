@@ -20,8 +20,9 @@ from camera_navigation.semantic_path_contract import decode_binary_rle
 
 from .csv_road_validator_core import (
     CAMERA_UNAVAILABLE, CameraRiskGate, INVALID_GEOMETRY, PATH_UNAVAILABLE,
-    ValidatorConfig, classify_input_state, grid_to_metric, render_bev_overlay,
-    predict_path_horizon, unavailable_result, validate_metric_bev)
+    STALE_INPUT, ValidatorConfig, classify_input_state, grid_to_metric,
+    render_bev_overlay, predict_path_horizon, unavailable_result,
+    validate_metric_bev)
 
 
 def _yaw(quaternion):

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
+from depth_hybrid_slam.workspace_paths import workspace_root
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -11,7 +12,9 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     share = Path(get_package_share_directory("depth_hybrid_slam"))
-    route = "/home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv"
+    root = workspace_root()
+    route = str(root/"routes"/"network"/
+                "route_network_segmented_stop_edited_vforward.csv")
     return LaunchDescription([
         DeclareLaunchArgument("route_path", default_value=route),
         DeclareLaunchArgument(
@@ -21,10 +24,11 @@ def generate_launch_description():
         DeclareLaunchArgument("start_mode", default_value="1"),
         DeclareLaunchArgument("end_mode", default_value="11"),
         DeclareLaunchArgument("enable_vslam", default_value="true"),
+        DeclareLaunchArgument("enable_parking_slam", default_value="false"),
         DeclareLaunchArgument(
             "map_path", default_value=(
-                "/home/qor/depth_ws/maps/"
-                "merged_competition_level_aligned_v10/rtabmap.db")),
+                str(root/"maps"/"merged_competition_level_aligned_v10"/
+                    "rtabmap.db"))),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),
         DeclareLaunchArgument("camera_serial", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),
@@ -43,6 +47,8 @@ def generate_launch_description():
                 "start_mode": LaunchConfiguration("start_mode"),
                 "end_mode": LaunchConfiguration("end_mode"),
                 "enable_vslam": LaunchConfiguration("enable_vslam"),
+                "enable_parking_slam": LaunchConfiguration(
+                    "enable_parking_slam"),
                 "map_path": LaunchConfiguration("map_path"),
                 "front_serial_port": LaunchConfiguration(
                     "front_serial_port"),

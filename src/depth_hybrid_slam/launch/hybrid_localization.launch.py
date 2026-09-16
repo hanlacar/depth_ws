@@ -7,6 +7,7 @@ import shutil
 
 from depth_hybrid_slam.case_manager_core import verify_case
 from depth_hybrid_slam.launch_common import common_arguments, rtabmap_include
+from depth_hybrid_slam.workspace_paths import workspace_root
 from launch import LaunchDescription
 from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
@@ -69,12 +70,13 @@ def _prepare(context):
 
 
 def generate_launch_description():
-    root = "/home/qor/depth_ws"
+    root = workspace_root()
     return LaunchDescription(common_arguments({
         "mapping_mode": "false", "localization_mode": "true",
-        "map_path": root +
-        "/maps/merged_competition_level_aligned_v10/rtabmap.db",
-        "route_path": root + "/routes/network/route_network_segmented_stop_edited_vforward.csv",
-        "route_metadata_path": root +
-        "/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml",
+        "map_path": str(root/"maps"/
+                        "merged_competition_level_aligned_v10"/"rtabmap.db"),
+        "route_path": str(root/"routes"/"network"/
+                          "route_network_segmented_stop_edited_vforward.csv"),
+        "route_metadata_path": str(root/"routes"/"network"/
+            "route_network_segmented_stop_edited_vforward.metadata.yaml"),
     })+[OpaqueFunction(function=_prepare)])

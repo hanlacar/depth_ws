@@ -9,6 +9,7 @@ from depth_hybrid_slam.mapping_session import (
     load_mapping_profile, mapping_graph_conflicts, rtabmap_argument_string,
     write_session_metadata,
 )
+from depth_hybrid_slam.workspace_paths import workspace_path
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, OpaqueFunction, TimerAction
 from launch.substitutions import LaunchConfiguration
@@ -70,7 +71,7 @@ def _start(context):
         nodes.append(quality)
     if as_bool(LaunchConfiguration("record_bag").perform(context)):
         nodes.append(TimerAction(period=5.0, actions=[ExecuteProcess(
-            cmd=["/home/qor/depth_ws/scripts/record_competition_bag.sh",
+            cmd=[str(workspace_path("scripts", "record_competition_bag.sh")),
                  "--case", session.session_id,
                  "--session-id", session.session_id,
                  "--session-path", str(session.bag_path),

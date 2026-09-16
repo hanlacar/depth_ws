@@ -1,6 +1,6 @@
 # 고밀도 RTAB-Map 촬영·경로 저장·오프라인 확인
 
-이 절차는 ROS 2 Jazzy, Domain 41, D456 `338122302896` 전용이다. RGB/Depth/IR
+이 절차는 ROS 2 Jazzy와 D456을 기준으로 한다. RGB/Depth/IR
 640×480 약 60 Hz와 IMU 약 400 Hz 설정은 변경하지 않는다. `high_density:=false`는
 기존 RTAB-Map 5 Hz/0.05 m/0.03 rad/15 inlier 설정을 그대로 사용하고,
 `high_density:=true`만 10 Hz/0.03 m/0.02 rad/15 inlier를 적용한다.
@@ -13,8 +13,8 @@
 다음 두 디렉터리는 영구 보호 대상이다. 내부 파일이 현재 없더라도 mapping 대상으로
 쓸 수 없고 삭제 옵션도 적용되지 않는다.
 
-- `/home/qor/depth_ws/maps/classroom_test`
-- `/home/qor/depth_ws/maps/corridor_hand_test`
+- `~/depth_ws/maps/classroom_test`
+- `~/depth_ws/maps/corridor_hand_test`
 
 ## 자동 날짜·시간 세션(권장)
 
@@ -26,10 +26,8 @@
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 launch depth_hybrid_slam hybrid_mapping.launch.py \
   camera_serial:=338122302896 \
@@ -43,10 +41,8 @@ ros2 launch depth_hybrid_slam hybrid_mapping.launch.py \
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 topic echo /depth_slam/mapping/session_id --once \
   --qos-durability transient_local
@@ -64,10 +60,8 @@ ros2 topic echo /depth_slam/mapping/graph_path --once \
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 launch depth_hybrid_slam route_recording.launch.py \
   high_density:=true enable_control:=false dry_run:=true
@@ -83,12 +77,9 @@ timezone, UTC offset, `automatic_name`과 함께 원자적으로 저장된다.
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
+cd ~/depth_ws
+source setup_depth.sh
 export PYTHONNOUSERSITE=1
-export ROS_DOMAIN_ID=41
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ```
 
@@ -101,22 +92,20 @@ export ROS_LOG_DIR=/tmp/depth_ros_logs
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 export SESSION_ID=high_density_$(date +%Y%m%d_%H%M%S)
 for target in \
-  "/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db" \
-  "/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db-wal" \
-  "/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db-shm" \
-  "/home/qor/depth_ws/maps/$SESSION_ID/checksums.sha256" \
-  "/home/qor/depth_ws/routes/$SESSION_ID/route.csv" \
-  "/home/qor/depth_ws/routes/$SESSION_ID/route_final.csv" \
-  "/home/qor/depth_ws/routes/$SESSION_ID/rtabmap_graph.json" \
-  "/home/qor/depth_ws/routes/$SESSION_ID/route_metadata.yaml" \
-  "/home/qor/depth_ws/reports/$SESSION_ID/mapping_quality.json"; do
+  "~/depth_ws/maps/$SESSION_ID/rtabmap.db" \
+  "~/depth_ws/maps/$SESSION_ID/rtabmap.db-wal" \
+  "~/depth_ws/maps/$SESSION_ID/rtabmap.db-shm" \
+  "~/depth_ws/maps/$SESSION_ID/checksums.sha256" \
+  "~/depth_ws/routes/$SESSION_ID/route.csv" \
+  "~/depth_ws/routes/$SESSION_ID/route_final.csv" \
+  "~/depth_ws/routes/$SESSION_ID/rtabmap_graph.json" \
+  "~/depth_ws/routes/$SESSION_ID/route_metadata.yaml" \
+  "~/depth_ws/reports/$SESSION_ID/mapping_quality.json"; do
   if test -e "$target"; then
     echo "STOP: existing session output: $target" >&2
     return 1 2>/dev/null || exit 1
@@ -133,12 +122,10 @@ ros2 topic info /depth_slam/cuvslam/odometry -v || true
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
-/home/qor/depth_ws/scripts/run_d456_host.sh
+~/depth_ws/scripts/run_d456_host.sh
 ```
 
 ### 터미널 2 — cuVSLAM과 포함된 bridge
@@ -147,26 +134,22 @@ bridge를 별도로 실행하지 않는다.
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
-/home/qor/depth_ws/scripts/run_cuvslam_container.sh
+~/depth_ws/scripts/run_cuvslam_container.sh
 ```
 
 ### 터미널 3 — 새 DB 고밀도 mapping
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 export SESSION_ID=앞에서_정한_동일한_값
 ros2 launch depth_hybrid_slam hybrid_mapping.launch.py \
-  map_path:="/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db" \
+  map_path:="~/depth_ws/maps/$SESSION_ID/rtabmap.db" \
   session_id:="$SESSION_ID" \
   mapping_mode:=true localization_mode:=false \
   high_density:=true start_monitor:=true record_bag:=false \
@@ -183,10 +166,8 @@ mapping 중에는 기존 보수적 표시값(decimation 4, voxel 0.03 m)을 사�
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 launch depth_hybrid_slam visualization.launch.py \
   start_rviz:=true start_image_view:=false enable_control:=false dry_run:=true
@@ -198,10 +179,8 @@ quality monitor는 터미널 3에서 함께 시작되므로 중복 실행하지 
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 topic echo /depth_slam/mapping/state
 ros2 topic echo /depth_slam/mapping/diagnostics
@@ -211,10 +190,8 @@ ros2 topic echo /depth_slam/mapping/recording_hold_reason
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 topic hz /camera/camera/color/image_raw
 ros2 topic hz /camera/camera/aligned_depth_to_color/image_raw
@@ -232,15 +209,13 @@ reset 증가 후 상태는 세션 끝까지 `INVALID_SESSION`이다.
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 export SESSION_ID=앞에서_정한_동일한_값
 ros2 launch depth_hybrid_slam route_recording.launch.py \
-  map_path:="/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db" \
-  route_path:="/home/qor/depth_ws/routes/$SESSION_ID/route.csv" \
+  map_path:="~/depth_ws/maps/$SESSION_ID/rtabmap.db" \
+  route_path:="~/depth_ws/routes/$SESSION_ID/route.csv" \
   session_id:="$SESSION_ID" \
   high_density:=true \
   route_min_distance_m:=0.05 route_min_angle_rad:=0.03 \
@@ -253,10 +228,8 @@ READY와 map-frame pose가 확인된 후 시작한다.
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 service call /depth_slam/route/start std_srvs/srv/Trigger '{}'
 ros2 service call /depth_slam/route/status std_srvs/srv/Trigger '{}'
@@ -266,10 +239,8 @@ ros2 service call /depth_slam/route/status std_srvs/srv/Trigger '{}'
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 service call /depth_slam/route/stop std_srvs/srv/Trigger '{}'
 ```
@@ -288,24 +259,22 @@ ros2 service call /depth_slam/route/stop std_srvs/srv/Trigger '{}'
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 export SESSION_ID=앞에서_정한_동일한_값
-test -f "/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db"
-test ! -e "/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db-wal"
-test ! -e "/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db-shm"
+test -f "~/depth_ws/maps/$SESSION_ID/rtabmap.db"
+test ! -e "~/depth_ws/maps/$SESSION_ID/rtabmap.db-wal"
+test ! -e "~/depth_ws/maps/$SESSION_ID/rtabmap.db-shm"
 ros2 run depth_hybrid_slam mapping_session_finalize \
-  --map-path "/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db" \
-  --route-path "/home/qor/depth_ws/routes/$SESSION_ID/route.csv" \
-  --graph-path "/home/qor/depth_ws/routes/$SESSION_ID/rtabmap_graph.json" \
-  --final-route-path "/home/qor/depth_ws/routes/$SESSION_ID/route_final.csv" \
-  --metadata-path "/home/qor/depth_ws/routes/$SESSION_ID/route_metadata.yaml" \
+  --map-path "~/depth_ws/maps/$SESSION_ID/rtabmap.db" \
+  --route-path "~/depth_ws/routes/$SESSION_ID/route.csv" \
+  --graph-path "~/depth_ws/routes/$SESSION_ID/rtabmap_graph.json" \
+  --final-route-path "~/depth_ws/routes/$SESSION_ID/route_final.csv" \
+  --metadata-path "~/depth_ws/routes/$SESSION_ID/route_metadata.yaml" \
   --session-id "$SESSION_ID" \
-  --quality-report "/home/qor/depth_ws/reports/$SESSION_ID/mapping_quality.json"
-(cd "/home/qor/depth_ws/maps/$SESSION_ID" && sha256sum -c checksums.sha256)
+  --quality-report "~/depth_ws/reports/$SESSION_ID/mapping_quality.json"
+(cd "~/depth_ws/maps/$SESSION_ID" && sha256sum -c checksums.sha256)
 ```
 
 finalizer는 DB sidecar가 없는 완전 종료 상태에서 SQLite integrity를 검사하고,
@@ -323,15 +292,13 @@ D456, cuVSLAM, mapping/localization 프로세스가 모두 종료된 상태에�
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 export SESSION_ID=확인할_세션
 ros2 launch depth_hybrid_slam map_route_view.launch.py \
-  map_path:="/home/qor/depth_ws/maps/$SESSION_ID/rtabmap.db" \
-  route_path:="/home/qor/depth_ws/routes/$SESSION_ID/route_final.csv" \
+  map_path:="~/depth_ws/maps/$SESSION_ID/rtabmap.db" \
+  route_path:="~/depth_ws/routes/$SESSION_ID/route_final.csv" \
   use_temporary_db_copy:=true publish_map_tf_for_view:=true \
   highest_density_view:=false start_rviz:=true \
   enable_control:=false dry_run:=true
@@ -344,10 +311,8 @@ RViz, 전체 지도 publish 요청을 함께 시작한다.
 
 ```bash
 set -eo pipefail
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export PYTHONNOUSERSITE=1 ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 topic info /rtabmap/mapData -v
 ros2 topic info /rtabmap/mapGraph -v

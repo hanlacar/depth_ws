@@ -1,14 +1,17 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>t870_mcu_simple</name>
-  <version>1.1.0</version>
-  <description>T870 measured MCU bridge and sole production odometry owner.</description>
+  <version>1.0.0</version>
+  <description>Minimal direct serial bridge for T870 vehicle MCU</description>
   <maintainer email="urrc@example.com">URRC</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>python3-serial</exec_depend>

@@ -186,6 +186,7 @@ class RgbTrafficLightNode(Node):
             "raw_state": "UNKNOWN", "green_shape_score": 0.0,
             "circle_score": 0.0, "left_arrow_score": 0.0,
             "down_arrow_score": 0.0,
+            "selected_area_px": 0.0, "selected_dark_ratio": 0.0,
             "selected_bbox": [],
             "confirmed_state": "UNKNOWN", "confirmation_count": 0,
             "rejection_reasons": {reason: 1}, "roi": [],

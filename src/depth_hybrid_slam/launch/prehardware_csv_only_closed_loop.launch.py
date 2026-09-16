@@ -4,13 +4,14 @@ from pathlib import Path
 
 from depth_hybrid_slam.csv_only_branching import (
     csv_only_network_segments, load_csv_only_route_case)
+from depth_hybrid_slam.workspace_paths import workspace_root
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-DEFAULT_ROOT = "/home/qor/depth_ws"
+DEFAULT_ROOT = workspace_root()
 
 
 def _prepare(context):
@@ -101,15 +102,15 @@ def _prepare(context):
 
 
 def generate_launch_description():
-    network = DEFAULT_ROOT+"/routes/network"
+    network = DEFAULT_ROOT/"routes"/"network"
     return LaunchDescription([
         DeclareLaunchArgument(
-            "route_path", default_value=network+
-            "/route_network_segmented_stop_edited_vforward.csv"),
+            "route_path", default_value=str(
+                network/"route_network_segmented_stop_edited_vforward.csv")),
         DeclareLaunchArgument("route_metadata_path", default_value=""),
         DeclareLaunchArgument(
-            "display_route_path", default_value=network+
-            "/route_network_segmented_all_branches_display_aligned_vforward.csv"),
+            "display_route_path", default_value=str(network/
+                "route_network_segmented_all_branches_display_aligned_vforward.csv")),
         DeclareLaunchArgument("spawn_branch", default_value="A"),
         DeclareLaunchArgument("start_mode", default_value="1"),
         DeclareLaunchArgument("end_mode", default_value="11"),

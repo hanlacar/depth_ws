@@ -5,7 +5,6 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    SetEnvironmentVariable,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -27,11 +26,6 @@ def generate_launch_description():
         DeclareLaunchArgument("traffic_light_confirmation_frames", default_value="3"),
         DeclareLaunchArgument("traffic_light_lost_timeout_sec", default_value="0.5"),
         DeclareLaunchArgument("traffic_light_minimum_confidence", default_value="0.5"),
-        DeclareLaunchArgument(
-            "rmw_implementation",
-            default_value="rmw_cyclonedds_cpp",
-            description="Validated RMW for sustained D456 raw image delivery",
-        ),
     ]
     camera = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(str(camera_share / "launch" / "d456_bringup.launch.py")),
@@ -51,7 +45,4 @@ def generate_launch_description():
     rqt = Node(package="rqt_image_view", executable="rqt_image_view",
                arguments=["/camera/perception_overlay_image"],
                condition=IfCondition(LaunchConfiguration("launch_rqt")), output="screen")
-    middleware = SetEnvironmentVariable(
-        "RMW_IMPLEMENTATION", LaunchConfiguration("rmw_implementation")
-    )
-    return LaunchDescription(declarations + [middleware, camera, inference, rqt])
+    return LaunchDescription(declarations + [camera, inference, rqt])

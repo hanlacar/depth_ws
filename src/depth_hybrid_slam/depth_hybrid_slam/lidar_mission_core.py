@@ -142,38 +142,31 @@ def mode5_planning_distance_ready(distance_m, minimum_m=1.0):
 
 
 def select_parking_branch(a_free, b_free):
-    if bool(a_free):
-        return "A"
+    """Use an explicitly detected B slot; every other result selects A."""
     if bool(b_free):
         return "B"
-    return ""
+    return "A"
 
 
 def select_parking_fallback(*, lidar_fresh, scan_valid, slot_a=None,
                             slot_b=None, path_a_safe=None,
                             path_b_safe=None):
-    """Select an explicit slot first, otherwise audit both parking CSVs."""
-    if not bool(lidar_fresh) or not bool(scan_valid):
-        return ""
-    if slot_a is True:
-        return "A"
+    """Select B only from positive evidence; otherwise run parking case A.
+
+    Freshness and path-audit inputs remain in the public contract for
+    diagnostics. They no longer create a no-slot/escape outcome. Live hard
+    obstacle handling remains independent and can still pause motion.
+    """
+    _ = (lidar_fresh, scan_valid, slot_a, path_a_safe, path_b_safe)
     if slot_b is True:
         return "B"
-    if path_a_safe is None or path_b_safe is None:
-        return ""
-    if bool(path_a_safe):
-        return "A"
-    if bool(path_b_safe):
-        return "B"
-    return ""
+    return "A"
 
 
 def parking_decision(mode, a_free, b_free, path_valid,
                      planner_state="IDLE", hard_obstacle=False):
     branch = select_parking_branch(a_free, b_free)
     prefix = "T" if int(mode) == 7 else "V"
-    if not branch:
-        return ManeuverDecision(prefix+"_WAIT_LIDAR_SLOT", "LIDAR", True)
     if hard_obstacle:
         return ManeuverDecision("PARKING_HARD_STOP", "SAFETY", True,
                                 branch=branch)
@@ -187,6 +180,12 @@ def parking_decision(mode, a_free, b_free, path_valid,
                             branch=branch)
 
 
+def parking_reverse_phase(state, path_available):
+    """A generated parking path is reverse until its CSV handoff finishes."""
+    return (bool(path_available) or str(state) in (
+        "DIRECTION_CHANGE_HOLD", "LIDAR_PATH_TRACKING", "CSV_REJOIN"))
+
+
 class Mode9Emergency:
     def __init__(self):
         self.state = "ACCEL_TRACKING"
@@ -196,7 +195,10 @@ class Mode9Emergency:
 
     def update(self, hard_obstacle):
         if hard_obstacle:
-            self.state = "EMERGENCY_STOP"
+            # Zero drive is a transient obstacle wait.  It must never be
+            # interpreted as a terminal Mode 9 failure; the qualified clear
+            # input below always restores fixed Stage 3 operation.
+            self.state = "MODE9_OBSTACLE_WAIT"
             return ManeuverDecision(self.state, "SAFETY", True)
         # The LiDAR emergency input is already held until the 1.5 m corridor
         # has remained clear for one second.  Once that qualified input drops,
@@ -506,7 +508,7 @@ def route_rejoin_candidates(route, active_segment, current_index, pose,
 
 
 class Mode11ExitGate:
-    """Five-second vote that selects B only from explicit fresh B evidence."""
+    """Mode-11 hold and commit adapter for weighted and legacy camera inputs."""
 
     def __init__(self, hold_s=5.0, stale_s=0.5, confirmations=60,
                  decision_ratio=0.75):
@@ -517,6 +519,8 @@ class Mode11ExitGate:
         self.started_at = None
         self.committed = None
         self.commit_source = ""
+        self.pending_external = None
+        self.pending_external_source = ""
         self.signal_at = None
         self.last_signal = "UNKNOWN"
         self.votes = {"A": 0, "B": 0, "UNKNOWN": 0}
@@ -540,6 +544,15 @@ class Mode11ExitGate:
         self.last_signal = route
         self.signal_at = float(now)
 
+    def commit_external(self, branch, source="CAMERA_WEIGHTED"):
+        """Accept the detector's completed five-second weighted decision."""
+        value = str(branch).strip().upper()
+        if value not in ("A", "B") or self.committed is not None:
+            return False
+        self.pending_external = value
+        self.pending_external_source = str(source) or "CAMERA_WEIGHTED"
+        return True
+
     def evaluate(self, now):
         self.enter(now)
         elapsed = float(now)-self.started_at
@@ -548,6 +561,14 @@ class Mode11ExitGate:
                                     branch=self.committed)
         if elapsed < self.hold_s:
             return ManeuverDecision("MODE11_5S_HOLD", "MISSION", True)
+        if self.pending_external in ("A", "B"):
+            self.committed = self.pending_external
+            self.commit_source = self.pending_external_source
+            return ManeuverDecision("MODE11_COMMIT_"+self.committed,
+                                    "CSV", False, branch=self.committed)
+        # Compatibility fallback for the legacy per-frame topic. The primary
+        # decision arrives through commit_external() from the weighted,
+        # position-aware five-second detector event.
         fresh = (self.signal_at is not None and
                  float(now)-self.signal_at <= self.stale_s)
         confirmed_b = fresh and self.last_signal == "B"

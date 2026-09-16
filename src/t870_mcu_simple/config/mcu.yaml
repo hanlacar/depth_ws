@@ -7,29 +7,42 @@ t870_mcu_simple_bridge:
     reconnect_s: 1.0
     tx_hz: 10.0
     drive_timeout_s: 0.5
+
+    # 조향 확정 기준
     steer_center_adc: 484
     steer_counts_per_deg: 18.0
     max_steer_deg: 22
     steer_pwm: 130
+
+    # 중앙 복귀 안정화
+    # 한 샘플이 범위 안에 들어왔다고 완료하지 않고 250ms 안정 유지 확인.
     steer_tolerance_adc: 4
     steer_settle_ms: 250
     steer_fine_band_adc: 50
     steer_fine_on_ms: 30
     steer_fine_cycle_ms: 90
     steer_timeout_ms: 5000
+
+    # Firmware watchdog/status
     firmware_drive_timeout_ms: 700
     firmware_status_ms: 200
+
+    # 현재 실차 방향 극성
     front_forward_level: 0
-    rear_forward_level: 0
+    rear_forward_level: 1
     steer_left_level: 1
-    # End-to-end public and firmware axis: LEFT=+, RIGHT=-, CENTER=0.
+
+    # /cmd_drive stage mapping
     reverse_pwm: 50
     stage1_pwm: 50
     stage2_pwm: 75
     stage3_pwm: 100
+
+    # encA raw count로 계산하는 기존 RPM 환산용 값.
     encoder_cpr: 163.0
+
+    # 실측 ENC_A 거리와 실측 조향 센서로만 적분하는 production ODOM.
     counts_per_meter: 797.0
-    # Reject ARM/reboot counter resets as impossible single-sample travel.
     max_encoder_delta_counts: 5000
     wheelbase_m: 0.73
     base_from_rear_m: 0.365

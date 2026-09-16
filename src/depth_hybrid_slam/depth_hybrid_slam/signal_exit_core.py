@@ -59,7 +59,7 @@ class DetectorConfig:
     red_ranges: tuple
     core_green: HSVRange
     extended_green: HSVRange
-    minimum_contour_area: float = 1.0
+    minimum_contour_area: float = 40.0
     maximum_contour_area: float = 1200.0
     extended_maximum_contour_area: float = 700.0
     minimum_aspect_ratio: float = 0.12
@@ -73,6 +73,10 @@ class DetectorConfig:
     local_context_min_padding: int = 8
     morphology_kernel_size: int = 3
     candidate_bounds: tuple = (0.05, 0.95, 0.02, 0.40)
+    dark_ratio_threshold: float = 0.08
+    slot_centers: tuple = (0.25, 0.50, 0.75)
+    slot_max_distance: float = 0.18
+    slot_conflict_margin: float = 0.12
 
 
 @dataclass(frozen=True)
@@ -83,36 +87,83 @@ class SignalDetection:
     lamp_states: tuple = ()
     bbox: tuple = ()
     confidence: float = 0.0
+    candidates: tuple = ()
+    reason: str = "NO_SIGNAL"
+
+
+def _signal_state(value):
+    text = str(getattr(value, "value", value)).strip().upper()
+    return {"G": SignalState.GREEN, "GREEN": SignalState.GREEN,
+            "R": SignalState.RED, "RED": SignalState.RED}.get(
+                text, SignalState.UNKNOWN)
+
+
+def assign_exit_lamps(candidates, slot_centers=(0.25, 0.50, 0.75),
+                      slot_max_distance=0.18, conflict_margin=0.12):
+    """Assign partial detections to LEFT/CENTER/RIGHT using the right RED anchor."""
+    normalized = []
+    for item in candidates:
+        confidence = float(item[4]) if len(item) > 4 else min(
+            1.0, float(item[2])/40.0)
+        normalized.append((float(item[0]), _signal_state(item[1]),
+                           int(item[2]), confidence))
+    reds = [item for item in normalized if item[1] == SignalState.RED]
+    # The right-most physical lamp is always RED.  It provides translation
+    # alignment when the signal group is not centred in the camera image.
+    right_anchor = max(reds, key=lambda item: item[0], default=None)
+    green_right_of_anchor = bool(right_anchor is not None and any(
+        item[1] == SignalState.GREEN and item[0] > right_anchor[0]
+        for item in normalized))
+    offset = (0.0 if right_anchor is None or green_right_of_anchor else
+              right_anchor[0]-float(slot_centers[2]))
+    expected = tuple(float(value)+offset for value in slot_centers)
+    slots = [[], [], []]
+    for item in normalized:
+        distances = [abs(item[0]-center) for center in expected]
+        index = int(np.argmin(distances))
+        if distances[index] <= float(slot_max_distance):
+            slots[index].append(item)
+    output = []
+    for values in slots:
+        if not values:
+            output.append(SignalState.UNKNOWN)
+            continue
+        by_state = {}
+        for item in values:
+            previous = by_state.get(item[1])
+            if previous is None or item[3] > previous[3]:
+                by_state[item[1]] = item
+        red, green = by_state.get(SignalState.RED), by_state.get(SignalState.GREEN)
+        if red and green and abs(red[3]-green[3]) <= float(conflict_margin):
+            output.append(SignalState.UNKNOWN)
+        else:
+            output.append(max(values, key=lambda item: item[3])[1])
+    return tuple(output)
+
+
+def exit_route_evidence(lamps):
+    """Return A/B evidence and a human-readable position-specific reason."""
+    if len(lamps) != 3:
+        return SignalState.UNKNOWN, "INCOMPLETE"
+    left, center, right = tuple(_signal_state(value) for value in lamps)
+    if left == SignalState.GREEN:
+        return SignalState.GREEN, "LEFT_GREEN"
+    if center == SignalState.GREEN:
+        return SignalState.RED, "CENTER_GREEN"
+    if left == center == right == SignalState.RED:
+        return SignalState.UNKNOWN, "AMBIGUOUS_ALL_RED"
+    if center == SignalState.RED and right == SignalState.RED:
+        return SignalState.GREEN, "CENTER_RED+RIGHT_RED"
+    if left == SignalState.RED and right == SignalState.RED:
+        return SignalState.RED, "LEFT_RED+RIGHT_RED"
+    return SignalState.UNKNOWN, "INSUFFICIENT_POSITIONAL_EVIDENCE"
 
 
 def classify_exit_triplet(candidates, merge_distance_ratio=0.04):
-    """Sort three lamp housings left-to-right; only G/R/R selects A."""
-    def normalized(value):
-        text = str(getattr(value, "value", value)).strip().upper()
-        return {"G": SignalState.GREEN, "GREEN": SignalState.GREEN,
-                "R": SignalState.RED, "RED": SignalState.RED}.get(
-                    text, SignalState.UNKNOWN)
-
-    groups = []
-    for item in sorted(candidates, key=lambda item: item[0]):
-        x, state, pixels = item[:3]
-        if groups and abs(float(x)-groups[-1][0]) <= merge_distance_ratio:
-            groups[-1][1].append((normalized(state), int(pixels)))
-            continue
-        groups.append([float(x), [(normalized(state), int(pixels))]])
-    if len(groups) != 3:
-        return SignalState.UNKNOWN, ()
-    lamps = []
-    for _x, values in groups:
-        states = {state for state, _pixels in values}
-        lamps.append(next(iter(states)) if len(states) == 1 else
-                     SignalState.UNKNOWN)
-    ordered = tuple(lamps)
-    if SignalState.UNKNOWN in ordered:
-        return SignalState.UNKNOWN, ordered
-    return (SignalState.GREEN if ordered == (
-        SignalState.GREEN, SignalState.RED, SignalState.RED)
-        else SignalState.RED), ordered
+    """Compatibility entry point backed by position-aware partial evidence."""
+    del merge_distance_ratio
+    lamps = assign_exit_lamps(candidates)
+    return exit_route_evidence(lamps)[0], lamps
 
 
 class SignalExitDetector:
@@ -160,15 +211,18 @@ class SignalExitDetector:
             xa, ya = max(0, x-padding), max(0, y-padding)
             xb = min(mask.shape[1], x+width+padding)
             yb = min(mask.shape[0], y+height+padding)
-            if float(np.mean(hsv[ya:yb, xa:xb, 2] <
-                             self.config.panel_dark_value)) < minimum_dark_ratio:
-                continue
+            dark_ratio = float(np.mean(
+                hsv[ya:yb, xa:xb, 2] < self.config.panel_dark_value))
             component = np.zeros(mask.shape, dtype=np.uint8)
             cv2.drawContours(component, [contour], -1, 255, -1)
             pixels = int(np.count_nonzero((component > 0) & (mask > 0)))
+            housing_bonus = min(
+                1.0, dark_ratio/max(self.config.dark_ratio_threshold, 1.0e-6))
+            confidence = min(1.0, 0.75*min(1.0, area/80.0)+0.25*housing_bonus)
             candidates.append((center_x, state, pixels,
                                (offset[0]+x, offset[1]+y,
-                                offset[0]+x+width, offset[1]+y+height)))
+                                offset[0]+x+width, offset[1]+y+height),
+                               confidence, dark_ratio, float(area)))
         return tuple(candidates)
 
     def detect(self, frame):
@@ -197,7 +251,10 @@ class SignalExitDetector:
                           self.config.minimum_color_pixel_ratio)
         candidates = tuple(value for value in candidates
                            if value[2] >= minimum_pixels)
-        state, lamps = classify_exit_triplet(candidates)
+        lamps = assign_exit_lamps(
+            candidates, self.config.slot_centers,
+            self.config.slot_max_distance, self.config.slot_conflict_margin)
+        state, reason = exit_route_evidence(lamps)
         red = sum(value[2] for value in candidates
                   if value[1] == SignalState.RED)
         green = sum(value[2] for value in candidates
@@ -207,7 +264,8 @@ class SignalExitDetector:
             min(value[0] for value in boxes), min(value[1] for value in boxes),
             max(value[2] for value in boxes), max(value[3] for value in boxes)))
         confidence = min(1.0, (red+green)/max(minimum_pixels*3.0, 1.0))
-        return SignalDetection(state, red, green, lamps, bbox, confidence)
+        return SignalDetection(
+            state, red, green, lamps, bbox, confidence, candidates, reason)
 
 
 @dataclass(frozen=True)
@@ -219,18 +277,30 @@ class VoteSnapshot:
     red: int
     unknown: int
     elapsed: float
+    a_score: float = 0.0
+    b_score: float = 0.0
+    reason: str = ""
+    position_counts: tuple = ()
 
 
 class SignalVoteWindow:
-    """Five-second vote with explicit-B-only and default-A policy."""
+    """Five-second position vote with direct-green priority and default A."""
 
     def __init__(self, duration_s=5.0, minimum_valid_frames=60,
-                 decision_ratio=0.75):
+                 decision_ratio=0.75, green_weight=3.0,
+                 red_pair_weight=1.0, minimum_green_observations=2,
+                 minimum_red_pair_observations=2):
         self.duration_s = max(5.0, float(duration_s))
         self.minimum_valid_frames = max(1, int(minimum_valid_frames))
         self.decision_ratio = float(decision_ratio)
         if not 0.5 < self.decision_ratio <= 1.0:
             raise ValueError("decision ratio must be in (0.5, 1.0]")
+        self.green_weight = max(1.0, float(green_weight))
+        self.red_pair_weight = max(0.0, float(red_pair_weight))
+        self.minimum_green_observations = max(
+            1, int(minimum_green_observations))
+        self.minimum_red_pair_observations = max(
+            1, int(minimum_red_pair_observations))
         self.reset()
 
     def reset(self):
@@ -239,6 +309,11 @@ class SignalVoteWindow:
         self.route = SelectedRoute.UNKNOWN
         self.confidence = 0.0
         self.green = self.red = self.unknown = 0
+        self.position_counts = [{SignalState.RED: 0, SignalState.GREEN: 0}
+                                for _ in range(3)]
+        self.a_red_pair = self.b_red_pair = 0
+        self.a_score = self.b_score = 0.0
+        self.reason = ""
 
     def start(self, now):
         if self.state not in (ObservationState.IDLE,
@@ -261,23 +336,75 @@ class SignalVoteWindow:
             self.unknown += 1
         return self.evaluate(now)
 
+    def observe_detection(self, detection, now):
+        """Accumulate visible slots; absent lamps never erase prior evidence."""
+        if self.state != ObservationState.OBSERVING:
+            return self.snapshot(now)
+        lamps = tuple(detection.lamp_states)
+        if len(lamps) == 3:
+            for index, value in enumerate(lamps):
+                value = _signal_state(value)
+                if value in (SignalState.RED, SignalState.GREEN):
+                    self.position_counts[index][value] += 1
+            left, center, right = tuple(_signal_state(value) for value in lamps)
+            if center == SignalState.RED and right == SignalState.RED:
+                self.a_red_pair += 1
+            if left == SignalState.RED and right == SignalState.RED:
+                self.b_red_pair += 1
+        return self.observe(detection.state, now)
+
     def evaluate(self, now):
         if self.state != ObservationState.OBSERVING:
             return self.snapshot(now)
         if float(now)-self.started_at < self.duration_s:
             return self.snapshot(now)
-        valid = self.green+self.red
-        green_ratio = self.green/valid if valid else 0.0
-        red_ratio = self.red/valid if valid else 0.0
-        self.confidence = max(green_ratio, red_ratio)
-        if valid >= self.minimum_valid_frames and \
-                green_ratio >= self.decision_ratio:
-            self.route, self.state = SelectedRoute.A, ObservationState.LATCHED
-        elif valid >= self.minimum_valid_frames and \
-                red_ratio >= self.decision_ratio:
-            self.route, self.state = SelectedRoute.B, ObservationState.LATCHED
+        observed_left_green = self.position_counts[0][SignalState.GREEN]
+        observed_center_green = self.position_counts[1][SignalState.GREEN]
+        left_green = (observed_left_green if observed_left_green >=
+                      self.minimum_green_observations else 0)
+        center_green = (observed_center_green if observed_center_green >=
+                        self.minimum_green_observations else 0)
+        a_red_pair = (self.a_red_pair if self.a_red_pair >=
+                      self.minimum_red_pair_observations else 0)
+        b_red_pair = (self.b_red_pair if self.b_red_pair >=
+                      self.minimum_red_pair_observations else 0)
+        self.a_score = self.green_weight*left_green + \
+            self.red_pair_weight*a_red_pair
+        self.b_score = self.green_weight*center_green + \
+            self.red_pair_weight*b_red_pair
+        positional = self.a_score+self.b_score
+        if positional > 0.0:
+            self.confidence = max(self.a_score, self.b_score)/positional
+            if left_green != center_green:
+                choose_a = left_green > center_green
+                self.reason = "LEFT_GREEN" if choose_a else "CENTER_GREEN"
+            elif self.a_score != self.b_score:
+                choose_a = self.a_score > self.b_score
+                self.reason = ("CENTER_RED+RIGHT_RED" if choose_a else
+                               "LEFT_RED+RIGHT_RED")
+            else:
+                choose_a = True
+                self.reason = "5SEC_TIE_FALLBACK_A"
+            self.route = SelectedRoute.A if choose_a else SelectedRoute.B
+            self.state = (ObservationState.DEFAULTED if
+                          self.reason.endswith("FALLBACK_A") else
+                          ObservationState.LATCHED)
         else:
-            self.route, self.state = SelectedRoute.A, ObservationState.DEFAULTED
+            # Preserve the public legacy vote API used by older callers, but
+            # never allow indecision beyond five seconds.
+            valid = self.green+self.red
+            green_ratio = self.green/valid if valid else 0.0
+            red_ratio = self.red/valid if valid else 0.0
+            self.confidence = max(green_ratio, red_ratio)
+            if valid >= self.minimum_valid_frames and green_ratio >= self.decision_ratio:
+                self.route, self.state = SelectedRoute.A, ObservationState.LATCHED
+                self.reason = "LEGACY_A"
+            elif valid >= self.minimum_valid_frames and red_ratio >= self.decision_ratio:
+                self.route, self.state = SelectedRoute.B, ObservationState.LATCHED
+                self.reason = "LEGACY_B"
+            else:
+                self.route, self.state = SelectedRoute.A, ObservationState.DEFAULTED
+                self.reason = "5SEC_FALLBACK_A"
         return self.snapshot(now)
 
     def snapshot(self, now):
@@ -285,7 +412,10 @@ class SignalVoteWindow:
                    min(self.duration_s, max(0.0, float(now)-self.started_at)))
         return VoteSnapshot(
             self.state, self.route, self.confidence,
-            self.green, self.red, self.unknown, elapsed)
+            self.green, self.red, self.unknown, elapsed,
+            self.a_score, self.b_score, self.reason,
+            tuple((counts[SignalState.RED], counts[SignalState.GREEN])
+                  for counts in self.position_counts))
 
 
 class ExitSignalTrack:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from depth_hybrid_slam.launch_common import common_arguments
+from depth_hybrid_slam.workspace_paths import workspace_root
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -41,14 +42,17 @@ def generate_launch_description():
         "user_approved": ParameterValue(
             LaunchConfiguration("user_approved"), value_type=bool),
     }]
-    root = "/home/qor/depth_ws"
+    root = workspace_root()
     return LaunchDescription(common_arguments({
         "use_camera": "true",
         "use_lidar": "true",
         "use_rear_lidar": "true",
-        "route_path": root+"/routes/network/route_network_segmented_stop_edited_vforward.csv",
-        "route_metadata_path": root+"/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml",
-        "map_path": root+"/maps/merged_competition_level_aligned_v10/rtabmap.db",
+        "route_path": str(root/"routes"/"network"/
+                          "route_network_segmented_stop_edited_vforward.csv"),
+        "route_metadata_path": str(root/"routes"/"network"/
+            "route_network_segmented_stop_edited_vforward.metadata.yaml"),
+        "map_path": str(root/"maps"/
+                        "merged_competition_level_aligned_v10"/"rtabmap.db"),
     })+[
         camera,
         lidar_drivers,

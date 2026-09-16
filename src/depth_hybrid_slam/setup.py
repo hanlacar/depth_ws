@@ -54,6 +54,7 @@ setup(
             "csv_only_network_visualizer = depth_hybrid_slam.csv_only_network_visualizer_node:main",
             "mission_manager = depth_hybrid_slam.mission_node:main",
             "signal_exit = depth_hybrid_slam.signal_exit_node:main",
+            "parking_slam_manager = depth_hybrid_slam.parking_slam_manager_node:main",
             "safety_monitor = depth_hybrid_slam.safety_node:main",
             "runtime_monitor = depth_hybrid_slam.runtime_monitor_node:main",
             "case_manager = depth_hybrid_slam.case_cli:main",

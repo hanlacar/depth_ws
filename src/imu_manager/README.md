@@ -88,20 +88,16 @@ No `/slope/stop`, drive, wheel, or MCU command is published.
 Integrated workspace terminal:
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=0
+cd ~/depth_ws
+source setup_depth.sh
 ros2 launch camera_bringup d456_bringup.launch.py
 ```
 
 Independent IMU terminal (source the same self-contained workspace):
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=0
+cd ~/depth_ws
+source setup_depth.sh
 ros2 launch imu_manager imu_manager.launch.py
 ```
 

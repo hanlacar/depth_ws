@@ -8,11 +8,11 @@ required to remain absent.
 ## Build
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
+cd ~/depth_ws
+source setup_depth.sh
 PYTHONNOUSERSITE=1 colcon build --base-paths src/depth_hybrid_slam \
   --packages-select depth_hybrid_slam --symlink-install
-source install/setup.bash
+source setup_depth.sh
 ```
 
 ## Record
@@ -23,7 +23,7 @@ existing path. `--duration 60` performs a normal timed stop; omit it for manual
 Ctrl-C termination.
 
 ```bash
-cd /home/qor/depth_ws
+cd ~/depth_ws
 ./scripts/record_competition_bag.sh --case camera_stationary_test \
   --purpose competition --duration 60
 ./scripts/record_competition_bag.sh --case camera_hand_motion_test \
@@ -45,7 +45,7 @@ rate better than single-writer MCAP chunk compression. Files split at 4 GiB or
 ## Inspect and recover metadata
 
 ```bash
-BAG=/home/qor/depth_ws/bags/<case_id>/<session_id>
+BAG=~/depth_ws/bags/<case_id>/<session_id>
 ros2 bag info "$BAG"
 (cd "$BAG" && sha256sum --check checksums.sha256)
 ```
@@ -67,7 +67,7 @@ unchanged and checksums are checked before and after playback. Playback uses
 the recorded stamps and does not publish `/clock` or set `use_sim_time`.
 
 ```bash
-cd /home/qor/depth_ws
+cd ~/depth_ws
 ./scripts/validate_competition_bag_playback.sh "$BAG"
 ```
 

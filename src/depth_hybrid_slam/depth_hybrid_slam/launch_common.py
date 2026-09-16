@@ -45,6 +45,8 @@ COMMON_DEFAULTS = {
     "highest_density_view": "false",
     "localization_output_prefix": "/depth_slam/localization",
     "use_vehicle_odom": "false",
+    "rtabmap_map_frame": "map",
+    "publish_rtabmap_tf": "true",
 }
 
 
@@ -67,7 +69,7 @@ def rtabmap_include(localization, launch_prefix="", rtabmap_args=None,
         "database_path": (database_path if database_path is not None else
                           LaunchConfiguration("map_path")),
         "frame_id": "base_link",
-        "map_frame_id": "map",
+        "map_frame_id": LaunchConfiguration("rtabmap_map_frame"),
         # cuVSLAM's Odometry message has zero XYZ covariance. In localization
         # mode RTAB-Map 0.22.1 can turn that into an invalid zero-information
         # link, so use the equivalent cuVSLAM TF with explicit variances.
@@ -76,7 +78,7 @@ def rtabmap_include(localization, launch_prefix="", rtabmap_args=None,
         "visual_odometry": "false",
         "icp_odometry": "false",
         "publish_tf_odom": "false",
-        "publish_tf_map": "true",
+        "publish_tf_map": LaunchConfiguration("publish_rtabmap_tf"),
         "odom_tf_linear_variance": "0.001",
         "odom_tf_angular_variance": "0.01",
         "depth": "true",

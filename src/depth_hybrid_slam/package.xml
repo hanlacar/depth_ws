@@ -16,6 +16,12 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>isaac_ros_visual_slam_interfaces</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_costmap_2d</exec_depend>
+  <exec_depend>nav2_smac_planner</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>race_interfaces</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>rplidar_ros</exec_depend>

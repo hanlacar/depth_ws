@@ -14,7 +14,8 @@ from depth_hybrid_slam.mission_completion import MissionCompletionTracker
 from depth_hybrid_slam.mode_completion import RouteModeCompletionTracker
 from depth_hybrid_slam.signal_exit_core import (
     classify_exit_triplet, DetectorConfig, HSVRange, NormalizedROI, ObservationState,
-    SelectedRoute, SignalExitDetector, SignalState, SignalVoteWindow)
+    SelectedRoute, SignalDetection, SignalExitDetector, SignalState,
+    SignalVoteWindow)
 import numpy as np
 import pytest
 
@@ -51,20 +52,21 @@ def _cluster(distance, motion=STATIC):
                    (distance, 0.0), motion=motion)
 
 
-def test_mode11_detector_sorts_three_lamps_and_only_grr_maps_to_a():
+def test_mode11_detector_uses_position_specific_a_b_patterns():
     detector = _detector()
     assert detector.detect(_frame("GRR")).state == SignalState.GREEN
-    for states in ("RGR", "RRG", "RRR"):
-        assert detector.detect(_frame(states)).state == SignalState.RED
-    assert detector.detect(_frame("GR")).state == SignalState.UNKNOWN
+    assert detector.detect(_frame("RGR")).state == SignalState.RED
+    for states in ("RRG", "RRR"):
+        assert detector.detect(_frame(states)).state == SignalState.UNKNOWN
+    assert detector.detect(_frame("GR")).state == SignalState.RED
 
 
 @pytest.mark.parametrize("states,expected", (
     (("G", "R", "R"), SignalState.GREEN),
     (("R", "G", "R"), SignalState.RED),
-    (("R", "R", "G"), SignalState.RED),
-    (("R", "R", "R"), SignalState.RED),
-    (("UNKNOWN", "R", "R"), SignalState.UNKNOWN),
+    (("R", "R", "G"), SignalState.UNKNOWN),
+    (("R", "R", "R"), SignalState.UNKNOWN),
+    (("UNKNOWN", "R", "R"), SignalState.GREEN),
 ))
 def test_mode11_triplet_contract(states, expected):
     candidates = tuple(
@@ -106,14 +108,79 @@ def test_mode11_actual_hold_mapping_and_late_opposite(signal, expected):
 
 
 def test_mode11_stale_unknown_and_divided_votes_default_a():
-    for observations in (("B", "B"), ("UNKNOWN", "UNKNOWN"),
-                         ("A", "B")):
+    for observations in (("UNKNOWN", "UNKNOWN"), ("A", "B")):
         gate = Mode11ExitGate(confirmations=2)
         gate.enter(0.0)
         for index, signal in enumerate(observations):
             gate.observe(signal, 0.1+index*0.1)
         assert gate.evaluate(5.0).branch == "A"
         assert gate.commit_source == "DEFAULT_A"
+
+
+def _exit_detection(lamps):
+    state = SignalState.UNKNOWN
+    if lamps[0] == SignalState.GREEN:
+        state = SignalState.GREEN
+    elif lamps[1] == SignalState.GREEN:
+        state = SignalState.RED
+    return SignalDetection(state, 0, 0, tuple(lamps), (), .9)
+
+
+@pytest.mark.parametrize("lamps,expected,reason", (
+    ((SignalState.GREEN, SignalState.RED, SignalState.RED),
+     SelectedRoute.A, "LEFT_GREEN"),
+    ((SignalState.RED, SignalState.GREEN, SignalState.RED),
+     SelectedRoute.B, "CENTER_GREEN"),
+    ((SignalState.UNKNOWN, SignalState.RED, SignalState.RED),
+     SelectedRoute.A, "CENTER_RED+RIGHT_RED"),
+    ((SignalState.RED, SignalState.UNKNOWN, SignalState.RED),
+     SelectedRoute.B, "LEFT_RED+RIGHT_RED"),
+))
+def test_mode11_position_evidence_selects_a_or_b_after_five_seconds(
+        lamps, expected, reason):
+    window = SignalVoteWindow(5.0, 1, .75)
+    window.start(0.0)
+    window.observe_detection(_exit_detection(lamps), 1.0)
+    window.observe_detection(_exit_detection(lamps), 2.0)
+    assert window.evaluate(4.99).route == SelectedRoute.UNKNOWN
+    result = window.evaluate(5.0)
+    assert result.route == expected
+    assert result.reason == reason
+
+
+def test_mode11_missing_green_frames_do_not_erase_direct_green_history():
+    window = SignalVoteWindow(5.0, 1, .75, green_weight=3.0)
+    window.start(0.0)
+    window.observe_detection(_exit_detection((
+        SignalState.GREEN, SignalState.RED, SignalState.RED)), .1)
+    window.observe_detection(_exit_detection((
+        SignalState.GREEN, SignalState.RED, SignalState.RED)), .2)
+    for now in (1.0, 2.0, 3.0, 4.0):
+        window.observe_detection(_exit_detection((
+            SignalState.UNKNOWN, SignalState.RED, SignalState.RED)), now)
+    result = window.evaluate(5.0)
+    assert result.route == SelectedRoute.A
+    assert result.position_counts[0][1] == 2
+
+
+def test_mode11_inconclusive_or_multi_red_always_defaults_a_not_unknown():
+    window = SignalVoteWindow(5.0, 2, .75)
+    window.start(0.0)
+    window.observe_detection(_exit_detection((
+        SignalState.RED, SignalState.RED, SignalState.RED)), 1.0)
+    result = window.evaluate(5.0)
+    assert result.route == SelectedRoute.A
+    assert result.state == ObservationState.DEFAULTED
+
+
+def test_mode11_weighted_final_decision_can_commit_actual_gate():
+    gate = Mode11ExitGate(confirmations=60)
+    gate.enter(0.0)
+    assert gate.commit_external("B", "CAMERA_WEIGHTED:CENTER_GREEN")
+    assert gate.evaluate(4.99).stop
+    result = gate.evaluate(5.0)
+    assert result.branch == "B" and not result.stop
+    assert gate.commit_source == "CAMERA_WEIGHTED:CENTER_GREEN"
 
 
 def _satisfy_all_missions(tracker, end_branch):
@@ -243,7 +310,10 @@ def test_arbiter_all_priority_combinations_and_stale_source_guard_exists():
     for key in ("mission", "branch", "lidar_hold"):
         assert f'not self._fresh(("{key}",), now)' in source
     assert "lidar_safety_fresh = self._fresh(" in source
-    assert '("hard", "distance_slowdown", "steering_slowdown"), now' in source
+    for key in ("hard", "front_scan_fresh", "distance_slowdown",
+                "steering_slowdown"):
+        assert f'"{key}"' in source
+    assert "front_hard_emergency_applies(" in source
     assert 'steering_fresh = self._fresh(("steering",), now)' in source
     assert "safety_stop_reasons(" in source
 

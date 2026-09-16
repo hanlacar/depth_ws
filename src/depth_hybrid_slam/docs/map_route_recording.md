@@ -7,7 +7,7 @@
 
 - node: `map_route_recorder`
 - launch: `map_route_recording.launch.py`
-- 기본 출력: `/home/qor/depth_ws/routes/recorded_map`
+- 기본 출력: `~/depth_ws/routes/recorded_map`
 - pose: `/depth_slam/localization/pose`
   (`geometry_msgs/msg/PoseWithCovarianceStamped`)
 - state: `/depth_slam/localization/state` (`std_msgs/msg/String`)
@@ -26,45 +26,41 @@ direction이 바뀌면 `RECORDED_A_###` segment를 새로 시작한다.
 
 ## 실제 기록
 
-모든 터미널은 `ROS_DOMAIN_ID=41`, `rmw_fastrtps_cpp`를 사용한다.
+모든 터미널은 workspace root의 `setup_depth.sh`를 source한다.
 
 터미널 1 — D456 소유 프로세스:
 
 ```bash
-cd /home/qor/depth_ws
+cd ~/depth_ws
 ./scripts/run_d456_host.sh
 ```
 
 터미널 2 — cuVSLAM과 bridge:
 
 ```bash
-cd /home/qor/depth_ws
+cd ~/depth_ws
 ./scripts/run_cuvslam_container.sh
 ```
 
 터미널 3 — 보호된 DB를 read-only bind로 여는 RTAB-Map localization:
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 launch depth_hybrid_slam hybrid_localization.launch.py \
-  map_path:=/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
-  route_path:=/home/qor/depth_ws/routes/network/route_network_segmented.csv
+  map_path:=~/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
+  route_path:=~/depth_ws/routes/network/route_network_segmented.csv
 ```
 
 터미널 4 — recorder(실제 제어 없음):
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 launch depth_hybrid_slam map_route_recording.launch.py \
-  output_directory:=/home/qor/depth_ws/routes/recorded_map \
+  output_directory:=~/depth_ws/routes/recorded_map \
   resample_spacing_m:=0.10 start_rviz:=false \
   use_drive_command_direction:=false
 ```
@@ -72,10 +68,8 @@ ros2 launch depth_hybrid_slam map_route_recording.launch.py \
 터미널 5 — 키보드 제어:
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 ros2 run depth_hybrid_slam map_route_keyboard
 ```
 
@@ -94,10 +88,8 @@ ros2 service call /depth_slam/map_route_record/finish std_srvs/srv/Trigger '{}'
 터미널 6 — live RViz:
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 ros2 launch depth_hybrid_slam visualization.launch.py \
   start_rviz:=true start_image_view:=false
 ```
@@ -124,13 +116,13 @@ ros2 topic info /cmd_wheel -v
 한 번의 주행은 다음 파일을 만든다.
 
 ```text
-/home/qor/depth_ws/routes/recorded_map/map_route_raw_YYYYMMDD_HHMMSS.csv
-/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.csv
-/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.metadata.yaml
-/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.quality.json
-/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS_overview.png
-/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS_s_curve.png
-/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS_gps_reference.png
+~/depth_ws/routes/recorded_map/map_route_raw_YYYYMMDD_HHMMSS.csv
+~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.csv
+~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.metadata.yaml
+~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.quality.json
+~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS_overview.png
+~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS_s_curve.png
+~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS_gps_reference.png
 ```
 
 GPS plot은 좌우 native-coordinate 구조 비교일 뿐 alignment 또는 실패 지표가
@@ -145,10 +137,10 @@ S자 특징, 기존 `RouteFollower`의 backtrack 0/deviation 0/clamp/`ROUTE_COMP
 live 프로세스를 종료한 뒤 정적으로 지도와 경로를 다시 연다.
 
 ```bash
-export ROUTE=/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.csv
-export META=/home/qor/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.metadata.yaml
+export ROUTE=~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.csv
+export META=~/depth_ws/routes/recorded_map/map_route_A_YYYYMMDD_HHMMSS.metadata.yaml
 ros2 launch depth_hybrid_slam map_route_view.launch.py \
-  map_path:=/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
+  map_path:=~/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
   route_path:="$ROUTE" start_rviz:=true
 ```
 
@@ -157,7 +149,7 @@ ros2 launch depth_hybrid_slam map_route_view.launch.py \
 ```bash
 ros2 run depth_hybrid_slam map_route_validate \
   --metadata "$META" --route "$ROUTE" \
-  --map /home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
+  --map ~/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
   --approve-rviz
 ```
 
@@ -169,7 +161,7 @@ ros2 run depth_hybrid_slam map_route_validate \
 
 ```bash
 ros2 launch depth_hybrid_slam route_follower_dry_run.launch.py \
-  map_path:=/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
+  map_path:=~/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db \
   route_path:="$ROUTE" route_metadata_path:="$META" \
   piecewise_preview_path:='' piecewise_preview_metadata_path:=''
 ```

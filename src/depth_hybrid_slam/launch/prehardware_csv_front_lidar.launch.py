@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
+from depth_hybrid_slam.workspace_paths import workspace_root
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
@@ -13,6 +14,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     share = Path(get_package_share_directory("depth_hybrid_slam"))
+    root = workspace_root()
     route = LaunchConfiguration("route_path")
     metadata = LaunchConfiguration("route_metadata_path")
     route_loop = IncludeLaunchDescription(
@@ -36,8 +38,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "route_path", default_value=(
-                "/home/qor/depth_ws/routes/network/"
-                "route_network_segmented_stop_edited_vforward.csv")),
+                str(root/"routes"/"network"/
+                    "route_network_segmented_stop_edited_vforward.csv"))),
         DeclareLaunchArgument("route_metadata_path", default_value=""),
         DeclareLaunchArgument("spawn_branch", default_value="A"),
         DeclareLaunchArgument("start_mode", default_value="1"),

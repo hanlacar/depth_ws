@@ -18,7 +18,7 @@ class BranchDecision:
 
 
 class BranchSelector:
-    """User-selected start branch with a fail-safe Mode-11 default B."""
+    """User-selected start branch with a fail-safe Mode-11 default A."""
 
     def __init__(self, command_timeout_s=3.0, mode_11_wait_s=5.0,
                  initial_branch="A"):
@@ -73,9 +73,9 @@ class BranchSelector:
             if now-self.mode_11_entered_at < self.mode_11_wait_s:
                 return BranchDecision(
                     self.selected_branch, True, "MODE11_WAIT_BRANCH")
-            self.selected_branch = "B"
+            self.selected_branch = "A"
             self.mode_11_committed = True
-            return BranchDecision("B", False, "MODE11_TIMEOUT_DEFAULT_B")
+            return BranchDecision("A", False, "MODE11_TIMEOUT_DEFAULT_A")
         if fresh:
             self.selected_branch = self.command_branch
             return BranchDecision(self.selected_branch, False, "BRANCH_SELECTED")

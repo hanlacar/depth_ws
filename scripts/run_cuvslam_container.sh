@@ -2,12 +2,13 @@
 set -euo pipefail
 
 workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${workspace_root}/setup_depth.sh"
 host_name="$(hostname)"
 
 exec docker run --rm --gpus all --network host --ipc host --pid host \
   --hostname "${host_name}" --user "$(id -u):$(id -g)" \
-  -e ROS_LOG_DIR=/tmp/depth_ros_logs -e ROS_DOMAIN_ID=41 \
-  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
+  -e ROS_LOG_DIR=/tmp/depth_ros_logs -e ROS_DOMAIN_ID \
+  -e RMW_IMPLEMENTATION -e ROS_AUTOMATIC_DISCOVERY_RANGE \
   -v /etc/machine-id:/etc/machine-id:ro \
   -v "${workspace_root}/isaac_ros_ws:/workspaces/isaac_ros_ws:ro" \
   -v "${workspace_root}/src/depth_hybrid_slam:/workspaces/isaac_ros_ws/src/depth_hybrid_slam:ro" \

@@ -155,9 +155,10 @@ def assess_curved_roi(clusters, steering_deg, *, front_active=True,
 
 def mode_gates(mode):
     value = int(mode)
-    # The front scanner owns emergency detection throughout every live mode.
-    # A rear scanner, when installed, adds parking evidence in Modes 7/10 but
-    # is never a prerequisite for the front emergency path.
+    # The front scanner detects emergencies throughout every live mode. The
+    # command arbiter ignores fresh front-obstacle evidence only while Modes
+    # 7/10 are actively reversing. A rear scanner, when installed, adds
+    # reverse-direction parking protection.
     return 1 <= value <= 11, value in (7, 10)
 
 

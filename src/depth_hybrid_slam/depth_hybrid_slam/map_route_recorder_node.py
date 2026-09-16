@@ -16,6 +16,7 @@ from .map_route_recorder_core import (
     approve_rviz_review, resample_by_distance,
 )
 from .ros_helpers import quaternion_from_yaw, safe_shutdown, yaw_from_quaternion
+from .workspace_paths import workspace_root
 
 
 def map_pose_sample(message, localization_state, localization_confidence):
@@ -35,10 +36,14 @@ class MapRouteRecorderNode(Node):
 
     def __init__(self):
         super().__init__("map_route_recorder")
+        root = workspace_root()
         defaults = (
-            ("output_directory", "/home/qor/depth_ws/routes/recorded_map"),
-            ("map_path", "/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db"),
-            ("gps_reference_path", "/home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv"),
+            ("output_directory", str(root/"routes"/"recorded_map")),
+            ("map_path", str(root/"maps"/
+                             "merged_competition_level_aligned_v10"/
+                             "rtabmap.db")),
+            ("gps_reference_path", str(root/"routes"/"network"/
+                "route_network_segmented_stop_edited_vforward.csv")),
             ("pose_topic", "/depth_slam/localization/pose"),
             ("state_topic", "/depth_slam/localization/state"),
             ("confidence_topic", "/depth_slam/localization/confidence"),

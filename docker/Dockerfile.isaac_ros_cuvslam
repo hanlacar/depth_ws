@@ -8,10 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-isaac-ros-examples \
     ros-jazzy-rtabmap-ros \
     ros-jazzy-rmw-fastrtps-cpp \
+    ros-jazzy-rmw-cyclonedds-cpp \
     python3-psutil \
  && rm -rf /var/lib/apt/lists/*
 
-ENV ROS_DOMAIN_ID=41
-ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics

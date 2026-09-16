@@ -1,4 +1,4 @@
-"""One-shot terminal segment result formatting."""
+"""One-shot segment validation result formatting and terminal completion."""
 
 
 class SegmentResultLatch:
@@ -21,6 +21,11 @@ class SegmentResultLatch:
         if detail:
             line += " - "+detail
         self.results[segment] = line
-        if segment == self.end_mode:
+        # FAIL is an observable validation verdict, not a motion command.  A
+        # failed check must not strand the vehicle at the validation waypoint;
+        # only successful completion of the selected end mode may latch the
+        # early range terminal stop.  Independent safety faults remain handled
+        # by SafetyGate/CommandArbiter.
+        if segment == self.end_mode and bool(passed):
             self.terminal = True
         return line

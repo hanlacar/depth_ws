@@ -175,9 +175,9 @@ def test_new_mapping_target_rejects_existing_db_sidecars_and_checksum(tmp_path):
 
 def test_protected_and_outside_map_paths_are_rejected():
     assert "PROTECTED_MAP_PATH" in mapping_target_conflicts(
-        "/home/qor/depth_ws/maps/classroom_test/rtabmap.db")
+        PROTECTED_MAP_DIRS[0] / "rtabmap.db")
     assert "PROTECTED_MAP_PATH" in mapping_target_conflicts(
-        "/home/qor/depth_ws/maps/corridor_hand_test/rtabmap.db")
+        PROTECTED_MAP_DIRS[1] / "rtabmap.db")
     assert "MAP_PATH_OUTSIDE_ALLOWED_ROOT" in mapping_target_conflicts(
         "/tmp/session/rtabmap.db")
 

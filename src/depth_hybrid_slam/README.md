@@ -23,7 +23,7 @@ RGB-D odometry는 항상 꺼져 있다.
 - 설치 image: `depth/isaac_ros-cuvslam:4.6-d456`.
 - Isaac ROS 4.6의 공식 RealSense 예시는 D455/D435i를 열거한다. D456은
   공식 예제 명시 대상이 아니므로 이 저장소의 결과는 실제 D456 호환성 시험 결과다.
-- 모든 터미널은 `ROS_DOMAIN_ID=41`, `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`를 사용한다.
+- 모든 터미널은 workspace root의 `setup_depth.sh`를 source한다.
 - GPU/Isaac ROS 기준은 [Isaac ROS 4.6 시작 문서](https://nvidia-isaac-ros.github.io/v/release-4.6/getting_started/index.html)와
   [Visual SLAM 문서](https://nvidia-isaac-ros.github.io/repositories_and_packages/isaac_ros_visual_slam/isaac_ros_visual_slam/index.html)를 따른다.
 
@@ -31,15 +31,15 @@ RGB-D odometry는 항상 꺼져 있다.
 
 ```bash
 cd ~/depth_ws
-source /opt/ros/jazzy/setup.bash
+source setup_depth.sh
 PYTHONNOUSERSITE=1 colcon build --base-paths src \
   --packages-select depth_hybrid_slam --symlink-install
-source install/setup.bash
+source setup_depth.sh
 ```
 
 터미널 1에서 호스트 RealSense, 터미널 2에서 GPU 컨테이너를 시작한다.
 USB 장치는 컨테이너에 직접 넘기지 않는다. host DDS와 container가 같은 uid,
-host network/IPC/PID/hostname/machine-id를 사용해야 Fast DDS shared memory가 동작한다.
+host network/IPC/PID/hostname/machine-id를 공유한다.
 
 ```bash
 ./scripts/run_d456_host.sh
@@ -50,9 +50,7 @@ host network/IPC/PID/hostname/machine-id를 사용해야 Fast DDS shared memory�
 기존 DB를 자동 삭제하는 옵션은 없다.
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+source setup_depth.sh
 ros2 launch depth_hybrid_slam hybrid_mapping.launch.py \
   auto_session_name:=true high_density:=true \
   enable_control:=false dry_run:=true start_rviz:=false

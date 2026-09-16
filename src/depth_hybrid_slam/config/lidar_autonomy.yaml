@@ -59,8 +59,8 @@ depth_lidar_rejoin_validator:
 depth_maneuver_manager:
   ros__parameters:
     publish_hz: 20.0
-    # This vehicle configuration has one front LiDAR. Its measured A/B slot
-    # selection chooses the matching recorded CSV parking case.
+    # This vehicle configuration has one front LiDAR. Positive B evidence
+    # selects B; every other result selects the recorded A parking case.
     rear_lidar_enabled: false
     wheelbase_m: 0.73
     # Canonical generation constraint. Curvature and radius are derived.

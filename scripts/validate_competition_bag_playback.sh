@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-workspace=/home/qor/depth_ws
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+workspace="$(cd -- "${script_dir}/.." && pwd)"
+source "${workspace}/setup_depth.sh"
 [[ $# == 1 ]] || { echo "usage: $0 BAG_SESSION_PATH" >&2; exit 2; }
 bag_path="$(realpath -e "$1")"
 [[ "$bag_path" == "$workspace/bags/"* ]] || { echo "bag must be under $workspace/bags" >&2; exit 2; }
-set +u
-source /opt/ros/jazzy/setup.bash
-source "$workspace/install/setup.bash"
-set -u
-export ROS_DOMAIN_ID=41 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOG_DIR="$workspace/log/competition_bag_replay"
 mkdir -p "$ROS_LOG_DIR"
 if ros2 node list --no-daemon --spin-time 3 2>/dev/null | \

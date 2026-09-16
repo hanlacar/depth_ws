@@ -200,7 +200,9 @@ def test_modes_7_and_10_parking_selection_and_fallback():
     assert parking_decision(7, False, True, False,
                             "PLANNER_GIVE_UP").owner == "CSV"
     missing = parking_decision(7, False, False, False)
-    assert missing.stop and missing.state == "T_WAIT_LIDAR_SLOT"
+    assert not missing.stop and missing.branch == "A"
+    assert missing.state == "T_SELECT_A"
+    assert parking_decision(7, True, True, False).branch == "B"
     assert parking_decision(10, True, False, True).state == "V_LIDAR_PATH"
     assert parking_decision(10, False, True, False,
                             "PATH_ABORT").branch == "B"
@@ -322,7 +324,7 @@ def test_mode9_is_fixed_stage_three_except_hard_emergency():
     assert safety.assess(_points(0.61)).hard_obstacle
     assert not safety.assess(_points(0.61)).hard_obstacle
     mode9 = Mode9Emergency()
-    assert mode9.update(True).state == "EMERGENCY_STOP"
+    assert mode9.update(True).state == "MODE9_OBSTACLE_WAIT"
     resumed = mode9.update(False)
     assert resumed.state == "ACCEL_TRACKING"
     assert not resumed.stop and resumed.drive == 3.0
@@ -378,7 +380,7 @@ def test_mode9_emergency_latch_holds_dropouts_and_near_obstacle_until_clear():
     # B: one to three empty scan frames cannot satisfy a one-second clear.
     for index in range(3):
         assert latch.update(False, None, True, True, 10.0+index*0.05)
-        assert mode9.update(latch.latched).state == "EMERGENCY_STOP"
+        assert mode9.update(latch.latched).state == "MODE9_OBSTACLE_WAIT"
 
     # No scan and stale scan periods are not clear confirmations or timeouts.
     for index in range(200):
@@ -388,7 +390,7 @@ def test_mode9_emergency_latch_holds_dropouts_and_near_obstacle_until_clear():
     # C: any obstacle at or inside 1.5 m resets clear confirmation.
     assert latch.update(False, 1.49, True, True, 22.0)
     assert latch.clear_since is None
-    assert mode9.update(latch.latched).state == "EMERGENCY_STOP"
+    assert mode9.update(latch.latched).state == "MODE9_OBSTACLE_WAIT"
 
     # D: release happens only after one continuous second beyond 1.5 m.
     assert latch.update(False, 1.51, True, True, 23.0)
@@ -433,12 +435,14 @@ def test_front_only_launch_disables_rear_parking_without_camera_nodes():
     assert "csv_road_validator" not in launch
 
 
-def test_front_only_parking_uses_explicit_csv_fallback():
+def test_front_only_parking_compares_csv_footprints_without_rear_lidar():
     source = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam/" /
               "maneuver_manager_node.py").read_text()
     assert 'self.declare_parameter("rear_lidar_enabled", True)' in source
     assert "ManeuverDecision, Mode11ExitGate" in source
-    assert 'if not bool(self.get_parameter("rear_lidar_enabled").value):' in source
+    assert "select_explicit_b_slot(" in source
+    assert "self.parking_assessments" in source
+    assert "assess_parking_path(" in source
     assert 'prefix+"_CSV_FALLBACK"' in source
 
 

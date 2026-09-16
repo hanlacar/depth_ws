@@ -172,6 +172,14 @@ def test_small_green_noise_is_unknown(detector):
     assert detector.detect(image).raw_state == "UNKNOWN"
 
 
+def test_small_green_noise_does_not_hide_real_green(detector):
+    image = circle((0, 255, 0), center=(320, 90))
+    image[70:72, 100:102] = (0, 255, 0)
+    result = detector.detect(image)
+    assert result.raw_state == "G"
+    assert result.selected.area_px >= detector.config.minimum_signal_area_px
+
+
 def test_large_green_sign_is_unknown(detector):
     image = canvas()
     cv2.rectangle(image, (100, 40), (540, 220), (0, 255, 0), -1)
@@ -186,12 +194,12 @@ def test_unlit_dark_green_object_is_unknown(detector):
     assert detector.detect(circle((0, 80, 0))).raw_state == "UNKNOWN"
 
 
-def test_green_without_dark_housing_is_unknown(detector):
+def test_green_without_dark_housing_is_allowed_but_gets_no_housing_bonus(detector):
     image = np.full((480, 640, 3), 120, np.uint8)
     cv2.circle(image, (320, 90), 14, (0, 255, 0), -1, cv2.LINE_AA)
     result = detector.detect(image)
-    assert result.raw_state == "UNKNOWN"
-    assert result.rejection_reasons.get("insufficient_dark_housing", 0) >= 1
+    assert result.raw_state == "G"
+    assert result.selected.housing_dark_ratio < detector.config.dark_ratio_threshold
 
 
 def test_low_confidence_candidate_is_unknown():
@@ -201,19 +209,18 @@ def test_low_confidence_candidate_is_unknown():
     assert result.rejection_reasons.get("low_confidence", 0) >= 1
 
 
-def test_red_green_similar_confidence_is_green_priority(detector):
+def test_red_green_similar_confidence_is_unknown_conflict(detector):
     image = circle((0, 0, 255), center=(280, 90))
     cv2.circle(image, (360, 90), 14, (0, 255, 0), -1, cv2.LINE_AA)
     result = detector.detect(image)
-    assert result.raw_state == "G" and not result.conflict
+    assert result.raw_state == "UNKNOWN" and result.conflict
 
 
-def test_same_housing_red_green_is_green_priority(detector):
+def test_same_housing_red_green_is_unknown_conflict(detector):
     image = circle((0, 0, 255), center=(300, 90))
     cv2.circle(image, (340, 90), 14, (0, 255, 0), -1, cv2.LINE_AA)
     result = detector.detect(image)
-    assert result.raw_state == "G"
-    assert result.selected.color == "green"
+    assert result.raw_state == "UNKNOWN" and result.conflict
 
 
 def candidate(state, confidence, bbox=(100, 40, 20, 20), color=None):
@@ -223,10 +230,39 @@ def candidate(state, confidence, bbox=(100, 40, 20, 20), color=None):
                      "LEFT_ARROW" if state == "G" else "CIRCLE", 0.1, 0.8)
 
 
-def test_valid_green_has_priority_over_higher_confidence_red(detector):
+def test_strongest_candidate_wins_when_confidence_gap_is_unambiguous(detector):
     red, green = candidate("R", .94), candidate("G", .62, (200, 40, 20, 20))
     result = detector._resolve((red, green), {}, (0, 0, 640, 264))
-    assert result.raw_state == "G"
+    assert result.raw_state == "R"
+
+
+@pytest.mark.parametrize("hue,saturation,value,color", (
+    (45, 100, 140, "green"), (104, 100, 140, "green"),
+    (13, 100, 140, "yellow"), (34, 100, 140, "yellow"),
+))
+def test_requested_widened_hsv_edge_cases_are_detected(
+        detector, hue, saturation, value, color):
+    hsv = np.zeros((480, 640, 3), np.uint8)
+    cv2.circle(hsv, (320, 90), 14, (hue, saturation, value), -1)
+    result = detector.detect(cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR))
+    assert result.raw_state == ("G" if color == "green" else "R"), \
+        result.rejection_reasons
+    assert result.selected.color == color
+
+
+def test_requested_hsv_threshold_parameters_are_exact(detector):
+    config = detector.config
+    assert (config.green_hue_min, config.green_hue_max,
+            config.green_s_min, config.green_v_min) == (35, 105, 80, 90)
+    assert (config.yellow_hue_min, config.yellow_hue_max,
+            config.yellow_s_min, config.yellow_v_min) == (12, 40, 90, 110)
+
+
+def test_multiple_spatially_separate_strong_candidates_are_unknown(detector):
+    first = candidate("R", .90, (100, 40, 20, 20))
+    second = candidate("R", .88, (300, 40, 20, 20))
+    result = detector._resolve((first, second), {}, (0, 0, 640, 264))
+    assert result.raw_state == "UNKNOWN" and result.conflict
 
 
 def test_confirmation_and_switch_require_multiple_frames():

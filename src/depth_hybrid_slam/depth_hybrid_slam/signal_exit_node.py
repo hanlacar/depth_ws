@@ -26,12 +26,22 @@ class SignalExitNode(Node):
             "exit_roi": [0.05, 0.00, 0.95, 0.40],
             "red_1_low": [0, 90, 90], "red_1_high": [12, 255, 255],
             "red_2_low": [168, 90, 90], "red_2_high": [179, 255, 255],
-            "green_core_low": [40, 90, 90],
-            "green_core_high": [85, 255, 255],
-            "green_extended_low": [86, 60, 50],
-            "green_extended_high": [110, 255, 125],
+            "green_core_low": [35, 80, 90],
+            "green_core_high": [105, 255, 255],
+            "green_extended_low": [35, 80, 90],
+            "green_extended_high": [105, 255, 255],
+            "minimum_signal_area_px": 40.0,
+            "dark_pixel_threshold": 80,
+            "dark_ratio_threshold": 0.08,
+            "exit_slot_centers": [0.25, 0.50, 0.75],
+            "exit_slot_max_distance": 0.18,
+            "exit_slot_conflict_margin": 0.12,
+            "exit_green_weight": 3.0,
+            "exit_red_pair_weight": 1.0,
+            "exit_min_green_observations": 2,
+            "exit_min_red_pair_observations": 2,
             "minimum_valid_frames": 60, "decision_ratio": 0.75,
-            "observation_duration_s": 5.0,
+            "exit_decision_time_sec": 5.0,
             "track_confirmations": 3, "track_missing_hold_s": 0.25,
             "track_minimum_confidence": 0.5,
         }
@@ -48,11 +58,20 @@ class SignalExitNode(Node):
             HSVRange(tuple(value("green_core_low")),
                      tuple(value("green_core_high"))),
             HSVRange(tuple(value("green_extended_low")),
-                     tuple(value("green_extended_high"))))
+                     tuple(value("green_extended_high"))),
+            minimum_contour_area=float(value("minimum_signal_area_px")),
+            panel_dark_value=int(value("dark_pixel_threshold")),
+            dark_ratio_threshold=float(value("dark_ratio_threshold")),
+            slot_centers=tuple(float(item) for item in value("exit_slot_centers")),
+            slot_max_distance=float(value("exit_slot_max_distance")),
+            slot_conflict_margin=float(value("exit_slot_conflict_margin")))
         self.detector = SignalExitDetector(config, roi)
         self.window = SignalVoteWindow(
-            value("observation_duration_s"), value("minimum_valid_frames"),
-            value("decision_ratio"))
+            value("exit_decision_time_sec"), value("minimum_valid_frames"),
+            value("decision_ratio"), value("exit_green_weight"),
+            value("exit_red_pair_weight"),
+            value("exit_min_green_observations"),
+            value("exit_min_red_pair_observations"))
         self.track = ExitSignalTrack(
             value("track_confirmations"), value("track_missing_hold_s"),
             value("track_minimum_confidence"))
@@ -60,6 +79,7 @@ class SignalExitNode(Node):
         self.bridge = CvBridge()
         self.mode = -1
         self.last_window_state = ObservationState.IDLE
+        self.last_debug_log = 0.0
         self.create_subscription(String, "/drive_mode", self._mode, 10)
         self.create_subscription(
             Image, str(value("image_topic")), self._image,
@@ -104,11 +124,20 @@ class SignalExitNode(Node):
             return
         now = time.monotonic()
         self.latest_track = self.track.update(detection, now)
-        tracked_state = self.latest_track["state"]
-        snapshot = self.window.observe(tracked_state, now)
-        # Raw A/B evidence feeds the existing five-second commit gate.  The
-        # gate, not this advisory camera node, owns DEFAULT and branch commit.
-        self.signal_pub.publish(String(data=self._raw_route(tracked_state)))
+        snapshot = self.window.observe_detection(detection, now)
+        # Preserve the legacy raw A/B topic while the weighted final event is
+        # the authoritative branch decision after the five-second window.
+        self.signal_pub.publish(String(data=self._raw_route(detection.state)))
+        if now-self.last_debug_log >= 1.0:
+            self.last_debug_log = now
+            counts = snapshot.position_counts or ((0, 0),)*3
+            self.get_logger().info(
+                "[EXIT_SIGNAL] elapsed=%.1fs L(R=%d,G=%d) C(R=%d,G=%d) "
+                "R(R=%d,G=%d) A=%.1f B=%.1f reason=%s" % (
+                    snapshot.elapsed, counts[0][0], counts[0][1],
+                    counts[1][0], counts[1][1], counts[2][0], counts[2][1],
+                    snapshot.a_score, snapshot.b_score,
+                    detection.reason))
         self._publish(snapshot)
 
     def _tick(self):
@@ -127,6 +156,9 @@ class SignalExitNode(Node):
             "source": source, "confidence": snapshot.confidence,
             "green": snapshot.green, "red": snapshot.red,
             "unknown": snapshot.unknown, "elapsed_s": snapshot.elapsed,
+            "a_score": snapshot.a_score, "b_score": snapshot.b_score,
+            "reason": snapshot.reason,
+            "position_counts": snapshot.position_counts,
             "bbox": self.latest_track.get("bbox", ()),
             "track_confidence": self.latest_track.get("confidence", 0.0),
             "last_seen": self.latest_track.get("last_seen"),
@@ -135,6 +167,11 @@ class SignalExitNode(Node):
             "track_continuity": self.latest_track.get(
                 "track_continuity", 0),
         }, separators=(",", ":"))))
+        if snapshot.state in (ObservationState.LATCHED,
+                              ObservationState.DEFAULTED):
+            self.get_logger().info(
+                f"[EXIT_SIGNAL] FINAL={snapshot.route.value} "
+                f"reason={snapshot.reason}")
         self.last_window_state = snapshot.state
 
 

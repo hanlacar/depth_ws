@@ -9,6 +9,13 @@ from .route_io import forward_tangent_yaw
 from .vehicle_kinematics import clamp_steering, steering_from_curvature
 
 
+def localization_is_ready(state, stable_since, now, stability_s):
+    """Apply an optional stabilization delay after localization tracking."""
+    return (str(state) in ("TRACKING", "RELOCALIZED") and
+            stable_since is not None and
+            float(now)-float(stable_since) >= max(0.0, float(stability_s)))
+
+
 def validate_mode_range(start_mode, end_mode):
     start, end = int(start_mode), int(end_mode)
     if not 1 <= start <= end <= 11:

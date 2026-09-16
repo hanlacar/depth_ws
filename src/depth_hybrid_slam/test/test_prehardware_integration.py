@@ -41,7 +41,7 @@ def test_branch_default_b_timeout_and_mode11_wait():
     assert selector.evaluate(1.2).branch == "B"
     selector.set_mode(11, 2.0)
     assert selector.evaluate(4.9).stop
-    assert selector.evaluate(5.0).state == "MODE11_TIMEOUT_DEFAULT_B"
+    assert selector.evaluate(5.0).state == "MODE11_TIMEOUT_DEFAULT_A"
     selector.set_mode(1, 5.1)
     selector.set_mode(11, 6.0)
     selector.set_command("B", 6.1)
@@ -185,26 +185,27 @@ def test_required_production_topic_owners_are_explicit():
     assert '"prehardware_test_only"' not in lidar
     assert 'Int32, "/cmd_wheel", self._fallback_steering' not in lidar
     assert '"/depth_slam/lidar/rear_hard_emergency"' in lidar
-    assert 'self.hard or self.rear_hard' in (
-        ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
-        "maneuver_manager_node.py").read_text()
-    assert 'valid = decision.owner == "LIDAR"' in (
-        ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
-        "maneuver_manager_node.py").read_text()
+    manager = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
+               "maneuver_manager_node.py").read_text()
+    assert 'front_hard or self.rear_hard' in manager
+    assert 'parking_reverse_phase(' in manager
+    assert 'valid = decision.owner == "LIDAR"' in manager
     assert 'command = f"{choice}:{branch}"' in (
         ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
         "maneuver_manager_node.py").read_text()
-    assert 'self.case_choices[prefix] == branch' in (
+    assert 'self.case_choices[prefix]' in (
         ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
         "maneuver_manager_node.py").read_text()
-    assert 'expected_csv_direction = -1.0 if self.mode == 7 else 1.0' in (
+    assert 'ComputePathThroughPoses' in (
         ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
         "maneuver_manager_node.py").read_text()
     manager = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
                "maneuver_manager_node.py").read_text()
     assert 'self.parking_plans = {7: None, 10: None}' in manager
-    assert 'plan = self.parking_plans[self.mode]' in manager
-    assert 'parking.state == "CSV_APPROACH"' in manager
+    assert 'self.parking_plans[self.mode] = self.nav2_plan' in manager
+    assert 'self.nav2_pending' in manager
+    assert 'prefix+"_"+runtime.state, "CSV", False' in manager
+    assert 'prefix+"_SLAM_FREEZE"' in manager
     assert '"/depth_slam/lidar/csv_rejoin_valid"' in rejoin
     assert '"/depth_slam/lidar/planned_rejoin_index"' in rejoin
     assert '"PLANNED_EXACT_ENDPOINT"' in rejoin

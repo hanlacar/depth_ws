@@ -1,6 +1,7 @@
 """Record manual-drive localization poses directly in the VSLAM map frame."""
 
 from ament_index_python.packages import get_package_share_directory
+from depth_hybrid_slam.workspace_paths import workspace_root
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -9,12 +10,18 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    root = workspace_root()
     config = get_package_share_directory("depth_hybrid_slam") + \
         "/config/classroom_localization.rviz"
     arguments = [
-        DeclareLaunchArgument("output_directory", default_value="/home/qor/depth_ws/routes/recorded_map"),
-        DeclareLaunchArgument("map_path", default_value="/home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db"),
-        DeclareLaunchArgument("gps_reference_path", default_value="/home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv"),
+        DeclareLaunchArgument(
+            "output_directory", default_value=str(root/"routes"/"recorded_map")),
+        DeclareLaunchArgument(
+            "map_path", default_value=str(root/"maps"/
+                "merged_competition_level_aligned_v10"/"rtabmap.db")),
+        DeclareLaunchArgument(
+            "gps_reference_path", default_value=str(root/"routes"/"network"/
+                "route_network_segmented_stop_edited_vforward.csv")),
         DeclareLaunchArgument("resample_spacing_m", default_value="0.10"),
         DeclareLaunchArgument("stationary_duplicate_m", default_value="0.01"),
         DeclareLaunchArgument("recovery_jump_m", default_value="0.75"),

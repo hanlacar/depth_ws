@@ -29,7 +29,8 @@ from .ros_helpers import (
     yaw_from_quaternion,
 )
 from .route_follower_core import (
-    RouteFollower, select_mode_range, stop_reference_reached)
+    RouteFollower, localization_is_ready, select_mode_range,
+    stop_reference_reached)
 from .csv_only_branching import load_csv_only_route_case, remap_case_progress
 from .route_io import (
     DEFAULT_BRANCH, is_segmented_columns, load_segmented_route, sha256,
@@ -91,6 +92,7 @@ class RouteFollowerNode(Node):
                               ("stop_reference_frame", "front_laser"),
                               ("prehardware_test_override_alignment", False),
                               ("allow_odom_route_origin", False),
+                              ("initial_branch", DEFAULT_BRANCH),
                               ("prehardware_csv_only_case_selection", False),
                               ("controller_hz", 30.0)):
             self.declare_parameter(name, default)
@@ -98,7 +100,10 @@ class RouteFollowerNode(Node):
         metadata_path = str(self.get_parameter("route_metadata_path").value)
         self.route_path = path
         self.route_metadata_path = metadata_path
-        self.active_branch = DEFAULT_BRANCH
+        self.active_branch = str(
+            self.get_parameter("initial_branch").value).strip().upper()
+        if self.active_branch not in ("A", "B"):
+            raise ValueError("initial_branch must be A or B")
         self.route_info = None
         if path and route_is_segmented(path):
             self.route_info = load_segmented_route(
@@ -583,10 +588,10 @@ class RouteFollowerNode(Node):
         self.grid_receipt = time.monotonic()
 
     def localization_ready(self):
-        return (self.localization_state in ("TRACKING", "RELOCALIZED") and
-                self.localization_stable_since is not None and
-                time.monotonic()-self.localization_stable_since >= float(
-                    self.get_parameter("localization_stability_s").value))
+        return localization_is_ready(
+            self.localization_state, self.localization_stable_since,
+            time.monotonic(),
+            self.get_parameter("localization_stability_s").value)
 
     def grid_ready(self):
         return (self.grid is not None and self.grid_receipt is not None and
@@ -656,6 +661,7 @@ class RouteFollowerNode(Node):
             reason = self.binding_reason
             result = original
         else:
+            navigation_state_before_update = self.navigation_state
             if self.external_maneuver_active:
                 # A valid LiDAR temporary path intentionally leaves the CSV
                 # centerline. The final arbiter owns that command, so the CSV
@@ -706,6 +712,15 @@ class RouteFollowerNode(Node):
                     self.rejoin_route = []
             else:
                 result = original
+            if (navigation_state_before_update != "ROUTE_DEVIATION_STOP" and
+                    self.navigation_state == "ROUTE_DEVIATION_STOP"):
+                self.get_logger().error(
+                    "\n"
+                    "==================================================\n"
+                    "==================== 경로이탈 ====================\n"
+                    " ROUTE_DEVIATION_STOP: "
+                    f"cross_track_error={original.cross_track_error:.3f} m\n"
+                    "==================================================")
             reason = ("EXTERNAL_MANEUVER_ACTIVE"
                       if self.external_maneuver_active else
                       self.navigation_state

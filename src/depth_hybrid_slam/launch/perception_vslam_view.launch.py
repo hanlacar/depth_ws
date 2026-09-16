@@ -1,6 +1,5 @@
 """Existing camera perception plus live VSLAM projection and two-view display."""
 
-import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -19,10 +18,6 @@ from launch_ros.actions import Node
 
 
 def _guard(context):
-    if os.environ.get("ROS_DOMAIN_ID") != "41":
-        raise RuntimeError("integration requires ROS_DOMAIN_ID=41")
-    if os.environ.get("RMW_IMPLEMENTATION") != "rmw_fastrtps_cpp":
-        raise RuntimeError("integration requires RMW_IMPLEMENTATION=rmw_fastrtps_cpp")
     if not as_bool(LaunchConfiguration("graph_guard").perform(context)):
         return [LogInfo(msg="WARNING: perception/VSLAM graph guard disabled")]
     graph = ensure_safe_integration_graph()

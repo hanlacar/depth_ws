@@ -16,9 +16,10 @@ import yaml
 
 from .route_finalizer import realign_route
 from .route_io import sha256
+from .workspace_paths import workspace_root
 
 
-WORKSPACE = Path("/home/qor/depth_ws")
+WORKSPACE = workspace_root()
 MAPS_ROOT = WORKSPACE / "maps"
 ROUTES_ROOT = WORKSPACE / "routes"
 BAGS_ROOT = WORKSPACE / "bags"

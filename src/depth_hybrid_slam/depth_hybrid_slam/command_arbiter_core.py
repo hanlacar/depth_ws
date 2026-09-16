@@ -107,12 +107,35 @@ def _valid(candidate):
         return False
 
 
+def parking_reverse_requested(mode, csv, lidar):
+    """Return true only for a fresh reverse candidate in parking modes."""
+    if int(mode) not in (7, 10):
+        return False
+    return any(_valid(candidate) and float(candidate.drive) < 0.0
+               for candidate in (lidar, csv))
+
+
+def front_hard_emergency_applies(front_hard, front_scan_fresh, mode,
+                                 csv, lidar):
+    """Ignore a detected front obstacle only while parking in reverse.
+
+    A stale front scanner is still fail-safe. Only fresh obstacle evidence in
+    the direction opposite to travel is ignored.
+    """
+    if not bool(front_hard):
+        return False
+    return not (bool(front_scan_fresh) and
+                parking_reverse_requested(mode, csv, lidar))
+
+
 def arbitrate(csv, lidar, hard_emergency=False, mission_hold=False,
               lidar_slowdown=False, mode=-1, steering_slowdown=False,
-              camera=None):
+              camera=None, transient_obstacle_wait=False):
     """Choose exactly one owner: STOP > LiDAR/parking > camera > CSV."""
     if hard_emergency:
-        return ArbiterDecision(0.0, 0, "SAFETY", "HARD_EMERGENCY_STOP")
+        state = ("MODE9_OBSTACLE_WAIT" if transient_obstacle_wait else
+                 "HARD_EMERGENCY_STOP")
+        return ArbiterDecision(0.0, 0, "SAFETY", state)
     if mission_hold:
         return ArbiterDecision(0.0, 0, "MISSION", "MISSION_STOP_HOLD")
     if _valid(lidar):

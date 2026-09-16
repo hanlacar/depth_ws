@@ -2,11 +2,19 @@ import math
 
 from depth_hybrid_slam.models import Pose2D, RoutePoint
 from depth_hybrid_slam.route_follower_core import (
-    RouteFollower, stop_reference_reached)
+    RouteFollower, localization_is_ready, stop_reference_reached)
 
 
 def route(points):
     return [RoutePoint(i, x, y, yaw) for i, (x, y, yaw) in enumerate(points)]
+
+
+def test_odom_only_can_use_tracking_immediately_while_vslam_delay_remains():
+    assert localization_is_ready("TRACKING", 10.0, 10.0, 0.0)
+    assert not localization_is_ready("TRACKING", 10.0, 11.99, 2.0)
+    assert localization_is_ready("TRACKING", 10.0, 12.0, 2.0)
+    assert not localization_is_ready("STALE", 10.0, 12.0, 0.0)
+    assert not localization_is_ready("TRACKING", None, 12.0, 0.0)
 
 
 def test_straight_and_unapproved_is_zero_drive():

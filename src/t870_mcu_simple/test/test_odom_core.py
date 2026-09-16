@@ -9,8 +9,12 @@ def test_bridge_exposes_command_and_firmware_confirmation_contract():
     source = (Path(__file__).resolve().parents[1]/"t870_mcu_simple"/
               "bridge_node.py").read_text(encoding="utf-8")
     for topic in (
+            'Float32, "/cmd_drive"', 'Int32, "/cmd_wheel"',
+            'Bool, "/mcu/ready"', 'Float32, "/mcu/steer_deg"',
+            'Int32, "/mcu/encoder"',
             "/mcu/command_diagnostics", "/mcu/firmware_drive_pwm",
-            "/mcu/firmware_armed"):
+            "/mcu/firmware_armed", "/mcu/speed_mps", "/mcu/distance_m",
+            'Odometry, "/odom"'):
         assert topic in source
     for key in (
             "commanded_stage", "applied_stage", "applied_pwm",
@@ -20,7 +24,30 @@ def test_bridge_exposes_command_and_firmware_confirmation_contract():
     arm = source.split("def configure_and_arm", 1)[1].split(
         "def io_tick", 1)[0]
     assert "self.odom_model.reset_encoder_baseline()" in arm
-    assert "self.last_encoder = None" in arm
+    assert "self.last_enc = None" in arm
+
+
+def test_launch_keeps_port_auto_argument_contract():
+    from pathlib import Path
+
+    launch = (Path(__file__).resolve().parents[1]/"launch"/
+              "mcu.launch.py").read_text(encoding="utf-8")
+    assert "DeclareLaunchArgument('port', default_value='auto')" in launch
+    assert "'port': LaunchConfiguration('port')" in launch
+
+
+def test_rear_forward_fix_is_preserved_in_runtime_configuration():
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parents[1]
+    config = (package / "config" / "mcu.yaml").read_text(encoding="utf-8")
+    source = (package / "t870_mcu_simple" / "bridge_node.py").read_text(
+        encoding="utf-8")
+
+    assert "front_forward_level: 0" in config
+    assert "rear_forward_level: 1" in config
+    assert 'self.declare_parameter("rear_forward_level", 1)' in source
+    assert 'f"CFG,REAR_FWD,{self.rear_fwd}"' in source
 
 
 def test_stationary_encoder_never_moves_odom():
@@ -46,7 +73,7 @@ def test_measured_ticks_and_measured_steering_drive_pose():
 def test_left_positive_axis_reaches_mcu_and_feedback_without_inversion():
     source = (__import__("pathlib").Path(__file__).resolve().parents[1] /
               "t870_mcu_simple" / "bridge_node.py").read_text()
-    assert 'self.send(f"W,{degree}")' in source
+    assert 'self.send(f"W,{deg}")' in source
     assert steering_from_adc(484+18*10, 484, 18, 22) == 10
     assert steering_from_adc(484-18*10, 484, 18, 22) == -10
 

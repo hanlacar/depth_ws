@@ -6,6 +6,26 @@ from dataclasses import dataclass
 from .geometry import compose, interpolate_transform, wrap_angle
 
 
+def odom_only_map_edge(vslam_enabled, source_frame, map_frame):
+    """Return the missing TF edge without competing with a VSLAM owner."""
+    source = str(source_frame).lstrip("/")
+    target = str(map_frame).lstrip("/")
+    if bool(vslam_enabled) or not source or not target or source == target:
+        return None
+    return target, source
+
+
+def align_odom_pose_to_route_entry(odom_x, odom_y, odom_yaw,
+                                   entry_x, entry_y, entry_yaw):
+    """Return ``map<-odom`` that places the current pose at route entry."""
+    yaw = wrap_angle(float(entry_yaw)-float(odom_yaw))
+    cosine, sine = math.cos(yaw), math.sin(yaw)
+    rotated_x = cosine*float(odom_x)-sine*float(odom_y)
+    rotated_y = sine*float(odom_x)+cosine*float(odom_y)
+    return (float(entry_x)-rotated_x,
+            float(entry_y)-rotated_y, yaw)
+
+
 @dataclass(frozen=True)
 class VslamGateDecision:
     use_vslam: bool

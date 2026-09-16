@@ -1,9 +1,9 @@
 format_version: 3
 finalized: true
 route_name: competition_full_route_default_a_stage1
-route_csv: /home/qor/depth_ws/routes/network/route_network_segmented_stop_edited_vforward.csv
+route_csv: routes/network/route_network_segmented_stop_edited_vforward.csv
 route_sha256: b9fca2fc46e98e7ce120b7b8791e39f093d74ebaedf393145b00a0bf048783a0
-rtabmap_db: /home/qor/depth_ws/maps/merged_competition_level_aligned_v10/rtabmap.db
+rtabmap_db: maps/merged_competition_level_aligned_v10/rtabmap.db
 rtabmap_db_sha256: a9606bed581f1f32b06af5a68b37d41dfccc74f8cda3840bb7fb76c7ac6795ca
 route_coordinate_frame: gps_local_enu
 frame_id: map
@@ -52,8 +52,8 @@ alignment:
     accepted: false
   piecewise_candidate:
     method: piecewise_se2_ordered_distinctive_sections
-    output_csv: /home/qor/depth_ws/routes/network/route_network_segmented_aligned.csv
-    output_metadata: /home/qor/depth_ws/routes/network/route_network_segmented_aligned.metadata.yaml
+    output_csv: routes/network/route_network_segmented_aligned.csv
+    output_metadata: routes/network/route_network_segmented_aligned.metadata.yaml
     zone_count: 6
     blend_distance_m: 8.0
     interpolation: centered cubic smoothstep; shortest angular distance
@@ -160,9 +160,9 @@ continuity:
   maximum_point_step_m: 1.25
   maximum_segment_connection_m: 1.25
 stop_edit:
-  source_csv: /home/qor/depth_ws/routes/network/route_network_segmented.csv
+  source_csv: routes/network/route_network_segmented.csv
   source_sha256: d8e36adb9ccf275e5203474f0beaf12437f7a58724f61168ea15a98981f533ee
-  source_metadata: /home/qor/depth_ws/routes/network/route_network_segmented.metadata.yaml
+  source_metadata: routes/network/route_network_segmented.metadata.yaml
   source_metadata_sha256: 3edf59471f70a7044b1041f1e4ffcde6e863b46398f10edb352cb21ab4ba75e5
   added_stops:
   - - START_A
@@ -500,9 +500,9 @@ stop_edit:
     STOP_count: 11
     reverse_count: 131
   visualization_only_overlay:
-    route_csv: /home/qor/depth_ws/routes/network/route_network_segmented_all_branches_display_aligned.csv
+    route_csv: routes/network/route_network_segmented_all_branches_display_aligned.csv
     route_sha256: 5e8088023613bc18e2826085e59091496907f2f0b1de968c9fabc6d2935670a7
-    metadata: /home/qor/depth_ws/routes/network/route_network_segmented_all_branches_display_aligned.metadata.yaml
+    metadata: routes/network/route_network_segmented_all_branches_display_aligned.metadata.yaml
     metadata_sha256: 4902e84ae71fbb51012a357fd60de4680efd798908e381901fd6c1280a414787
     frame_id: map
     alignment_validated: false
@@ -511,7 +511,7 @@ vforward_integration:
   reference_repository: https://github.com/hanlacar/mmission_ws.git
   reference_commit: fc535402100c19159fc87474143b9a874bd0848e
   reference_csv: routes/route_network_segmented_10.csv
-  source_csv: /home/qor/depth_ws/routes/network/route_network_segmented_stop_edited.csv
+  source_csv: routes/network/route_network_segmented_stop_edited.csv
   source_sha256: ea2bc1f561c8b2016c48723a374d184d828d3d38bef457851d383fe271f290c1
   longitude_origin_delta_deg: 1.6940001046350517e-07
   geometry_coordinates_modified: false

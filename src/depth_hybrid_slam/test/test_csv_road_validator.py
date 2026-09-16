@@ -160,3 +160,12 @@ def test_validator_source_has_no_vehicle_command_publishers():
                   "/camera_wheel", "/gps_drive", "/gps_wheel",
                   "/mcu/cmd_drive", "/mcu/cmd_wheel"):
         assert topic not in source
+
+
+def test_validator_node_imports_stale_input_used_by_motion_timeout():
+    source = (Path(__file__).parents[1]/"depth_hybrid_slam"/
+              "csv_road_validator_node.py").read_text()
+    imports = source.split("def _yaw", 1)[0]
+    use = source.split("def _result", 1)[1]
+    assert "STALE_INPUT" in imports
+    assert "unavailable_result(STALE_INPUT" in use

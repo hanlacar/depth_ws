@@ -14,10 +14,13 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 from depth_hybrid_slam.rosbag_rotation import prepare_bag_path
-from depth_hybrid_slam.route_follower_core import validate_mode_range
+from depth_hybrid_slam.route_follower_core import (
+    select_mode_range, validate_mode_range)
+from depth_hybrid_slam.route_io import load_segmented_route
+from depth_hybrid_slam.workspace_paths import workspace_root
 
 
-ROOT = "/home/qor/depth_ws"
+ROOT = workspace_root()
 
 
 def _runtime(context):
@@ -36,19 +39,25 @@ def _runtime(context):
         raise RuntimeError(str(error)) from error
     vslam_enabled = value("enable_vslam").strip().lower() in (
         "1", "true", "yes", "on")
+    parking_slam_enabled = value("enable_parking_slam").strip().lower() in (
+        "1", "true", "yes", "on")
     camera_enabled = value("use_camera").strip().lower() in (
         "1", "true", "yes", "on")
     if vslam_enabled and not camera_enabled:
         raise RuntimeError("enable_vslam=true requires use_camera=true")
     if not route_path.is_file() or not metadata_path.is_file():
         raise RuntimeError("final route CSV and metadata are required")
+    route_info = load_segmented_route(
+        route_path, metadata_path, branch=branch)
+    route_entry = select_mode_range(
+        route_info.points, start_mode, end_mode)[0]
     share = Path(get_package_share_directory("depth_hybrid_slam"))
     camera = Path(get_package_share_directory("camera_navigation"))
     enabled = ParameterValue(
         LaunchConfiguration("enable_control"), value_type=bool)
     approved = ParameterValue(
         LaunchConfiguration("user_approved"), value_type=bool)
-    follower = [str(share/"config"/"vehicle_navigation.yaml"), {
+    follower_overrides = {
         "route_path": str(route_path),
         "route_metadata_path": str(metadata_path),
         "map_path": "",
@@ -56,9 +65,17 @@ def _runtime(context):
         "enable_control": enabled,
         "dry_run": False,
         "user_approved": approved,
+        "initial_branch": branch,
         "start_mode": start_mode,
         "end_mode": end_mode,
-    }]
+    }
+    if not vslam_enabled:
+        # ODOM_ONLY already fails closed in odom_localization + SafetyGate.
+        # Do not apply the separate VSLAM stabilization delay after fresh,
+        # frame-valid /odom has restored tracking.
+        follower_overrides["localization_stability_s"] = 0.0
+    follower = [str(share/"config"/"vehicle_navigation.yaml"),
+                follower_overrides]
     actions = [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(
@@ -82,6 +99,14 @@ def _runtime(context):
             name="odom_localization", output="screen",
             parameters=[str(share/"config"/"vehicle_navigation.yaml"), {
                 "enable_vslam": vslam_enabled,
+                "enable_parking_slam": parking_slam_enabled,
+                "vslam_map_frame": (
+                    "map"),
+                "centralize_vslam_map_tf": bool(
+                    vslam_enabled and parking_slam_enabled),
+                "odom_route_entry_x_m": route_entry.x,
+                "odom_route_entry_y_m": route_entry.y,
+                "odom_route_entry_yaw_rad": route_entry.yaw,
             }]),
         Node(
             package="depth_hybrid_slam", executable="route_follower",
@@ -143,6 +168,7 @@ def _runtime(context):
                 "route_path": str(route_path),
                 "route_metadata_path": str(metadata_path),
                 "rear_lidar_enabled": False,
+                "enable_parking_slam": parking_slam_enabled,
             }]),
         Node(
             package="depth_hybrid_slam", executable="command_arbiter",
@@ -163,6 +189,11 @@ def _runtime(context):
             name="depth_runtime_monitor", output="screen", parameters=[{
                 "enable_vslam": vslam_enabled,
             }]),
+        Node(
+            package="depth_hybrid_slam", executable="parking_slam_manager",
+            name="depth_parking_slam_manager", output="screen", parameters=[{
+                "enable_parking_slam": parking_slam_enabled,
+            }]),
     ]
     if vslam_enabled:
         actions.insert(2, IncludeLaunchDescription(
@@ -175,9 +206,30 @@ def _runtime(context):
                 "use_vehicle_odom": "true",
                 "publish_camera_mount_tf": "false",
                 "start_rviz": "false",
+                "rtabmap_map_frame": (
+                    "map"),
+                "publish_rtabmap_tf": (
+                    "false" if parking_slam_enabled else "true"),
             }.items()))
+    if parking_slam_enabled:
+        actions.extend([
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(str(
+                    Path(get_package_share_directory("slam_toolbox")) /
+                    "launch"/"online_async_launch.py")),
+                launch_arguments={
+                    "use_sim_time": "false", "autostart": "false",
+                    "use_lifecycle_manager": "false",
+                    "slam_params_file": str(
+                        share/"config"/"parking_slam.yaml"),
+                }.items()),
+            Node(
+                package="nav2_planner", executable="planner_server",
+                name="planner_server", output="screen",
+                parameters=[str(share/"config"/"parking_nav2.yaml")]),
+        ])
     if value("enable_rosbag").strip().lower() in ("1", "true", "yes", "on"):
-        bag_path = prepare_bag_path(ROOT+"/rosbags", max_bags=3)
+        bag_path = prepare_bag_path(str(ROOT/"rosbags"), max_bags=3)
         topics = (
             "/odom", "/tf", "/tf_static", "/cmd_drive", "/cmd_wheel",
             "/mcu/steer_deg", "/drive_mode",
@@ -200,7 +252,8 @@ def _runtime(context):
             "/depth_slam/localization/watchdog",
             "/depth_slam/mission/state", "/depth_slam/mission/event",
             "/depth_slam/mission/mode_status",
-            "/depth_slam/command_arbiter/state")
+            "/depth_slam/command_arbiter/state", "/map",
+            "/depth_slam/parking/diagnostics")
         actions.append(ExecuteProcess(
             cmd=["ros2", "bag", "record", "--output", str(bag_path),
                  *topics], output="screen"))
@@ -208,19 +261,23 @@ def _runtime(context):
 
 
 def generate_launch_description():
-    route = ROOT+"/routes/network/route_network_segmented_stop_edited_vforward.csv"
+    route = str(ROOT/"routes"/"network"/
+                "route_network_segmented_stop_edited_vforward.csv")
     return LaunchDescription([
         DeclareLaunchArgument("route_path", default_value=route),
         DeclareLaunchArgument(
             "route_metadata_path",
-            default_value=ROOT+"/routes/network/route_network_segmented_stop_edited_vforward.metadata.yaml"),
+            default_value=str(ROOT/"routes"/"network"/
+                "route_network_segmented_stop_edited_vforward.metadata.yaml")),
         DeclareLaunchArgument("start_branch", default_value="A"),
         DeclareLaunchArgument("start_mode", default_value="1"),
         DeclareLaunchArgument("end_mode", default_value="11"),
         DeclareLaunchArgument("enable_vslam", default_value="true"),
+        DeclareLaunchArgument("enable_parking_slam", default_value="false"),
         DeclareLaunchArgument(
-            "map_path", default_value=ROOT +
-            "/maps/merged_competition_level_aligned_v10/rtabmap.db"),
+            "map_path", default_value=str(
+                ROOT/"maps"/"merged_competition_level_aligned_v10"/
+                "rtabmap.db")),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),
         DeclareLaunchArgument("camera_serial", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),

@@ -196,14 +196,14 @@ def test_full_footprint_and_parking_fallback_rules():
     assert select_parking_fallback(**common, path_a_safe=True,
                                    path_b_safe=False) == "A"
     assert select_parking_fallback(**common, path_a_safe=False,
-                                   path_b_safe=True) == "B"
+                                   path_b_safe=True) == "A"
     assert select_parking_fallback(**common, path_a_safe=True,
                                    path_b_safe=True) == "A"
     assert select_parking_fallback(**common, path_a_safe=False,
-                                   path_b_safe=False) == ""
+                                   path_b_safe=False) == "A"
     assert select_parking_fallback(
         lidar_fresh=False, scan_valid=False, path_a_safe=True,
-        path_b_safe=True) == ""
+        path_b_safe=True) == "A"
     assert select_parking_fallback(
         lidar_fresh=True, scan_valid=True, slot_a=False, slot_b=True,
         path_a_safe=False, path_b_safe=False) == "B"
@@ -250,8 +250,7 @@ def test_readme_simplified_a_vslam_off_command_matches_production_launch():
               "depth_csv_camera_lidar.launch.py").read_text()
     assert readme.count("\n## ") == 1
     assert readme.count("\n### ") == 1
-    for value in ("cd ~/depth_ws", "source /opt/ros/jazzy/setup.bash",
-                  "source install/setup.bash", "source tools/ros_network_env.sh",
+    for value in ("cd ~/depth_ws", "source setup_depth.sh",
                   "ros2 launch depth_hybrid_slam "
                   "depth_csv_camera_lidar.launch.py"):
         assert value in readme

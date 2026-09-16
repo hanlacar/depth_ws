@@ -142,6 +142,8 @@ class LidarPerceptionNode(Node):
         self.create_subscription(String, "/camera/mission/diagnostics",
                                  self._camera_objects, 10)
         self.hard_pub = self.create_publisher(Bool, "/depth_slam/lidar/hard_emergency", 10)
+        self.front_fresh_pub = self.create_publisher(
+            Bool, "/depth_slam/lidar/front_scan_fresh", 10)
         self.rear_hard_pub = self.create_publisher(
             Bool, "/depth_slam/lidar/rear_hard_emergency", 10)
         self.slow_pub = self.create_publisher(
@@ -501,11 +503,14 @@ class LidarPerceptionNode(Node):
         right_min = min((math.hypot(x, y) for x, y in parking_scan if y < 0.0),
                         default=math.inf)
         parking_free = float(self.get_parameter("parking_free_distance_m").value)
-        slots = {"a_free": rear_active and parking_fresh and left_min > parking_free,
-                 "b_free": rear_active and parking_fresh and right_min > parking_free,
-                 "fresh": rear_active and parking_fresh,
+        parking_available = bool(
+            parking_fresh and (parking_use_front or rear_active))
+        slots = {"a_free": parking_available and left_min > parking_free,
+                 "b_free": parking_available and right_min > parking_free,
+                 "fresh": parking_available,
                  "source": "FRONT" if parking_use_front else "REAR"}
         self.hard_pub.publish(Bool(data=hard_stop))
+        self.front_fresh_pub.publish(Bool(data=front_fresh))
         self.rear_hard_pub.publish(Bool(data=rear_hard))
         self.slow_pub.publish(Bool(data=slowdown))
         self.distance_slow_pub.publish(Bool(

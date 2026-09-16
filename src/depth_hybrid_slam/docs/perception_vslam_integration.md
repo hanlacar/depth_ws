@@ -1,6 +1,6 @@
 # VSLAM 지도 + 2D RGB 인식 교차검증
 
-이 구성은 `/home/qor/depth_ws`가 D456, cuVSLAM, RTAB-Map을 소유하고
+이 구성은 `~/depth_ws`가 D456, cuVSLAM, RTAB-Map을 소유하고
 `depth_ws/src`에 포함된 YOLO/RGB/mission perception을 사용한다. 통합 launch는
 RealSense, controller, MCU, Arduino, motor, Gazebo를 시작하지 않는다.
 
@@ -58,35 +58,32 @@ R/G 상태는 2D overlay와 휘발성 result topic에만 존재하며 RTAB-Map D
 모든 터미널은 다음 환경을 사용한다.
 
 ```bash
-export ROS_DOMAIN_ID=41
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ```
 
 ### 터미널 1 — 유일한 D456
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
+cd ~/depth_ws
+source setup_depth.sh
 ./scripts/run_d456_host.sh
 ```
 
 ### 터미널 2 — cuVSLAM + bridge
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
+cd ~/depth_ws
+source setup_depth.sh
 ./scripts/run_cuvslam_container.sh
 ```
 
 ### 터미널 3A — 새 지도 mapping
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
+cd ~/depth_ws
+source setup_depth.sh
 ros2 launch depth_hybrid_slam hybrid_mapping.launch.py \
   camera_serial:=338122302896 auto_session_name:=true high_density:=true \
   mapping_mode:=true localization_mode:=false start_rviz:=false \
@@ -97,7 +94,7 @@ ros2 launch depth_hybrid_slam hybrid_mapping.launch.py \
 
 ```bash
 ros2 launch depth_hybrid_slam hybrid_localization.launch.py \
-  map_path:=/home/qor/depth_ws/maps/SESSION/rtabmap.db \
+  map_path:=~/depth_ws/maps/SESSION/rtabmap.db \
   mapping_mode:=false localization_mode:=true start_rviz:=false \
   enable_control:=false dry_run:=true
 ```
@@ -105,11 +102,8 @@ ros2 launch depth_hybrid_slam hybrid_localization.launch.py \
 ### 터미널 4 — 기존 인식 + 교차검증 + 두 화면
 
 ```bash
-cd /home/qor/depth_ws
-source /opt/ros/jazzy/setup.bash
-source /home/qor/depth_ws/install/setup.bash
-export ROS_DOMAIN_ID=41
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+cd ~/depth_ws
+source setup_depth.sh
 export ROS_LOG_DIR=/tmp/depth_ros_logs
 ros2 launch depth_hybrid_slam perception_vslam_view.launch.py \
   graph_guard:=true require_cuda:=true \

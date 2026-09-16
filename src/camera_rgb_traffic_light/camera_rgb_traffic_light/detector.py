@@ -23,6 +23,7 @@ class DetectorConfig:
     roi_y_min_ratio: float = 0.02
     roi_y_max_ratio: float = 0.55
     minimum_area_ratio: float = 0.00003
+    minimum_signal_area_px: int = 40
     maximum_area_ratio: float = 0.012
     minimum_aspect_ratio: float = 0.25
     maximum_aspect_ratio: float = 4.0
@@ -40,10 +41,14 @@ class DetectorConfig:
     hsv_minimum_value: int = 130
     red_hue_low_max: int = 12
     red_hue_high_min: int = 168
-    yellow_hue_min: int = 15
+    yellow_hue_min: int = 12
     yellow_hue_max: int = 40
-    green_hue_min: int = 40
-    green_hue_max: int = 95
+    yellow_s_min: int = 90
+    yellow_v_min: int = 110
+    green_hue_min: int = 35
+    green_hue_max: int = 105
+    green_s_min: int = 80
+    green_v_min: int = 90
     red_lab_a_min: int = 145
     yellow_lab_b_min: int = 145
     green_lab_a_max: int = 140
@@ -52,6 +57,8 @@ class DetectorConfig:
     housing_expand_ratio: float = 0.55
     housing_dark_luma_max: int = 80
     minimum_housing_dark_ratio: float = 0.08
+    dark_pixel_threshold: int = 80
+    dark_ratio_threshold: float = 0.08
     morphology_open_kernel: int = 3
     morphology_close_kernel: int = 3
     reject_roi_boundary_contact: bool = True
@@ -75,12 +82,14 @@ class DetectorConfig:
             raise ValueError("ROI minimums must be below maximums")
         if not 0.0 < self.minimum_area_ratio < self.maximum_area_ratio < 1.0:
             raise ValueError("area ratios are invalid")
+        if int(self.minimum_signal_area_px) < 1:
+            raise ValueError("minimum_signal_area_px must be positive")
         for name in ("minimum_solidity", "minimum_convexity",
                      "round_minimum_score", "left_minimum_score",
                      "down_minimum_score", "other_green_minimum_score",
                      "minimum_confidence", "red_priority_confidence",
                      "minimum_bright_pixel_ratio",
-                     "minimum_housing_dark_ratio"):
+                     "minimum_housing_dark_ratio", "dark_ratio_threshold"):
             value = float(getattr(self, name))
             if not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be in [0, 1]")
@@ -115,6 +124,7 @@ class Candidate:
     down_score: float = 0.0
     green_shape_score: float = 0.0
     red_x_score: float = 0.0
+    area_px: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -188,18 +198,20 @@ class ColorTrafficLightDetector:
         lab = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
         h, s, v = cv2.split(hsv)
         _l, a, b = cv2.split(lab)
-        bright = ((s >= self.config.hsv_minimum_saturation) &
-                  (v >= self.config.hsv_minimum_value))
+        red_bright = ((s >= self.config.hsv_minimum_saturation) &
+                      (v >= self.config.hsv_minimum_value))
+        yellow_bright = ((s >= self.config.yellow_s_min) &
+                         (v >= self.config.yellow_v_min))
+        green_bright = ((s >= self.config.green_s_min) &
+                        (v >= self.config.green_v_min))
         masks = {
-            "red": (bright & ((h <= self.config.red_hue_low_max) |
-                               (h >= self.config.red_hue_high_min)) &
+            "red": (red_bright & ((h <= self.config.red_hue_low_max) |
+                                   (h >= self.config.red_hue_high_min)) &
                     (a >= self.config.red_lab_a_min)),
-            "yellow": bright & (h >= self.config.yellow_hue_min) &
-                      (h <= self.config.yellow_hue_max) &
-                      (b >= self.config.yellow_lab_b_min),
-            "green": bright & (h >= self.config.green_hue_min) &
-                     (h <= self.config.green_hue_max) &
-                     (a <= self.config.green_lab_a_max),
+            "yellow": yellow_bright & (h >= self.config.yellow_hue_min) &
+                      (h <= self.config.yellow_hue_max),
+            "green": green_bright & (h >= self.config.green_hue_min) &
+                     (h <= self.config.green_hue_max),
         }
         opened = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (self.config.morphology_open_kernel,)*2)
@@ -301,13 +313,13 @@ class ColorTrafficLightDetector:
             return "OTHER_GREEN_SHAPE", score
         return "UNKNOWN_SHAPE", score
 
-    def _brightness_features(self, luma, contour, bbox):
+    def _brightness_features(self, luma, contour, bbox, bright_value_min):
         x, y, width, height = bbox
         contour_mask = np.zeros(luma.shape, np.uint8)
         cv2.drawContours(contour_mask, [contour], -1, 255, -1)
         inside = luma[contour_mask > 0]
         bright_ratio = float(np.mean(
-            inside >= self.config.hsv_minimum_value)) if inside.size else 0.0
+            inside >= int(bright_value_min))) if inside.size else 0.0
         pad_x = max(2, int(round(width*self.config.housing_expand_ratio)))
         pad_y = max(2, int(round(height*self.config.housing_expand_ratio)))
         xa, xb = max(0, x-pad_x), min(luma.shape[1], x+width+pad_x)
@@ -320,7 +332,7 @@ class ColorTrafficLightDetector:
         center = float(np.mean(inside)) if inside.size else 0.0
         delta = center-background
         dark_ratio = float(np.mean(
-            ring <= self.config.housing_dark_luma_max)) if ring.size else 0.0
+            ring <= self.config.dark_pixel_threshold)) if ring.size else 0.0
         return delta, bright_ratio, dark_ratio
 
     def _red_x_score(self, component):
@@ -391,7 +403,8 @@ class ColorTrafficLightDetector:
                     circle <= self.config.red_x_max_circle_score and
                     rectangularity <= self.config.red_x_max_rectangularity)
                 area_ratio = area/image_area
-                if area_ratio < self.config.minimum_area_ratio:
+                if (area < float(self.config.minimum_signal_area_px) or
+                        area_ratio < self.config.minimum_area_ratio):
                     reject("area_too_small"); continue
                 if area_ratio > self.config.maximum_area_ratio:
                     reject("area_too_large"); continue
@@ -406,14 +419,17 @@ class ColorTrafficLightDetector:
                         (x <= 0 or y <= 0 or x+width >= roi.shape[1]-1 or
                          y+height >= roi.shape[0]-1)):
                     reject("roi_boundary_contact"); continue
+                bright_value_min = {
+                    "red": self.config.hsv_minimum_value,
+                    "yellow": self.config.yellow_v_min,
+                    "green": self.config.green_v_min,
+                }[color]
                 delta, bright_ratio, dark_ratio = self._brightness_features(
-                    luma, contour, bbox)
+                    luma, contour, bbox, bright_value_min)
                 if delta < self.config.minimum_brightness_delta:
                     reject("low_relative_brightness"); continue
                 if bright_ratio < self.config.minimum_bright_pixel_ratio:
                     reject("low_bright_pixel_ratio"); continue
-                if dark_ratio < self.config.minimum_housing_dark_ratio:
-                    reject("insufficient_dark_housing"); continue
                 left_score, right_score, down_score = self._arrow_scores(component)
                 state = "UNKNOWN"
                 raw_shape = "UNKNOWN_SHAPE"
@@ -433,7 +449,10 @@ class ColorTrafficLightDetector:
                     if raw_shape == "UNKNOWN_SHAPE":
                         reject("ambiguous_green_shape"); continue
                     state = "G"
-                housing = _bounded((dark_ratio-self.config.minimum_housing_dark_ratio)/0.5)
+                # A dark housing raises confidence but is not mandatory: real
+                # black plastic can appear grey under sunlight or LED bloom.
+                housing = _bounded(
+                    dark_ratio/max(self.config.dark_ratio_threshold, 1.0e-6))
                 shape_confidence = (red_x_score if raw_shape == "RED_X" else
                                     circle if state == "R" else
                                     green_shape_score)
@@ -448,7 +467,8 @@ class ColorTrafficLightDetector:
                     state, color, (x+x0, y+y0, width, height), confidence,
                     circularity, solidity, convexity, circle, left_score,
                     right_score, delta, bright_ratio, dark_ratio, hu,
-                    raw_shape, down_score, green_shape_score, red_x_score))
+                    raw_shape, down_score, green_shape_score, red_x_score,
+                    area))
         return self._resolve(candidates, rejected, (x0, y0, x1, y1))
 
     def _resolve(self, candidates, rejected, roi):
@@ -461,14 +481,27 @@ class ColorTrafficLightDetector:
         go = max(go_options, key=lambda value: value.confidence,
                  default=None)
         selected, conflict = None, False
+        # A normal intersection has one active lamp. Multiple similarly
+        # strong, spatially distinct candidates remain UNKNOWN instead of
+        # granting permission from an arbitrary winner.
+        for options in by_state.values():
+            if (len(options) > 1 and
+                    options[1].confidence >= self.config.minimum_confidence and
+                    options[0].confidence-options[1].confidence <=
+                    self.config.conflict_margin and
+                    not self._same_housing(options[0], options[1])):
+                conflict = True
         if red is not None and go is not None:
-            # The competition contract treats any valid permitted green as
-            # GO even when a red/yellow lamp is co-active in the housing.
-            selected = go
+            if abs(red.confidence-go.confidence) <= self.config.conflict_margin:
+                conflict = True
+            else:
+                selected = max((red, go), key=lambda value: value.confidence)
         elif red is not None:
             selected = red
         elif go is not None:
             selected = go
+        if conflict:
+            selected = None
         return DetectionResult(
             "UNKNOWN" if selected is None or conflict else selected.state,
             0.0 if selected is None or conflict else selected.confidence,
@@ -495,7 +528,8 @@ class ColorTrafficLightDetector:
             color = self.COLORS[candidate.color]
             cv2.rectangle(overlay, (x, y), (x+width, y+height), color, 2)
             text = (f"{candidate.color.upper()}/{candidate.raw_shape} "
-                    f"{candidate.confidence:.2f}")
+                    f"conf={candidate.confidence:.2f} area={candidate.area_px:.0f} "
+                    f"dark={candidate.housing_dark_ratio:.2f}")
             cv2.putText(overlay, text, (x, max(12, y-4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1,
                         cv2.LINE_AA)
@@ -692,6 +726,9 @@ def build_diagnostics(stamp, result, decision, input_age_ms,
         "left_arrow_score": float(selected.left_score) if selected else 0.0,
         "down_arrow_score": float(selected.down_score) if selected else 0.0,
         "red_x_score": float(selected.red_x_score) if selected else 0.0,
+        "selected_area_px": float(selected.area_px) if selected else 0.0,
+        "selected_dark_ratio": (
+            float(selected.housing_dark_ratio) if selected else 0.0),
         "confirmation_count": int(decision.confirmation_count),
         "held": bool(decision.held), "conflict": bool(result.conflict),
         "rejection_reasons": result.rejection_reasons,

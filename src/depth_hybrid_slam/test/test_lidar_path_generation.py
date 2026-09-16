@@ -9,7 +9,8 @@ from depth_hybrid_slam.lidar_local_planner import (
 from depth_hybrid_slam.csv_only_branching import load_csv_only_route_case
 from depth_hybrid_slam.lidar_mission_core import (
     bounded_rejoin, route_rejoin_candidates)
-from depth_hybrid_slam.lidar_mission_core import ParkingManeuver
+from depth_hybrid_slam.lidar_mission_core import (
+    ParkingManeuver, parking_reverse_phase)
 from depth_hybrid_slam.lidar_path_tracker import LocalPathTracker
 from depth_hybrid_slam.vehicle_kinematics import AckermannPathEvaluator
 
@@ -115,16 +116,20 @@ def test_mode10_shipped_22_degree_schedule_is_radius_expanded(branch):
 
 def test_parking_reverse_to_forward_handoff_keeps_existing_stop_contract():
     parking = ParkingManeuver(10)
+    assert not parking_reverse_phase(parking.state, False)
     prepare = parking.update("A", path_valid=True, now=0.0)
     assert prepare.stop and prepare.state == "V_DIRECTION_CHANGE_HOLD"
+    assert parking_reverse_phase(parking.state, True)
     assert parking.update("A", path_valid=True, now=2.99).stop
     reverse = parking.update("A", path_valid=True, drive=-1.0, now=3.0)
     assert not reverse.stop and reverse.drive == -1.0
     hold = parking.update("A", path_complete=True, now=5.0)
     assert hold.stop and hold.state == "V_CSV_REJOIN"
+    assert parking_reverse_phase(parking.state, True)
     assert parking.update("A", rejoin_valid=True, now=7.99).stop
     forward = parking.update("A", rejoin_valid=True, now=8.0)
     assert not forward.stop and forward.owner == "CSV"
+    assert not parking_reverse_phase(parking.state, False)
 
 
 @pytest.mark.parametrize("mode", (7, 10))

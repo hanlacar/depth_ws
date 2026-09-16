@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-source /opt/ros/jazzy/setup.bash
-set -u
-export ROS_DOMAIN_ID=41
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+workspace="$(cd -- "${script_dir}/.." && pwd)"
+source "${workspace}/setup_depth.sh"
 
 requested=(
   /camera/camera/color/image_raw
@@ -35,6 +34,6 @@ if ((${#present[@]} == 0)); then
   echo "No requested topics are live; refusing to create an empty bag." >&2
   exit 2
 fi
-output="${1:-bags/hybrid_mapping_$(date +%Y%m%d_%H%M%S)}"
+output="${1:-${workspace}/bags/hybrid_mapping_$(date +%Y%m%d_%H%M%S)}"
 mkdir -p "$(dirname "${output}")"
 exec ros2 bag record -o "${output}" "${present[@]}"
