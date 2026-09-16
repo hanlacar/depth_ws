@@ -100,29 +100,32 @@ def _signal_state(value):
 
 def assign_exit_lamps(candidates, slot_centers=(0.25, 0.50, 0.75),
                       slot_max_distance=0.18, conflict_margin=0.12):
-    """Assign partial detections to LEFT/CENTER/RIGHT using the right RED anchor."""
+    """Assign lamps by full-group order or calibrated partial positions."""
     normalized = []
     for item in candidates:
         confidence = float(item[4]) if len(item) > 4 else min(
             1.0, float(item[2])/40.0)
         normalized.append((float(item[0]), _signal_state(item[1]),
                            int(item[2]), confidence))
-    reds = [item for item in normalized if item[1] == SignalState.RED]
-    # The right-most physical lamp is always RED.  It provides translation
-    # alignment when the signal group is not centred in the camera image.
-    right_anchor = max(reds, key=lambda item: item[0], default=None)
-    green_right_of_anchor = bool(right_anchor is not None and any(
-        item[1] == SignalState.GREEN and item[0] > right_anchor[0]
-        for item in normalized))
-    offset = (0.0 if right_anchor is None or green_right_of_anchor else
-              right_anchor[0]-float(slot_centers[2]))
-    expected = tuple(float(value)+offset for value in slot_centers)
-    slots = [[], [], []]
-    for item in normalized:
-        distances = [abs(item[0]-center) for center in expected]
-        index = int(np.argmin(distances))
-        if distances[index] <= float(slot_max_distance):
-            slots[index].append(item)
+    # A single surviving dark-red candidate must never translate the whole
+    # panel: that made a physical CENTER GREEN look like LEFT GREEN. When all
+    # three lamps are present, their left-to-right order is authoritative.
+    clusters = []
+    for item in sorted(normalized, key=lambda value: value[0]):
+        if not clusters or item[0]-clusters[-1][-1][0] > 0.06:
+            clusters.append([item])
+        else:
+            clusters[-1].append(item)
+    if len(clusters) == 3:
+        slots = clusters
+    else:
+        expected = tuple(float(value) for value in slot_centers)
+        slots = [[], [], []]
+        for item in normalized:
+            distances = [abs(item[0]-center) for center in expected]
+            index = int(np.argmin(distances))
+            if distances[index] <= float(slot_max_distance):
+                slots[index].append(item)
     output = []
     for values in slots:
         if not values:

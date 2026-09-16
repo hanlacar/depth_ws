@@ -22,16 +22,18 @@ rgb_traffic_light_node:
     minimum_solidity: 0.55
     minimum_convexity: 0.72
     round_minimum_score: 0.80
-    left_minimum_score: 0.65
-    down_minimum_score: 0.65
+    left_minimum_score: 0.62
+    down_minimum_score: 0.62
     left_direction_margin: 0.12
     other_green_minimum_score: 0.58
     minimum_confidence: 0.55
     conflict_margin: 0.12
     red_priority_confidence: 0.82
 
-    hsv_minimum_saturation: 90
-    hsv_minimum_value: 130
+    # Preserve dim LED lamps while temporal confirmation and housing/shape
+    # checks continue to reject isolated red/green background objects.
+    hsv_minimum_saturation: 60
+    hsv_minimum_value: 55
     red_hue_low_max: 12
     red_hue_high_min: 168
     yellow_hue_min: 12
@@ -40,14 +42,18 @@ rgb_traffic_light_node:
     yellow_v_min: 110
     green_hue_min: 35
     green_hue_max: 105
-    green_s_min: 80
-    green_v_min: 90
-    red_lab_a_min: 145
+    green_s_min: 60
+    green_v_min: 55
+    red_lab_a_min: 130
     yellow_lab_b_min: 145
     green_lab_a_max: 140
 
     minimum_brightness_delta: 18.0
     minimum_bright_pixel_ratio: 0.45
+    red_minimum_brightness_delta: 8.0
+    red_minimum_bright_pixel_ratio: 0.20
+    green_minimum_brightness_delta: 8.0
+    green_minimum_bright_pixel_ratio: 0.20
     housing_expand_ratio: 0.55
     housing_dark_luma_max: 80
     minimum_housing_dark_ratio: 0.08
@@ -68,6 +74,11 @@ rgb_traffic_light_node:
     red_x_hough_threshold: 8
     red_x_min_line_length_ratio: 0.45
     red_x_max_line_gap_ratio: 0.18
+
+    # Shape has priority. If shape is ambiguous, use color only when the
+    # candidate is surrounded by a dark lamp housing and is not a solid sign.
+    color_fallback_minimum_housing_dark_ratio: 0.20
+    color_fallback_maximum_rectangularity: 0.82
 
     confirmation_frames: 3
     switch_confirmation_frames: 4

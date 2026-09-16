@@ -22,7 +22,8 @@ from .lidar_mission_core import (
     select_parking_fallback)
 from .lidar_path_tracker import LocalPathTracker, TrackCommand
 from .parking_planner_core import (
-    assess_parking_path, parking_csv_fallback_segment,
+    assess_parking_path, fresh_explicit_b, parking_csv_fallback_segment,
+    parking_slot_observation_state,
     ParkingRuntimeCoordinator, ParkingVehicleGeometry,
     select_explicit_b_slot, validate_nav2_parking_path)
 from .route_io import load_segmented_route
@@ -60,12 +61,14 @@ class ManeuverManagerNode(Node):
                 ("stopped_linear_speed_mps", 0.03),
                 ("stopped_angular_speed_rps", 0.03),
                 ("odom_timeout_s", 0.50),
+                ("parking_slot_timeout_s", 0.50),
                 ("parking_map_wait_timeout_s", 3.0)):
             self.declare_parameter(name, default)
         self.mode = -1
         self.avoidance = self.hard = self.rear_hard = False
         self.a_free = self.b_free = False
         self.slots_fresh = False
+        self.slots_at = None
         self.perception_fresh = False
         self.perception_at = None
         self.planner_state = "IDLE"
@@ -251,9 +254,11 @@ class ManeuverManagerNode(Node):
             self.a_free = bool(value.get("a_free", False))
             self.b_free = bool(value.get("b_free", False))
             self.slots_fresh = bool(value.get("fresh", False))
-        except (TypeError, json.JSONDecodeError):
+            self.slots_at = time.monotonic()
+        except (AttributeError, TypeError, json.JSONDecodeError):
             self.a_free = self.b_free = False
             self.slots_fresh = False
+            self.slots_at = None
 
     def _arbiter_diagnostics(self, message):
         try:
@@ -899,19 +904,22 @@ class ManeuverManagerNode(Node):
         if self.mode in (7, 10):
             prefix = "T" if self.mode == 7 else "V"
             now = time.monotonic()
-            lidar_fresh = (
-                self.slots_fresh and self.perception_fresh and
-                self.perception_at is not None and
+            perception_fresh = (
+                self.perception_fresh and self.perception_at is not None and
                 now-self.perception_at <= 0.5)
-            if not lidar_fresh:
+            if not perception_fresh:
                 self.parking_failed_reason = "FRONT_LIDAR_STALE"
                 return ManeuverDecision(
                     prefix+"_FRONT_LIDAR_STALE", "SAFETY", True,
                     branch="A")
+            slot_timeout = float(self.get_parameter(
+                "parking_slot_timeout_s").value)
+            explicit_b = fresh_explicit_b(
+                self.b_free, self.slots_fresh, self.slots_at, now,
+                slot_timeout)
             self.parking_assessments = {
                 branch: self._parking_path_assessment(branch)
                 for branch in ("A", "B")}
-            explicit_b = bool(lidar_fresh and self.b_free)
             if not self.parking_slam_enabled:
                 selected = select_explicit_b_slot(explicit_b, "CSV")
                 selected_slot = selected.slot
@@ -1175,9 +1183,10 @@ class ManeuverManagerNode(Node):
                 self.parking_branches.get(self.mode, "") or
                 self.parking_runtime.selected_slot or
                 self.nav2_selected_slot)
-            observation_state = (
-                "STALE" if not self.slots_fresh else
-                "FRESH_EXPLICIT_B" if self.b_free else "FRESH_NO_B")
+            observation_state = parking_slot_observation_state(
+                self.b_free, self.slots_fresh, self.slots_at,
+                time.monotonic(), self.get_parameter(
+                    "parking_slot_timeout_s").value)
             self.parking_diag_pub.publish(String(data=json.dumps({
                 "mode": self.mode,
                 "parking_slam_enabled": self.parking_slam_enabled,

@@ -13,7 +13,7 @@ ASPECTS = ("RED", "RED_X", "YELLOW", "GREEN_CIRCLE", "GREEN_LEFT",
            "GREEN_DOWN", "GREEN_OTHER", "UNKNOWN")
 GREEN_SHAPES = (
     "CIRCLE", "LEFT_ARROW", "DOWN_ARROW", "OTHER_GREEN_SHAPE",
-    "UNKNOWN_SHAPE")
+    "COLOR_FALLBACK", "UNKNOWN_SHAPE")
 
 
 @dataclass(frozen=True)
@@ -30,15 +30,15 @@ class DetectorConfig:
     minimum_solidity: float = 0.55
     minimum_convexity: float = 0.72
     round_minimum_score: float = 0.80
-    left_minimum_score: float = 0.65
-    down_minimum_score: float = 0.65
+    left_minimum_score: float = 0.62
+    down_minimum_score: float = 0.62
     left_direction_margin: float = 0.12
     other_green_minimum_score: float = 0.58
     minimum_confidence: float = 0.55
     conflict_margin: float = 0.12
     red_priority_confidence: float = 0.82
-    hsv_minimum_saturation: int = 90
-    hsv_minimum_value: int = 130
+    hsv_minimum_saturation: int = 60
+    hsv_minimum_value: int = 55
     red_hue_low_max: int = 12
     red_hue_high_min: int = 168
     yellow_hue_min: int = 12
@@ -47,13 +47,17 @@ class DetectorConfig:
     yellow_v_min: int = 110
     green_hue_min: int = 35
     green_hue_max: int = 105
-    green_s_min: int = 80
-    green_v_min: int = 90
-    red_lab_a_min: int = 145
+    green_s_min: int = 60
+    green_v_min: int = 55
+    red_lab_a_min: int = 130
     yellow_lab_b_min: int = 145
     green_lab_a_max: int = 140
     minimum_brightness_delta: float = 18.0
     minimum_bright_pixel_ratio: float = 0.45
+    red_minimum_brightness_delta: float = 8.0
+    red_minimum_bright_pixel_ratio: float = 0.20
+    green_minimum_brightness_delta: float = 8.0
+    green_minimum_bright_pixel_ratio: float = 0.20
     housing_expand_ratio: float = 0.55
     housing_dark_luma_max: int = 80
     minimum_housing_dark_ratio: float = 0.08
@@ -71,6 +75,8 @@ class DetectorConfig:
     red_x_hough_threshold: int = 8
     red_x_min_line_length_ratio: float = 0.45
     red_x_max_line_gap_ratio: float = 0.18
+    color_fallback_minimum_housing_dark_ratio: float = 0.20
+    color_fallback_maximum_rectangularity: float = 0.82
 
     def validate(self):
         ratios = (self.roi_x_min_ratio, self.roi_x_max_ratio,
@@ -89,6 +95,10 @@ class DetectorConfig:
                      "down_minimum_score", "other_green_minimum_score",
                      "minimum_confidence", "red_priority_confidence",
                      "minimum_bright_pixel_ratio",
+                     "red_minimum_bright_pixel_ratio",
+                     "green_minimum_bright_pixel_ratio",
+                     "color_fallback_minimum_housing_dark_ratio",
+                     "color_fallback_maximum_rectangularity",
                      "minimum_housing_dark_ratio", "dark_ratio_threshold"):
             value = float(getattr(self, name))
             if not 0.0 <= value <= 1.0:
@@ -151,7 +161,8 @@ def candidate_aspect(candidate):
         return "YELLOW"
     return {"CIRCLE": "GREEN_CIRCLE", "LEFT_ARROW": "GREEN_LEFT",
             "DOWN_ARROW": "GREEN_DOWN",
-            "OTHER_GREEN_SHAPE": "GREEN_OTHER"}.get(
+            "OTHER_GREEN_SHAPE": "GREEN_OTHER",
+            "COLOR_FALLBACK": "GREEN_OTHER"}.get(
                 candidate.raw_shape, "UNKNOWN")
 
 
@@ -217,12 +228,13 @@ class ColorTrafficLightDetector:
             cv2.MORPH_ELLIPSE, (self.config.morphology_open_kernel,)*2)
         closed = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (self.config.morphology_close_kernel,)*2)
-        return {
+        masks = {
             name: cv2.morphologyEx(cv2.morphologyEx(
                 mask.astype(np.uint8)*255, cv2.MORPH_OPEN, opened),
                 cv2.MORPH_CLOSE, closed)
             for name, mask in masks.items()
-        }, v
+        }
+        return masks, v, s
 
     @staticmethod
     def _shape_features(contour, bbox):
@@ -379,7 +391,7 @@ class ColorTrafficLightDetector:
                 (0, 0, 0, 0))
         x0, y0, x1, y1 = self.roi_bounds(image.shape)
         roi = image[y0:y1, x0:x1]
-        masks, luma = self._color_masks(roi)
+        masks, luma, saturation = self._color_masks(roi)
         image_area = float(image.shape[0]*image.shape[1])
         candidates: List[Candidate] = []
         rejected: Dict[str, int] = {}
@@ -396,8 +408,32 @@ class ColorTrafficLightDetector:
                 area, circularity, solidity, convexity, aspect, circle, hu = (
                     self._shape_features(contour, bbox))
                 component = mask[y:y+height, x:x+width] > 0
+                # The permissive color mask retains dim LEDs, including
+                # anti-aliased edge pixels.  Shape classification uses the
+                # brighter part of that same component so widening the color
+                # range does not turn LEFT/DOWN arrows into generic blobs.
+                component_value = luma[y:y+height, x:x+width]
+                component_saturation = saturation[y:y+height, x:x+width]
+                component_peak = float(np.max(
+                    component_value[component])) if np.any(component) else 0.0
+                legacy_saturation = 90 if color == "red" else 80
+                legacy_value = 130 if color == "red" else 90
+                if component_peak >= legacy_value:
+                    shape_component = (
+                        component &
+                        (component_value >= legacy_value) &
+                        (component_saturation >= legacy_saturation))
+                else:
+                    shape_component = component & (
+                        component_value >= max(1.0, 0.70*component_peak))
+                shape_pixels = np.argwhere(shape_component)
+                if shape_pixels.size:
+                    sy0, sx0 = shape_pixels.min(axis=0)
+                    sy1, sx1 = shape_pixels.max(axis=0)+1
+                    shape_component = shape_component[sy0:sy1, sx0:sx1]
                 rectangularity = area/max(float(width*height), 1.0)
-                red_x_score = self._red_x_score(component) if color == "red" else 0.0
+                red_x_score = (self._red_x_score(shape_component)
+                               if color == "red" else 0.0)
                 red_x_candidate = (
                     red_x_score >= self.config.red_x_min_diagonal_score and
                     circle <= self.config.red_x_max_circle_score and
@@ -426,11 +462,27 @@ class ColorTrafficLightDetector:
                 }[color]
                 delta, bright_ratio, dark_ratio = self._brightness_features(
                     luma, contour, bbox, bright_value_min)
-                if delta < self.config.minimum_brightness_delta:
+                minimum_delta = {
+                    "red": self.config.red_minimum_brightness_delta,
+                    "yellow": self.config.minimum_brightness_delta,
+                    "green": self.config.green_minimum_brightness_delta,
+                }[color]
+                minimum_bright_ratio = {
+                    "red": self.config.red_minimum_bright_pixel_ratio,
+                    "yellow": self.config.minimum_bright_pixel_ratio,
+                    "green": self.config.green_minimum_bright_pixel_ratio,
+                }[color]
+                if delta < minimum_delta:
                     reject("low_relative_brightness"); continue
-                if bright_ratio < self.config.minimum_bright_pixel_ratio:
+                if bright_ratio < minimum_bright_ratio:
                     reject("low_bright_pixel_ratio"); continue
-                left_score, right_score, down_score = self._arrow_scores(component)
+                left_score, right_score, down_score = self._arrow_scores(
+                    shape_component)
+                housing = _bounded(
+                    dark_ratio/max(self.config.dark_ratio_threshold, 1.0e-6))
+                color_fallback = bool(
+                    dark_ratio >= self.config.color_fallback_minimum_housing_dark_ratio and
+                    rectangularity <= self.config.color_fallback_maximum_rectangularity)
                 state = "UNKNOWN"
                 raw_shape = "UNKNOWN_SHAPE"
                 green_shape_score = 0.0
@@ -438,7 +490,9 @@ class ColorTrafficLightDetector:
                     if color == "red" and red_x_candidate:
                         raw_shape = "RED_X"
                     elif circle < self.config.round_minimum_score:
-                        reject("non_round_stop_lamp"); continue
+                        if color != "red" or not color_fallback:
+                            reject("non_round_stop_lamp"); continue
+                        raw_shape = "COLOR_FALLBACK"
                     else:
                         raw_shape = "CIRCLE"
                     state = "R"
@@ -447,12 +501,13 @@ class ColorTrafficLightDetector:
                         circle, left_score, right_score,
                         down_score, rectangularity, self.config)
                     if raw_shape == "UNKNOWN_SHAPE":
-                        reject("ambiguous_green_shape"); continue
+                        if not color_fallback:
+                            reject("ambiguous_green_shape"); continue
+                        raw_shape = "COLOR_FALLBACK"
+                        green_shape_score = self.config.other_green_minimum_score
                     state = "G"
                 # A dark housing raises confidence but is not mandatory: real
                 # black plastic can appear grey under sunlight or LED bloom.
-                housing = _bounded(
-                    dark_ratio/max(self.config.dark_ratio_threshold, 1.0e-6))
                 shape_confidence = (red_x_score if raw_shape == "RED_X" else
                                     circle if state == "R" else
                                     green_shape_score)

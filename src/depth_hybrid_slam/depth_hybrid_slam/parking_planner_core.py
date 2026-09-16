@@ -164,6 +164,34 @@ class ParkingRuntimeCoordinator:
             self.nav2_committed, self.csv_fallback, self.branch_locked)
 
 
+def fresh_explicit_b(b_free, reported_fresh, observed_at, now,
+                     timeout_s=0.5):
+    """Accept B only from a fresh, finite slot observation."""
+    try:
+        age = float(now)-float(observed_at)
+        timeout = float(timeout_s)
+    except (TypeError, ValueError):
+        return False
+    return bool(b_free and reported_fresh and math.isfinite(age) and
+                math.isfinite(timeout) and timeout >= 0.0 and
+                0.0 <= age <= timeout)
+
+
+def parking_slot_observation_state(b_free, reported_fresh, observed_at, now,
+                                   timeout_s=0.5):
+    """Describe explicit-B evidence without treating stale data as B."""
+    try:
+        age = float(now)-float(observed_at)
+        timeout = float(timeout_s)
+    except (TypeError, ValueError):
+        return "STALE"
+    if (not reported_fresh or not math.isfinite(age) or
+            not math.isfinite(timeout) or timeout < 0.0 or
+            age < 0.0 or age > timeout):
+        return "STALE"
+    return "FRESH_EXPLICIT_B" if bool(b_free) else "FRESH_NO_B"
+
+
 def select_explicit_b_slot(explicit_b, source="CSV"):
     """Select B only from a fresh explicit B indication; default to A."""
     return ParkingSelection(

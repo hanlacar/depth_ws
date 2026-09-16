@@ -6,7 +6,8 @@ import pytest
 from depth_hybrid_slam.command_arbiter_core import (
     arbitrate, CommandCandidate, OwnershipHandshake)
 from depth_hybrid_slam.parking_planner_core import (
-    assess_parking_path, map_to_odom_from_base_poses, parking_tf_owner,
+    assess_parking_path, fresh_explicit_b, map_to_odom_from_base_poses,
+    parking_slot_observation_state, parking_tf_owner,
     parking_csv_fallback_segment, path_direction_profile,
     ParkingPathAssessment, ParkingRuntimeCoordinator,
     ParkingVehicleGeometry, resolve_parking_plan, select_csv_parking_path,
@@ -208,6 +209,32 @@ def test_explicit_b_only_selection_defaults_everything_else_to_a():
     assert select_explicit_b_slot(True).slot == "B"
     assert select_explicit_b_slot(False).slot == "A"
     assert select_explicit_b_slot(None).slot == "A"
+
+
+def test_explicit_b_requires_a_fresh_slot_observation():
+    assert fresh_explicit_b(True, True, 1.0, 1.49, 0.5)
+    assert not fresh_explicit_b(True, True, 1.0, 1.51, 0.5)
+    assert not fresh_explicit_b(True, False, 1.0, 1.1, 0.5)
+    assert not fresh_explicit_b(True, True, None, 1.1, 0.5)
+    assert not fresh_explicit_b(False, True, 1.0, 1.1, 0.5)
+    assert parking_slot_observation_state(
+        True, True, 1.0, 1.49, 0.5) == "FRESH_EXPLICIT_B"
+    assert parking_slot_observation_state(
+        False, True, 1.0, 1.1, 0.5) == "FRESH_NO_B"
+    assert parking_slot_observation_state(
+        True, True, 1.0, 1.51, 0.5) == "STALE"
+
+
+@pytest.mark.parametrize("mode,segment", ((7, "T_A"), (10, "V_A")))
+def test_stale_b_defaults_a_and_never_blocks_reverse(mode, segment):
+    runtime = ParkingRuntimeCoordinator()
+    explicit_b = fresh_explicit_b(
+        True, True, observed_at=0.0, now=1.0, timeout_s=0.5)
+    result = runtime.update(
+        mode=mode, explicit_b=explicit_b, reverse_decision_point=True)
+    assert result.selected_slot == "A"
+    assert result.branch_locked and result.csv_fallback
+    assert parking_csv_fallback_segment(mode, result.selected_slot) == segment
 
 
 def test_nav2_ready_gate_checks_full_contract():

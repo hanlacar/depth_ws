@@ -15,6 +15,7 @@ export DEPTH_WS_ROOT
 # defaults. Only values that existed in the user's shell count as overrides.
 _depth_domain_value="${ROS_DOMAIN_ID-}"
 _depth_rmw_value="${RMW_IMPLEMENTATION-}"
+_depth_discovery_value="${ROS_AUTOMATIC_DISCOVERY_RANGE-}"
 
 if [[ -f /opt/ros/jazzy/setup.bash ]]; then
   set +u
@@ -43,7 +44,13 @@ if [[ -n "${_depth_rmw_value}" ]]; then
 else
   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 fi
-export ROS_AUTOMATIC_DISCOVERY_RANGE="${DEPTH_WS_DISCOVERY_RANGE:-LOCALHOST}"
+if [[ -n "${_depth_discovery_value}" ]]; then
+  export ROS_AUTOMATIC_DISCOVERY_RANGE="${_depth_discovery_value}"
+elif [[ -n "${DEPTH_WS_DISCOVERY_RANGE-}" ]]; then
+  export ROS_AUTOMATIC_DISCOVERY_RANGE="${DEPTH_WS_DISCOVERY_RANGE}"
+else
+  export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+fi
 
 # A stale external URI can pin CycloneDDS to a removed NIC or old DHCP IP.
 # depth_ws never requires custom DDS XML. Advanced users can explicitly keep
@@ -59,4 +66,4 @@ printf 'rmw=%s\n' "${RMW_IMPLEMENTATION}"
 printf 'discovery=%s\n' "${ROS_AUTOMATIC_DISCOVERY_RANGE}"
 printf 'cyclonedds_uri=%s\n' "${CYCLONEDDS_URI:-UNSET}"
 
-unset _depth_domain_value _depth_rmw_value
+unset _depth_domain_value _depth_rmw_value _depth_discovery_value

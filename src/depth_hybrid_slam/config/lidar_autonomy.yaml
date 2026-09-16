@@ -81,3 +81,7 @@ depth_maneuver_manager:
     stopped_linear_speed_mps: 0.03
     stopped_angular_speed_rps: 0.03
     odom_timeout_s: 0.50
+    # Slot B is explicit-only and must be refreshed by the front LiDAR.
+    # Expired/missing slot evidence defaults to A; it is not a parking wait.
+    parking_slot_timeout_s: 0.50
+    parking_map_wait_timeout_s: 3.0

@@ -166,6 +166,21 @@ def test_green_rectangle_is_not_confirmed(detector):
     assert detector.detect(image).raw_state == "UNKNOWN"
 
 
+def test_unclassified_green_shape_can_use_housed_color_fallback(detector):
+    image = canvas()
+    points = np.asarray(((300, 74), (337, 78), (342, 101),
+                         (326, 110), (301, 102), (294, 88)), np.int32)
+    cv2.fillPoly(image, [points], (0, 120, 0), cv2.LINE_AA)
+    result = detector.detect(image)
+    assert result.raw_state == "G", result.rejection_reasons
+    assert result.selected.raw_shape == "COLOR_FALLBACK"
+
+    no_housing = np.full((480, 640, 3), 120, np.uint8)
+    cv2.fillPoly(no_housing, [points], (0, 120, 0), cv2.LINE_AA)
+    rejected = detector.detect(no_housing)
+    assert rejected.raw_state == "UNKNOWN"
+
+
 def test_small_green_noise_is_unknown(detector):
     image = canvas()
     image[80:82, 300:302] = (0, 255, 0)
@@ -190,8 +205,14 @@ def test_lower_image_green_object_is_outside_roi(detector):
     assert detector.detect(circle((0, 255, 0), center=(320, 400))).raw_state == "UNKNOWN"
 
 
-def test_unlit_dark_green_object_is_unknown(detector):
-    assert detector.detect(circle((0, 80, 0))).raw_state == "UNKNOWN"
+def test_dim_red_and_green_lamps_are_detected(detector):
+    assert detector.detect(circle((0, 0, 80))).raw_state == "R"
+    assert detector.detect(circle((0, 80, 0))).raw_state == "G"
+
+
+def test_nearly_unlit_red_and_green_objects_remain_unknown(detector):
+    assert detector.detect(circle((0, 0, 35))).raw_state == "UNKNOWN"
+    assert detector.detect(circle((0, 35, 0))).raw_state == "UNKNOWN"
 
 
 def test_green_without_dark_housing_is_allowed_but_gets_no_housing_bonus(detector):
@@ -253,7 +274,15 @@ def test_requested_widened_hsv_edge_cases_are_detected(
 def test_requested_hsv_threshold_parameters_are_exact(detector):
     config = detector.config
     assert (config.green_hue_min, config.green_hue_max,
-            config.green_s_min, config.green_v_min) == (35, 105, 80, 90)
+            config.green_s_min, config.green_v_min) == (35, 105, 60, 55)
+    assert (config.hsv_minimum_saturation, config.hsv_minimum_value,
+            config.red_lab_a_min) == (60, 55, 130)
+    assert (config.red_minimum_brightness_delta,
+            config.red_minimum_bright_pixel_ratio,
+            config.green_minimum_brightness_delta,
+            config.green_minimum_bright_pixel_ratio) == (8.0, .20, 8.0, .20)
+    assert (config.color_fallback_minimum_housing_dark_ratio,
+            config.color_fallback_maximum_rectangularity) == (.20, .82)
     assert (config.yellow_hue_min, config.yellow_hue_max,
             config.yellow_s_min, config.yellow_v_min) == (12, 40, 90, 110)
 

@@ -47,6 +47,15 @@ def _frame(states):
     return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
 
+def _dim_frame(states):
+    hsv = np.zeros((100, 100, 3), dtype=np.uint8)
+    for center, state in zip((25, 50, 75), states):
+        hue = 60 if state == "G" else 2
+        hsv[40:60, center-8:center+8] = (0, 0, 25)
+        hsv[46:54, center-4:center+4] = (hue, 180, 65)
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+
 def _cluster(distance, motion=STATIC):
     return Cluster(((distance, -0.01), (distance, 0.01)),
                    (distance, 0.0), motion=motion)
@@ -58,7 +67,32 @@ def test_mode11_detector_uses_position_specific_a_b_patterns():
     assert detector.detect(_frame("RGR")).state == SignalState.RED
     for states in ("RRG", "RRR"):
         assert detector.detect(_frame(states)).state == SignalState.UNKNOWN
-    assert detector.detect(_frame("GR")).state == SignalState.RED
+    assert detector.detect(_frame("GR")).state == SignalState.GREEN
+
+
+def test_mode11_detector_keeps_dim_red_and_green_lamps():
+    config = DetectorConfig(
+        red_ranges=(HSVRange((0, 60, 55), (12, 255, 255)),
+                    HSVRange((168, 60, 55), (179, 255, 255))),
+        core_green=HSVRange((35, 60, 55), (105, 255, 255)),
+        extended_green=HSVRange((35, 60, 55), (105, 255, 255)),
+        minimum_contour_area=2.0, minimum_color_pixel_ratio=0.003,
+        candidate_bounds=(0.0, 1.0, 0.0, 1.0))
+    detector = SignalExitDetector(
+        config, NormalizedROI(0.1, 0.1, 0.9, 0.9))
+    assert detector.detect(_dim_frame("GRR")).state == SignalState.GREEN
+    assert detector.detect(_dim_frame("RGR")).state == SignalState.RED
+
+
+def test_mode11_three_visible_lamps_use_order_not_single_red_anchor():
+    candidates = (
+        (0.39, SignalState.RED, 30, (), .8),
+        (0.51, SignalState.GREEN, 30, (), .9),
+        (0.63, SignalState.RED, 30, (), .8),
+    )
+    state, lamps = classify_exit_triplet(candidates)
+    assert lamps == (SignalState.RED, SignalState.GREEN, SignalState.RED)
+    assert state == SignalState.RED
 
 
 @pytest.mark.parametrize("states,expected", (
