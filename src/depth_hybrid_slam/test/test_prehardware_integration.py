@@ -187,7 +187,8 @@ def test_required_production_topic_owners_are_explicit():
     assert '"/depth_slam/lidar/rear_hard_emergency"' in lidar
     manager = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam"/
                "maneuver_manager_node.py").read_text()
-    assert 'front_hard or self.rear_hard' in manager
+    assert 'front_hard or (self.rear_available and self.rear_hard)' in manager
+    assert '"/depth_slam/lidar/rear_scan_available"' in manager
     assert 'parking_reverse_phase(' in manager
     assert 'valid = decision.owner == "LIDAR"' in manager
     assert 'command = f"{choice}:{branch}"' in (

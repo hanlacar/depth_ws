@@ -58,3 +58,8 @@ class ScanSafety:
         return ScanAssessment(True, True, nearest, self.latched,
                               len(threat) >= self.minimum_points,
                               left, right)
+
+
+def optional_rear_hard_stop(active, fresh, hard_obstacle):
+    """Use a rear obstacle only when an optional rear scan is available."""
+    return bool(active and fresh and hard_obstacle)

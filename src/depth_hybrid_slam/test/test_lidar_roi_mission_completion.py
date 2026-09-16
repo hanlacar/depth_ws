@@ -6,6 +6,7 @@ from depth_hybrid_slam.lidar_roi_core import (
     ackermann_centerline, assess_curved_roi, assess_mode5_broad, Cluster,
     clusters_in_centerline_corridor, DYNAMIC, DynamicClusterTracker, mode_gates,
     speed_bump_suppressed, STATIC, UNKNOWN)
+from depth_hybrid_slam.lidar_scan_core import optional_rear_hard_stop
 from depth_hybrid_slam.mission_completion import MissionCompletionTracker
 
 
@@ -192,6 +193,7 @@ def test_f_mode5_two_rejoins_pass_one_rejoin_fails_at_exit():
 def _parking(source, mode):
     value = MissionCompletionTracker()
     value.set_mode(mode)
+    value.observe_rear_lidar(True)
     value.observe_route_status({"route_complete_modes": [mode]})
     value.observe_lidar_safety({"mode": mode, "slot_a": True})
     if source == "LIDAR":
@@ -218,6 +220,23 @@ def test_f_mode7_and_10_lidar_and_csv_fallback_parking():
         missing.observe_route_status({"route_complete_modes": [mode]})
         missing.observe_maneuver({"mode": mode, "event": "PARKING_CSV_REJOINED"})
         assert not missing.mode_complete(mode)
+
+
+def test_optional_rear_lidar_never_stops_when_missing_but_blocks_completion():
+    assert not optional_rear_hard_stop(True, False, True)
+    assert not optional_rear_hard_stop(False, True, True)
+    assert optional_rear_hard_stop(True, True, True)
+
+    value = MissionCompletionTracker()
+    value.set_mode(7)
+    value.observe_route_status({"route_complete_modes": [7]})
+    value.observe_lidar_safety({"mode": 7, "slot_a": True})
+    value.observe_maneuver({
+        "mode": 7, "event": "PARKING_CSV_REJOINED", "source": "LIDAR"})
+    assert not value.mode_complete(7)
+    assert not value.status()["parking_rear_verified"][7]
+    value.observe_rear_lidar(True)
+    assert value.mode_complete(7)
 
 
 def test_f_mode9_requires_detection_and_applied_zero_command():

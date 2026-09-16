@@ -229,6 +229,7 @@ def _satisfy_all_missions(tracker, end_branch):
     tracker.observe_maneuver({"mode": 5, "event": "AVOIDANCE_REJOINED"})
     for mode in (7, 10):
         tracker.set_mode(mode)
+        tracker.observe_rear_lidar(True)
         tracker.observe_lidar_safety({"mode": mode, "slot_a": True})
         tracker.observe_maneuver({
             "mode": mode, "event": "PARKING_CSV_REJOINED",
@@ -396,6 +397,7 @@ def test_mode2_pitch_requires_half_second_continuity():
 def test_parking_slot_source_matrix(mode, slot, source, expected):
     tracker = MissionCompletionTracker()
     tracker.set_mode(mode)
+    tracker.observe_rear_lidar(True)
     tracker.observe_route_status({"route_complete_modes": [mode]})
     if slot:
         tracker.observe_lidar_safety({

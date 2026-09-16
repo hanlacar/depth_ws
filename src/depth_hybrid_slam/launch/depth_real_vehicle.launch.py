@@ -41,6 +41,8 @@ def _runtime(context):
         "1", "true", "yes", "on")
     parking_slam_enabled = value("enable_parking_slam").strip().lower() in (
         "1", "true", "yes", "on")
+    rear_lidar_enabled = value("use_rear_lidar").strip().lower() in (
+        "1", "true", "yes", "on")
     camera_enabled = value("use_camera").strip().lower() in (
         "1", "true", "yes", "on")
     if vslam_enabled and not camera_enabled:
@@ -82,8 +84,10 @@ def _runtime(context):
                 share/"launch"/"dual_rplidar.launch.py")),
             launch_arguments={
                 "launch_lidar_drivers": LaunchConfiguration("use_lidar"),
-                "launch_rear_lidar_driver": "false",
+                "launch_rear_lidar_driver": LaunchConfiguration(
+                    "use_rear_lidar"),
                 "front_serial_port": LaunchConfiguration("front_serial_port"),
+                "rear_serial_port": LaunchConfiguration("rear_serial_port"),
             }.items()),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(
@@ -167,7 +171,7 @@ def _runtime(context):
             parameters=[str(share/"config"/"lidar_autonomy.yaml"), {
                 "route_path": str(route_path),
                 "route_metadata_path": str(metadata_path),
-                "rear_lidar_enabled": False,
+                "rear_lidar_enabled": rear_lidar_enabled,
                 "enable_parking_slam": parking_slam_enabled,
             }]),
         Node(
@@ -241,6 +245,7 @@ def _runtime(context):
             "/depth_slam/camera/correction_path",
             "/depth_slam/lidar/perception",
             "/depth_slam/lidar/safety_event",
+            "/depth_slam/lidar/rear_scan_available",
             "/depth_slam/camera/csv_validation",
             "/depth_slam/camera/correction_state",
             "/camera/traffic_light_fused/state",
@@ -279,6 +284,8 @@ def generate_launch_description():
                 ROOT/"maps"/"merged_competition_level_aligned_v10"/
                 "rtabmap.db")),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),
+        DeclareLaunchArgument("use_rear_lidar", default_value="false"),
+        DeclareLaunchArgument("rear_serial_port", default_value="/dev/ttyUSB1"),
         DeclareLaunchArgument("camera_serial", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),
         DeclareLaunchArgument("require_cuda", default_value="true"),

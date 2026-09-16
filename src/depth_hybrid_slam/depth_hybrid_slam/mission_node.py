@@ -133,6 +133,9 @@ class MissionNode(Node):
                                  lambda m: self.completion.observe_route_status(m.data), 10)
         self.create_subscription(String, "/depth_slam/lidar/safety_event",
                                  self.on_lidar_safety, 10)
+        self.create_subscription(
+            Bool, "/depth_slam/lidar/rear_scan_available",
+            lambda m: self.completion.observe_rear_lidar(bool(m.data)), 10)
         self.create_subscription(String, "/depth_slam/camera/csv_validation",
                                  self.on_csv_validation, 10)
         self.create_subscription(String, "/depth_slam/lidar/maneuver_event",
@@ -413,7 +416,7 @@ class MissionNode(Node):
                         event_mode, True,
                         "LiDAR slot selected and " +
                         self.completion.parking_source[event_mode] +
-                        " rejoined CSV")
+                        " rejoined CSV; rear LiDAR verified")
                 elif event_mode == 11:
                     self._report_segment(
                         11, True,

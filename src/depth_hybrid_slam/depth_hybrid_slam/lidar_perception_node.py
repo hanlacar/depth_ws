@@ -19,7 +19,7 @@ from .lidar_roi_core import (
     assess_curved_roi, assess_mode5_broad, cluster_points,
     clusters_in_centerline_corridor, DYNAMIC, DynamicClusterTracker, mode_gates,
     mode5_avoidance_requested, speed_bump_suppressed)
-from .lidar_scan_core import ScanSafety
+from .lidar_scan_core import optional_rear_hard_stop, ScanSafety
 from .lidar_mission_core import (
     Mode9EmergencyLatch, Mode9Safety, SteeringSlowdownLatch)
 
@@ -146,6 +146,8 @@ class LidarPerceptionNode(Node):
             Bool, "/depth_slam/lidar/front_scan_fresh", 10)
         self.rear_hard_pub = self.create_publisher(
             Bool, "/depth_slam/lidar/rear_hard_emergency", 10)
+        self.rear_available_pub = self.create_publisher(
+            Bool, "/depth_slam/lidar/rear_scan_available", 10)
         self.slow_pub = self.create_publisher(
             Bool, "/depth_slam/lidar/slowdown_required", 10)
         self.distance_slow_pub = self.create_publisher(
@@ -491,9 +493,14 @@ class LidarPerceptionNode(Node):
         # an obstacle inside that front_laser-origin boundary.
         avoidance = mode5_avoidance_requested(
             self.mode, front_fresh, csv_path_fresh, broad.path_blocked)
-        rear_result = (self.rear_safety.assess(self.rear, rear_fresh)
-                       if rear_active else None)
-        rear_hard = bool(rear_result and rear_result.hard_obstacle)
+        # The rear LiDAR is optional production equipment. A missing/stale
+        # rear stream must not become a synthetic obstacle and immobilize
+        # Modes 7/10. Fresh rear data keeps normal obstacle protection.
+        rear_result = (self.rear_safety.assess(self.rear, True)
+                       if rear_active and rear_fresh else None)
+        rear_hard = optional_rear_hard_stop(
+            rear_active, rear_fresh,
+            bool(rear_result and rear_result.hard_obstacle))
         parking_use_front = bool(self.get_parameter(
             "parking_use_front_lidar").value)
         parking_scan = self.front_local if parking_use_front else self.rear
@@ -512,6 +519,8 @@ class LidarPerceptionNode(Node):
         self.hard_pub.publish(Bool(data=hard_stop))
         self.front_fresh_pub.publish(Bool(data=front_fresh))
         self.rear_hard_pub.publish(Bool(data=rear_hard))
+        self.rear_available_pub.publish(Bool(
+            data=bool(rear_active and rear_fresh)))
         self.slow_pub.publish(Bool(data=slowdown))
         self.distance_slow_pub.publish(Bool(
             data=distance_slowdown_evidence))
@@ -577,6 +586,8 @@ class LidarPerceptionNode(Node):
                 0.0 if self.steering_slowdown.below_since is None else
                 max(0.0, now-self.steering_slowdown.below_since)),
             "rear_hard_obstacle": rear_hard,
+            "rear_scan_available": bool(rear_active and rear_fresh),
+            "rear_lidar_policy": "OPTIONAL_VERIFY_IF_PRESENT",
             "path_blocked": avoidance,
             "avoidance_required": avoidance,
             "csv_path_fresh": csv_path_fresh,

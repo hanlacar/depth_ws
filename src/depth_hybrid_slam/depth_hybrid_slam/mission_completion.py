@@ -29,6 +29,7 @@ class MissionCompletionTracker:
         self.parking_completed = {7: False, 10: False}
         self.parking_rejoined = {7: False, 10: False}
         self.parking_source = {7: "", 10: ""}
+        self.parking_rear_verified = {7: False, 10: False}
         self.mode9_hard_pending = False
         self.mode9_hard_distance = None
         self.mode9_emergency_applied = False
@@ -103,6 +104,18 @@ class MissionCompletionTracker:
                 float(distance) <= 1.00):
             self.mode9_hard_pending = True
             self.mode9_hard_distance = float(distance)
+
+    def observe_rear_lidar(self, available, mode=None):
+        """Latch optional rear-LiDAR evidence without gating vehicle motion."""
+        selected_mode = self.mode if mode is None else mode
+        try:
+            selected_mode = int(selected_mode)
+        except (TypeError, ValueError):
+            return
+        if (selected_mode in (7, 10) and bool(available) and
+                not self.parking_rear_verified[selected_mode]):
+            self.parking_rear_verified[selected_mode] = True
+            self._event("PARKING_REAR_LIDAR_VERIFIED", selected_mode)
 
     def observe_maneuver(self, value):
         if isinstance(value, str):
@@ -226,7 +239,10 @@ class MissionCompletionTracker:
         if mode in (7, 10):
             parking_done = (self.parking_completed[mode] and
                             self.parking_rejoined[mode])
-            return self.slot_seen[mode] and parking_done
+            # Rear sensing is optional for motion. Without it, parking stays
+            # UNVERIFIED rather than being reported COMPLETE.
+            return (self.slot_seen[mode] and parking_done and
+                    self.parking_rear_verified[mode])
         if mode == 9:
             return self.mode9_emergency_applied
         if mode == 11:
@@ -277,6 +293,7 @@ class MissionCompletionTracker:
             "mode5_avoidance_rejoined_count": self.mode5_rejoins,
             "parking_slot_seen": self.slot_seen,
             "parking_source": self.parking_source,
+            "parking_rear_verified": self.parking_rear_verified,
             "mode9_emergency_seen": self.mode9_emergency_applied,
             "mode11_branch": self.mode11_branch,
             "mode11_source": self.mode11_source,

@@ -31,7 +31,8 @@ def test_real_launch_contains_only_measured_odom_and_one_front_lidar():
             "test_odom_publisher", "rear_rplidar_node"):
         assert forbidden not in source
     assert 'package="t870_mcu_simple", executable="bridge"' not in source
-    assert '"launch_rear_lidar_driver": "false"' in source
+    assert '"launch_rear_lidar_driver": launchconfiguration(' in source
+    assert 'declarelaunchargument("use_rear_lidar", default_value="false")' in source
     assert '"--frame-id", "map", "--child-frame-id", "odom"' not in source
     assert '"hybrid_localization.launch.py"' in source
     assert '"use_vehicle_odom": "true"' in source
@@ -51,6 +52,17 @@ def test_split_sensor_route_launch_waits_for_separate_real_mcu_odom():
     assert 'LaunchConfiguration("launch_mcu_odom")' not in real
     assert 'executable="csv_only_network_visualizer"' in real
     assert 'executable="route_local_path"' in real
+
+
+def test_production_rear_lidar_is_optional_and_explicitly_enabled():
+    wrapper = SPLIT_LAUNCH.read_text(encoding="utf-8")
+    real = LAUNCH.read_text(encoding="utf-8")
+    for source in (wrapper, real):
+        assert 'DeclareLaunchArgument("use_rear_lidar", default_value="false")' in source
+        assert 'DeclareLaunchArgument("rear_serial_port", default_value="/dev/ttyUSB1")' in source
+    assert '"use_rear_lidar": LaunchConfiguration("use_rear_lidar")' in wrapper
+    assert '"rear_serial_port": LaunchConfiguration("rear_serial_port")' in wrapper
+    assert '"rear_lidar_enabled": rear_lidar_enabled' in real
 
 
 def test_production_launch_exposes_vslam_and_mode_range_controls():

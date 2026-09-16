@@ -30,6 +30,8 @@ def generate_launch_description():
                 str(root/"maps"/"merged_competition_level_aligned_v10"/
                     "rtabmap.db"))),
         DeclareLaunchArgument("front_serial_port", default_value="/dev/ttyUSB0"),
+        DeclareLaunchArgument("use_rear_lidar", default_value="false"),
+        DeclareLaunchArgument("rear_serial_port", default_value="/dev/ttyUSB1"),
         DeclareLaunchArgument("camera_serial", default_value=""),
         DeclareLaunchArgument("device", default_value="cuda:0"),
         DeclareLaunchArgument("require_cuda", default_value="true"),
@@ -52,6 +54,8 @@ def generate_launch_description():
                 "map_path": LaunchConfiguration("map_path"),
                 "front_serial_port": LaunchConfiguration(
                     "front_serial_port"),
+                "use_rear_lidar": LaunchConfiguration("use_rear_lidar"),
+                "rear_serial_port": LaunchConfiguration("rear_serial_port"),
                 "camera_serial": LaunchConfiguration("camera_serial"),
                 "device": LaunchConfiguration("device"),
                 "require_cuda": LaunchConfiguration("require_cuda"),

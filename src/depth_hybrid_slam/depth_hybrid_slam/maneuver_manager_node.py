@@ -66,6 +66,7 @@ class ManeuverManagerNode(Node):
             self.declare_parameter(name, default)
         self.mode = -1
         self.avoidance = self.hard = self.rear_hard = False
+        self.rear_available = False
         self.a_free = self.b_free = False
         self.slots_fresh = False
         self.slots_at = None
@@ -163,6 +164,9 @@ class ManeuverManagerNode(Node):
         self.create_subscription(
             Bool, "/depth_slam/lidar/rear_hard_emergency",
             lambda m: setattr(self, "rear_hard", bool(m.data)), 10)
+        self.create_subscription(
+            Bool, "/depth_slam/lidar/rear_scan_available",
+            lambda m: setattr(self, "rear_available", bool(m.data)), 10)
         self.create_subscription(String, "/depth_slam/lidar/parking_slots",
                                  self._slots, 10)
         self.create_subscription(String, "/depth_slam/lidar/perception",
@@ -1071,7 +1075,7 @@ class ManeuverManagerNode(Node):
                 branch, path_available,
                 track.complete or self.path_complete,
                 state,
-                front_hard or self.rear_hard,
+                front_hard or (self.rear_available and self.rear_hard),
                 track.drive, track.wheel, self.rejoin_valid,
                 time.monotonic())
         if self.mode == 9:
@@ -1241,7 +1245,9 @@ class ManeuverManagerNode(Node):
                 "parking_reverse": reverse,
                 "front_hard_raw": self.hard,
                 "front_hard_ignored_reverse": bool(self.hard and reverse),
-                "rear_collision_protection": False,
+                "rear_scan_available": self.rear_available,
+                "rear_collision_protection": self.rear_available,
+                "rear_completion_verified": self.rear_available,
                 "parking_rejoin_state": (
                     parking.state if parking is not None else "INACTIVE"),
             }, separators=(",", ":"), sort_keys=True)))

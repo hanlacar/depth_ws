@@ -244,24 +244,33 @@ def test_rosbag_timestamp_and_max_three_rotation(tmp_path):
         assert len(completed_bags(root)) == initial+1
 
 
-def test_readme_simplified_a_vslam_off_command_matches_production_launch():
+def test_readme_current_five_terminal_commands_match_production_launch():
     readme = (ROOT/"README.md").read_text()
     launch = (ROOT/"src/depth_hybrid_slam/launch/"
               "depth_csv_camera_lidar.launch.py").read_text()
-    assert readme.count("\n## ") == 1
-    assert readme.count("\n### ") == 1
+    assert readme.count("\n## ") == 6
+    assert readme.count("\n### ") == 2
     for value in ("cd ~/depth_ws", "source setup_depth.sh",
                   "ros2 launch depth_hybrid_slam "
                   "depth_csv_camera_lidar.launch.py"):
         assert value in readme
     for name, value in (
-            ("start_branch", "A"), ("start_mode", "1"),
-            ("end_mode", "11"), ("enable_vslam", "false"),
+            ("start_branch", "A"), ("start_mode", "7"),
+            ("end_mode", "7"), ("enable_vslam", "false"),
+            ("enable_parking_slam", "false"),
             ("front_serial_port", "/dev/ttyUSB0"),
             ("enable_control", "true"), ("user_approved", "true"),
             ("enable_rosbag", "true")):
         assert f"{name}:={value}" in readme
         assert f'DeclareLaunchArgument("{name}"' in launch
+    for command in (
+            "ros2 launch t870_mcu_simple mcu.launch.py port:=auto",
+            "rviz2 -d ~/depth_ws/install/depth_hybrid_slam/share/"
+            "depth_hybrid_slam/config/prehardware_csv_front_lidar.rviz",
+            "ros2 topic echo /cmd_drive", "ros2 topic echo /cmd_wheel"):
+        assert command in readme
+    assert "enable_vslam:=true" in readme
+    assert "enable_parking_slam:=true" in readme
     runtime = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam/"
                "runtime_monitor_node.py").read_text()
     mission = (ROOT/"src/depth_hybrid_slam/depth_hybrid_slam/"
