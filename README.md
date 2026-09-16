@@ -81,7 +81,7 @@ ros2 topic echo /cmd_drive
 ```
 
 
-## 5. cmd_drive
+## 5. cmd_wheel
 
 
 ```bash
