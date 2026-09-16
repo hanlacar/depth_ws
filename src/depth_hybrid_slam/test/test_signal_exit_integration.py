@@ -15,7 +15,7 @@ from depth_hybrid_slam.mode_completion import RouteModeCompletionTracker
 from depth_hybrid_slam.signal_exit_core import (
     classify_exit_triplet, DetectorConfig, HSVRange, NormalizedROI, ObservationState,
     SelectedRoute, SignalDetection, SignalExitDetector, SignalState,
-    SignalVoteWindow)
+    SignalVoteWindow, assign_exit_lamps, select_aligned_exit_triplet)
 import numpy as np
 import pytest
 
@@ -93,6 +93,69 @@ def test_mode11_three_visible_lamps_use_order_not_single_red_anchor():
     state, lamps = classify_exit_triplet(candidates)
     assert lamps == (SignalState.RED, SignalState.GREEN, SignalState.RED)
     assert state == SignalState.RED
+
+
+def _candidate(x, y, state, confidence=.8, width=16, height=16):
+    center_x = int(round(x*640))
+    return (x, state, 80,
+            (center_x-width//2, y-height//2,
+             center_x+width//2, y+height//2),
+            confidence, .5, float(width*height))
+
+
+def test_mode11_aligned_rgr_ignores_extra_green_below_panel_and_selects_b():
+    candidates = (
+        _candidate(.38, 105, SignalState.RED, .99),
+        _candidate(.38, 130, SignalState.RED, .82),
+        _candidate(.50, 138, SignalState.GREEN, .86),
+        _candidate(.62, 137, SignalState.RED, .84),
+        _candidate(.78, 198, SignalState.GREEN, .99),
+    )
+    selected = select_aligned_exit_triplet(candidates)
+    assert tuple(item[0] for item in selected) == (.38, .50, .62)
+    lamps = assign_exit_lamps(candidates)
+    assert lamps == (SignalState.RED, SignalState.GREEN, SignalState.RED)
+    assert classify_exit_triplet(candidates)[0] == SignalState.RED
+
+
+def test_mode11_detector_reports_only_selected_rgr_row_not_off_row_noise():
+    hsv = np.zeros((100, 100, 3), dtype=np.uint8)
+    for center, state in ((30, "R"), (50, "G"), (70, "R")):
+        hue = 60 if state == "G" else 2
+        hsv[35:55, center-8:center+8] = (0, 0, 25)
+        hsv[41:49, center-4:center+4] = (hue, 255, 255)
+    hsv[68:88, 78:94] = (0, 0, 25)
+    hsv[74:82, 82:90] = (60, 255, 255)
+    detection = _detector().detect(cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR))
+    assert detection.lamp_states == (
+        SignalState.RED, SignalState.GREEN, SignalState.RED)
+    assert detection.state == SignalState.RED
+    assert len(detection.candidates) == 3
+    assert detection.bbox[3] < 60
+
+
+def test_mode11_aligned_grr_ignores_extra_objects_and_selects_a():
+    candidates = (
+        _candidate(.24, 120, SignalState.GREEN, .75),
+        _candidate(.37, 122, SignalState.RED, .76),
+        _candidate(.50, 121, SignalState.RED, .77),
+        _candidate(.70, 180, SignalState.GREEN, .99),
+        _candidate(.85, 70, SignalState.RED, .99),
+    )
+    lamps = assign_exit_lamps(candidates)
+    assert lamps == (SignalState.GREEN, SignalState.RED, SignalState.RED)
+    assert classify_exit_triplet(candidates)[0] == SignalState.GREEN
+
+
+def test_mode11_off_axis_colored_objects_cannot_form_exit_triplet():
+    candidates = (
+        _candidate(.25, 80, SignalState.RED),
+        _candidate(.50, 145, SignalState.GREEN),
+        _candidate(.75, 210, SignalState.RED),
+    )
+    assert select_aligned_exit_triplet(candidates) == ()
+    assert assign_exit_lamps(candidates) == (SignalState.UNKNOWN,)*3
+    assert classify_exit_triplet(candidates)[0] == SignalState.UNKNOWN
 
 
 @pytest.mark.parametrize("states,expected", (

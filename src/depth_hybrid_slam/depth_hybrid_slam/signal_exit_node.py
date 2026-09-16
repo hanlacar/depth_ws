@@ -36,6 +36,10 @@ class SignalExitNode(Node):
             "exit_slot_centers": [0.25, 0.50, 0.75],
             "exit_slot_max_distance": 0.18,
             "exit_slot_conflict_margin": 0.12,
+            "exit_row_y_tolerance_lamp_heights": 1.25,
+            "exit_row_minimum_x_gap": 0.05,
+            "exit_row_maximum_gap_ratio": 2.25,
+            "exit_row_minimum_size_ratio": 0.35,
             "exit_green_weight": 3.0,
             "exit_red_pair_weight": 1.0,
             "exit_min_green_observations": 2,
@@ -64,7 +68,14 @@ class SignalExitNode(Node):
             dark_ratio_threshold=float(value("dark_ratio_threshold")),
             slot_centers=tuple(float(item) for item in value("exit_slot_centers")),
             slot_max_distance=float(value("exit_slot_max_distance")),
-            slot_conflict_margin=float(value("exit_slot_conflict_margin")))
+            slot_conflict_margin=float(value("exit_slot_conflict_margin")),
+            row_y_tolerance_lamp_heights=float(value(
+                "exit_row_y_tolerance_lamp_heights")),
+            row_minimum_x_gap=float(value("exit_row_minimum_x_gap")),
+            row_maximum_gap_ratio=float(value(
+                "exit_row_maximum_gap_ratio")),
+            row_minimum_size_ratio=float(value(
+                "exit_row_minimum_size_ratio")))
         self.detector = SignalExitDetector(config, roi)
         self.window = SignalVoteWindow(
             value("exit_decision_time_sec"), value("minimum_valid_frames"),

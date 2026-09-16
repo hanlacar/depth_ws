@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+import itertools
 
 import cv2
 import numpy as np
@@ -77,6 +78,10 @@ class DetectorConfig:
     slot_centers: tuple = (0.25, 0.50, 0.75)
     slot_max_distance: float = 0.18
     slot_conflict_margin: float = 0.12
+    row_y_tolerance_lamp_heights: float = 1.25
+    row_minimum_x_gap: float = 0.05
+    row_maximum_gap_ratio: float = 2.25
+    row_minimum_size_ratio: float = 0.35
 
 
 @dataclass(frozen=True)
@@ -98,9 +103,86 @@ def _signal_state(value):
                 text, SignalState.UNKNOWN)
 
 
+def _candidate_geometry(item):
+    """Return pixel geometry for a Mode-11 color component, if available."""
+    if len(item) <= 3 or len(item[3]) != 4:
+        return None
+    x1, y1, x2, y2 = (float(value) for value in item[3])
+    width, height = x2-x1, y2-y1
+    if width <= 0.0 or height <= 0.0:
+        return None
+    return ((y1+y2)/2.0, width, height, width*height)
+
+
+def select_aligned_exit_triplet(
+        candidates, y_tolerance_lamp_heights=1.25,
+        minimum_x_gap=0.05, maximum_gap_ratio=2.25,
+        minimum_size_ratio=0.35):
+    """Select one horizontal three-lamp row from noisy Mode-11 candidates.
+
+    Candidate x is normalized, while bbox geometry is in pixels.  Requiring
+    similar y centers, component sizes and left/right spacing rejects colored
+    objects that are not part of the physical exit signal panel.  Color is
+    deliberately not part of the score; grouping happens before GRR/RGR is
+    classified.
+    """
+    usable = tuple(item for item in candidates
+                   if _candidate_geometry(item) is not None)
+    if len(usable) < 3:
+        return ()
+    best = None
+    for values in itertools.combinations(usable, 3):
+        ordered = tuple(sorted(values, key=lambda item: float(item[0])))
+        first_gap = float(ordered[1][0])-float(ordered[0][0])
+        second_gap = float(ordered[2][0])-float(ordered[1][0])
+        if first_gap < float(minimum_x_gap) or \
+                second_gap < float(minimum_x_gap):
+            continue
+        gap_ratio = max(first_gap, second_gap) / max(
+            min(first_gap, second_gap), 1.0e-9)
+        if gap_ratio > float(maximum_gap_ratio):
+            continue
+        geometry = tuple(_candidate_geometry(item) for item in ordered)
+        y_centers = tuple(value[0] for value in geometry)
+        heights = tuple(value[2] for value in geometry)
+        areas = tuple(value[3] for value in geometry)
+        reference_height = float(np.median(heights))
+        y_spread = max(y_centers)-min(y_centers)
+        if y_spread > float(y_tolerance_lamp_heights)*reference_height:
+            continue
+        size_ratio = min(areas)/max(max(areas), 1.0e-9)
+        if size_ratio < float(minimum_size_ratio):
+            continue
+        confidence = sum(float(item[4]) if len(item) > 4 else 0.0
+                         for item in ordered)
+        # Geometry dominates confidence so a bright off-panel object cannot
+        # displace a dim but physically aligned exit lamp.
+        score = (4.0*y_spread/max(reference_height, 1.0e-9) +
+                 2.0*(gap_ratio-1.0) + (1.0-size_ratio) -
+                 0.20*confidence)
+        if best is None or score < best[0]:
+            best = (score, ordered)
+    return () if best is None else best[1]
+
+
 def assign_exit_lamps(candidates, slot_centers=(0.25, 0.50, 0.75),
-                      slot_max_distance=0.18, conflict_margin=0.12):
+                      slot_max_distance=0.18, conflict_margin=0.12,
+                      row_y_tolerance_lamp_heights=1.25,
+                      row_minimum_x_gap=0.05,
+                      row_maximum_gap_ratio=2.25,
+                      row_minimum_size_ratio=0.35):
     """Assign lamps by full-group order or calibrated partial positions."""
+    geometric_candidates = sum(
+        _candidate_geometry(item) is not None for item in candidates)
+    aligned = select_aligned_exit_triplet(
+        candidates, row_y_tolerance_lamp_heights, row_minimum_x_gap,
+        row_maximum_gap_ratio, row_minimum_size_ratio)
+    if aligned:
+        candidates = aligned
+    elif geometric_candidates >= 3:
+        # Three or more visible colored objects that do not form one physical
+        # horizontal panel are noise, not a calibrated partial observation.
+        return (SignalState.UNKNOWN,)*3
     normalized = []
     for item in candidates:
         confidence = float(item[4]) if len(item) > 4 else min(
@@ -116,7 +198,7 @@ def assign_exit_lamps(candidates, slot_centers=(0.25, 0.50, 0.75),
             clusters.append([item])
         else:
             clusters[-1].append(item)
-    if len(clusters) == 3:
+    if aligned or len(clusters) == 3:
         slots = clusters
     else:
         expected = tuple(float(value) for value in slot_centers)
@@ -256,7 +338,23 @@ class SignalExitDetector:
                            if value[2] >= minimum_pixels)
         lamps = assign_exit_lamps(
             candidates, self.config.slot_centers,
-            self.config.slot_max_distance, self.config.slot_conflict_margin)
+            self.config.slot_max_distance, self.config.slot_conflict_margin,
+            self.config.row_y_tolerance_lamp_heights,
+            self.config.row_minimum_x_gap,
+            self.config.row_maximum_gap_ratio,
+            self.config.row_minimum_size_ratio)
+        aligned = select_aligned_exit_triplet(
+            candidates, self.config.row_y_tolerance_lamp_heights,
+            self.config.row_minimum_x_gap,
+            self.config.row_maximum_gap_ratio,
+            self.config.row_minimum_size_ratio)
+        if aligned:
+            # Diagnostics/tracking must describe the selected physical panel,
+            # not every red/green object in the upper camera image.
+            candidates = aligned
+        elif sum(_candidate_geometry(item) is not None
+                 for item in candidates) >= 3:
+            candidates = ()
         state, reason = exit_route_evidence(lamps)
         red = sum(value[2] for value in candidates
                   if value[1] == SignalState.RED)
