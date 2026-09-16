@@ -63,7 +63,9 @@ class Mode5Avoidance:
             return ManeuverDecision(self.state, "LIDAR", True)
         if self.state == "LIDAR_PATH_TRACKING":
             wheel = int(local_wheel)
-            if abs(wheel) > 22:
+            # The MCU physical contract remains +/-22 deg, while generated
+            # Mode-5 paths use the commissioned planner limit of +/-20 deg.
+            if abs(wheel) > 20:
                 self.state = "PLANNER_FAILED_HARD_STOP"
                 return ManeuverDecision(self.state, "SAFETY", True)
             return ManeuverDecision(self.state, "LIDAR", False, 1.0, wheel)
@@ -71,29 +73,37 @@ class Mode5Avoidance:
 
 
 class Mode5ObstacleLatch:
-    """Require a continuous observation, then remember it through planning."""
+    """Confirm an obstacle, then clear it after consecutive clear samples."""
 
-    def __init__(self, confirmation_s=2.0):
+    def __init__(self, confirmation_s=2.0, clear_confirmations=3):
         self.confirmation_s = float(confirmation_s)
+        self.clear_confirmations = max(2, int(clear_confirmations))
         if self.confirmation_s < 2.0:
             raise ValueError("Mode 5 obstacle confirmation must be >= 2 s")
         self.first_seen_at = None
         self.latched = False
+        self.clear_count = 0
 
     def reset(self):
         self.first_seen_at = None
         self.latched = False
+        self.clear_count = 0
 
     def update(self, visible, mode=5, now=None):
         timestamp = time.monotonic() if now is None else float(now)
         if int(mode) != 5:
             self.reset()
             return False
-        if self.latched:
-            return True
         if not bool(visible):
             self.first_seen_at = None
-            return False
+            if self.latched:
+                self.clear_count += 1
+                if self.clear_count >= self.clear_confirmations:
+                    self.reset()
+            return self.latched
+        self.clear_count = 0
+        if self.latched:
+            return True
         if self.first_seen_at is None:
             self.first_seen_at = timestamp
         if timestamp-self.first_seen_at >= self.confirmation_s:
@@ -131,14 +141,15 @@ class StationaryConfirmation:
         return timestamp-self.since >= self.duration_s
 
 
-def mode5_planning_distance_ready(distance_m, minimum_m=1.0):
-    """Allow generation only before the front LiDAR gap falls below 1 m."""
+def mode5_planning_distance_ready(distance_m, emergency_distance_m=0.5):
+    """Let geometry decide whenever the obstacle is beyond hard-stop range."""
     try:
         distance = float(distance_m)
-        minimum = float(minimum_m)
+        emergency = float(emergency_distance_m)
     except (TypeError, ValueError):
         return False
-    return math.isfinite(distance) and minimum >= 0.0 and distance >= minimum
+    return (math.isfinite(distance) and math.isfinite(emergency) and
+            emergency >= 0.0 and distance > emergency)
 
 
 def select_parking_branch(a_free, b_free):

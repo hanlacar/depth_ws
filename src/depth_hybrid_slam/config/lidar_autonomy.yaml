@@ -74,9 +74,9 @@ depth_maneuver_manager:
     detour_maximum_ahead_m: 10.0
     planner_maximum_replans: 160
     obstacle_confirmation_s: 2.0
-    # Generate only while the last confirmed front_lidar obstacle range is
-    # still at least 1.0 m. A closer obstacle remains a stopped condition.
-    minimum_planning_lidar_distance_m: 1.0
+    # Distance alone blocks planning only inside the unchanged hard-stop
+    # envelope. Beyond 0.50 m the geometric planner decides feasibility.
+    emergency_distance_m: 0.50
     stopped_confirmation_s: 0.30
     stopped_linear_speed_mps: 0.03
     stopped_angular_speed_rps: 0.03

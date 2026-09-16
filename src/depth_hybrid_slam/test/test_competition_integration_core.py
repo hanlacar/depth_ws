@@ -108,13 +108,16 @@ def test_mode5_complete_sequence_and_failure_policy():
     assert core.update(False, False).state == "CSV_TRACKING"
 
 
-def test_mode5_obstacle_must_be_visible_two_seconds_then_stays_latched():
+def test_mode5_obstacle_confirms_for_two_seconds_then_clears_after_three_samples():
     latch = Mode5ObstacleLatch(confirmation_s=2.0)
     assert not latch.update(True, mode=5, now=0.0)
     assert not latch.update(True, mode=5, now=1.99)
     assert latch.update(True, mode=5, now=2.0)
-    # A qualified obstacle remains remembered if a later scan loses it.
+    # One or two missing samples cannot release a confirmed obstacle.
     assert latch.update(False, mode=5, now=2.1)
+    assert latch.update(False, mode=5, now=2.2)
+    assert not latch.update(False, mode=5, now=2.3)
+    assert not latch.latched and latch.first_seen_at is None
     latch.reset()
     assert not latch.update(True, mode=5, now=3.0)
     assert not latch.update(False, mode=5, now=4.9)
@@ -133,12 +136,33 @@ def test_mode5_planning_waits_for_measured_stationary_confirmation():
     assert not gate.update(0.0, 0.0, False, 2.0)
 
 
-def test_mode5_planning_is_generated_before_one_metre_only():
+def test_mode5_planning_distance_blocks_only_hard_stop_envelope():
     assert not mode5_planning_distance_ready(None)
     assert not mode5_planning_distance_ready(float("nan"))
-    assert not mode5_planning_distance_ready(0.999)
-    assert mode5_planning_distance_ready(1.0)
-    assert mode5_planning_distance_ready(1.5)
+    assert not mode5_planning_distance_ready(0.49)
+    assert not mode5_planning_distance_ready(0.50)
+    for distance in (0.51, 0.75, 0.95, 1.0, 1.5):
+        assert mode5_planning_distance_ready(distance)
+
+
+def test_mode5_planner_failure_holds_for_hazard_then_recovers_after_clear():
+    latch = Mode5ObstacleLatch(confirmation_s=2.0, clear_confirmations=3)
+    machine = Mode5Avoidance()
+    assert not latch.update(True, mode=5, now=0.0)
+    assert latch.update(True, mode=5, now=2.0)
+    assert machine.update(latch.latched).state == "STOP_FOR_PLANNING"
+    failed = machine.update(
+        latch.latched, False, "NO_FEASIBLE_DETOUR")
+    assert failed.stop and failed.state == "PLANNER_FAILED_HARD_STOP"
+    for now in (2.1, 2.2):
+        assert latch.update(False, mode=5, now=now)
+        assert machine.update(
+            latch.latched, False, "NO_FEASIBLE_DETOUR").stop
+    assert not latch.update(False, mode=5, now=2.3)
+    resumed = machine.update(
+        latch.latched, False, "NO_FEASIBLE_DETOUR")
+    assert not resumed.stop and resumed.owner == "CSV"
+    assert resumed.state == "PLANNER_FAILED_CSV_FALLBACK"
 
 
 def test_bounded_rejoin_rejects_wrong_segment_backtrack_direction_and_limit():

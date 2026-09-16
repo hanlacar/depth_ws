@@ -142,9 +142,13 @@ def test_mode5_roi_and_csv_collision_planning_distance_contract():
     perception = config["depth_lidar_perception"]["ros__parameters"]
     maneuver = config["depth_maneuver_manager"]["ros__parameters"]
     assert perception["mode5_range_m"] == 1.5
+    assert perception["mode5_lateral_m"] == 1.0
+    assert perception["mode5_fov_deg"] == 80.0
+    assert perception["corridor_half_width_m"] == 0.30
+    assert perception["emergency_distance_m"] == 0.50
     assert perception["csv_path_timeout_s"] == 0.5
     assert maneuver["obstacle_confirmation_s"] == 2.0
-    assert maneuver["minimum_planning_lidar_distance_m"] == 1.0
+    assert maneuver["emergency_distance_m"] == 0.5
 
 
 def test_rviz_and_markers_make_a_b_and_active_route_unambiguous():

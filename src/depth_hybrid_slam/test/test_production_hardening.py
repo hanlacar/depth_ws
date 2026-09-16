@@ -187,6 +187,20 @@ def test_mode5_path_lock_and_hard_stop_without_replan():
     assert machine.path_locked and emergency.state == "LIDAR_PATH_TRACKING"
 
 
+def test_mode5_tracker_command_enforces_twenty_degree_planner_limit():
+    accepted = Mode5Avoidance()
+    accepted.update(avoidance_required=True)
+    accepted.update(avoidance_required=True, path_valid=True)
+    command = accepted.update(path_valid=True, local_wheel=20)
+    assert not command.stop and command.wheel == 20
+
+    rejected = Mode5Avoidance()
+    rejected.update(avoidance_required=True)
+    rejected.update(avoidance_required=True, path_valid=True)
+    command = rejected.update(path_valid=True, local_wheel=21)
+    assert command.stop and command.state == "PLANNER_FAILED_HARD_STOP"
+
+
 def test_full_footprint_and_parking_fallback_rules():
     path = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
     assert not swept_footprint_clear(path, ((0.0, 0.35),))

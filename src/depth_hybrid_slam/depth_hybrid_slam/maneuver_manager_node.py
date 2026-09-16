@@ -56,7 +56,7 @@ class ManeuverManagerNode(Node):
                 ("detour_maximum_ahead_m", 8.0),
                 ("planner_maximum_replans", 48),
                 ("obstacle_confirmation_s", 2.0),
-                ("minimum_planning_lidar_distance_m", 1.0),
+                ("emergency_distance_m", 0.50),
                 ("stopped_confirmation_s", 0.30),
                 ("stopped_linear_speed_mps", 0.03),
                 ("stopped_angular_speed_rps", 0.03),
@@ -803,6 +803,21 @@ class ManeuverManagerNode(Node):
         self.stop_waypoint_key = ""
         self.previous_mode = self.mode
 
+    def _reset_mode5_runtime(self):
+        """Discard one failed/completed avoidance episode before CSV resumes."""
+        self.mode5.reset()
+        self.mode5_plan = None
+        self.mode5_obstacle.reset()
+        self.mode5_stationary.reset()
+        self.mode5_obstacles_map = ()
+        self.mode5_curbs_map = ()
+        self.mode5_obstacle_lidar_distance = None
+        self.tracker.clear()
+        self.tracker_key = ""
+        self.planner_state = "IDLE"
+        self.plan_audit = {}
+        self.last_plan_log = None
+
     def _decision(self):
         self._transition_mode()
         if self.mode == 5:
@@ -836,7 +851,7 @@ class ManeuverManagerNode(Node):
                 distance_ready = mode5_planning_distance_ready(
                     self.mode5_obstacle_lidar_distance,
                     self.get_parameter(
-                        "minimum_planning_lidar_distance_m").value)
+                        "emergency_distance_m").value)
                 if (qualified and stopped and distance_ready and
                         self.map_pose is not None and self.route and
                         0 <= self.active_index < len(self.route)):
@@ -896,14 +911,7 @@ class ManeuverManagerNode(Node):
                 track.complete or self.path_complete, self.rejoin_valid,
                 track.wheel)
             if decision.state == "CSV_TRACKING":
-                self.mode5_plan = None
-                self.tracker.clear()
-                self.tracker_key = ""
-                self.mode5_obstacle.reset()
-                self.mode5_stationary.reset()
-                self.mode5_obstacles_map = ()
-                self.mode5_curbs_map = ()
-                self.mode5_obstacle_lidar_distance = None
+                self._reset_mode5_runtime()
             return decision
         if self.mode in (7, 10):
             prefix = "T" if self.mode == 7 else "V"
@@ -1163,7 +1171,7 @@ class ManeuverManagerNode(Node):
             "planning_distance_ready": mode5_planning_distance_ready(
                 self.mode5_obstacle_lidar_distance,
                 self.get_parameter(
-                    "minimum_planning_lidar_distance_m").value),
+                    "emergency_distance_m").value),
             "obstacle_seen_elapsed_s": (
                 0.0 if self.mode5_obstacle.first_seen_at is None else
                 max(0.0, time.monotonic()-
